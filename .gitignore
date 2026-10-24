@@ -5,3 +5,6 @@ __pycache__/
 venv/
 .pytest_cache/
 .DS_Store
+data/state.json
+data/state.tmp
+data/cache/

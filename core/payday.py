@@ -3,6 +3,9 @@
 Rule: invest only what's left after every bill due before the next paycheck, spending until
 then, and a checking buffer. Round down to $5 and cap at the planned amount. Savings is never
 touched. safety_check is pure; run_payday does the deposits, transfers and trades.
+
+fast_forward_to_payday, apply_life_event and reset_persona are the demo buttons. They go through
+the core/nessie.py demo functions, so they work the same in fixture and live mode.
 """
 from __future__ import annotations
 
@@ -11,13 +14,18 @@ from dataclasses import dataclass
 from typing import Iterable, Literal
 
 from core import broker, nessie, rebalance
-from core.models import Bill, PaydayResult, Portfolio
+from core.models import Bill, FinancialProfile, PaydayResult, Portfolio
 from core.profile import get_profile
 from core.readiness import check_readiness
 
 CHECKING_BUFFER = 200.0   # checking we never invest
 DAYS_PER_MONTH = 30       # prorating convention for spending
 STEP = 5.0                # invest in $5 steps
+
+CAR_REPAIR = 600.0        # "Unexpected $600 car repair"
+RAISE = 200.0             # per paycheck
+MARKET_DROP_PCT = -30.0
+LIFE_EVENTS = ("car_repair", "raise", "market_drop")
 
 PaydayReason = Literal["full", "reduced_for_bills", "skipped"]
 
@@ -83,11 +91,41 @@ def run_payday(customer_id: str, portfolio: Portfolio | None) -> PaydayResult:
                            f"Investing picks up again next paycheck.")
 
     trades, xfer = [], None
+    buy_underweight = getattr(broker, "buy_underweight", None)   # Saahil's, once it exists
     if d.invest > 0 and portfolio:
         xfer = nessie.transfer_to_investing(customer_id, d.invest)
         for t, amt in rebalance.allocate_new_money(portfolio, broker.get_positions(customer_id), d.invest).items():
             trades.append(broker.buy_notional(t, amt))
+    elif d.invest > 0 and buy_underweight:
+        xfer = nessie.transfer_to_investing(customer_id, d.invest)
+        trades = list(buy_underweight(customer_id, d.invest) or [])
     return PaydayResult(paycheck, planned, d.invest, xfer, trades, reasons)
+
+
+def fast_forward_to_payday(customer_id: str, portfolio: Portfolio | None = None) -> PaydayResult:
+    """The "Fast-forward to payday" button: run the clock to payday, then run_payday."""
+    nessie.advance_days(customer_id, get_profile(customer_id).days_to_payday)
+    return run_payday(customer_id, portfolio)
+
+
+def apply_life_event(customer_id: str, event: str) -> FinancialProfile:
+    """car_repair: $600 from savings (card if savings runs out). raise: +$200 per paycheck.
+    market_drop: the Investing balance falls 30%. Returns the rebuilt profile."""
+    if event == "car_repair":
+        nessie.record_purchase(customer_id, "Car repair", CAR_REPAIR)
+    elif event == "raise":
+        nessie.raise_paycheck(customer_id, RAISE)
+    elif event == "market_drop":
+        nessie.apply_market_move(customer_id, MARKET_DROP_PCT)
+    else:
+        raise ValueError(f"unknown life event {event!r}; expected one of {LIFE_EVENTS}")
+    return get_profile(customer_id)
+
+
+def reset_persona(customer_id: str) -> FinancialProfile:
+    """Back to the starting numbers (live mode re-seeds the persona's Nessie accounts)."""
+    nessie.reset(customer_id)
+    return get_profile(customer_id)
 
 
 def _money(v: float) -> str:

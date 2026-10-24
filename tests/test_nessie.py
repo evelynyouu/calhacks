@@ -29,6 +29,8 @@ def fake(monkeypatch):
     monkeypatch.setenv("NESSIE_API_KEY", "test-key")
     monkeypatch.setattr(nessie.requests, "request", request)
     monkeypatch.setattr(nessie.time, "sleep", lambda _: None)
+    monkeypatch.setattr(nessie, "CACHE_SECONDS", 0)   # cache tests turn it on
+    nessie.clear_cache()
     return calls, queue
 
 
@@ -193,3 +195,28 @@ def test_account_balance_sums_only_our_tagged_transactions(fake):
     ]
     # 1000 + 1400 + 200 - 900 - 600 - 50 + 600
     assert nessie.account_balance("a1", 1000) == 1650
+
+
+# ---------- GET cache ----------
+
+def test_gets_are_cached_until_a_write(fake, monkeypatch):
+    calls, queue = fake
+    monkeypatch.setattr(nessie, "CACHE_SECONDS", 30)
+    queue += [(200, [{"amount": 1}]), (201, {"objectCreated": {"_id": "d1"}}), (200, [{"amount": 2}])]
+    assert nessie.get_deposits("a1") == [{"amount": 1}]
+    assert nessie.get_deposits("a1") == [{"amount": 1}]          # served from cache
+    nessie.create_deposit("a1", 5, "2026-10-30", "[payroll]")    # any write clears it
+    assert nessie.get_deposits("a1") == [{"amount": 2}]
+    assert [c["method"] for c in calls] == ["GET", "POST", "GET"]
+
+
+def test_cache_expires(fake, monkeypatch):
+    calls, queue = fake
+    clock = [1000.0]
+    monkeypatch.setattr(nessie, "CACHE_SECONDS", 30)
+    monkeypatch.setattr(nessie.time, "monotonic", lambda: clock[0])
+    queue += [(200, []), (200, [])]
+    nessie.get_bills("a1")
+    clock[0] += 31
+    nessie.get_bills("a1")
+    assert len(calls) == 2

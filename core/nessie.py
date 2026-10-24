@@ -26,7 +26,12 @@ load_dotenv()
 BASE = "http://api.nessieisreal.com"
 TIMEOUT = 10
 RETRIES = 2                                     # extra attempts after the first
-OUR_TAGS = ("[payroll", "[event", "[firstfund")  # description prefixes for transactions we write
+# Description prefixes for every transaction we write (see docs/EVELYN_API.md):
+# [payroll] paycheck, [payroll-adj] raise, [event] life event, [firstfund] auto-invest,
+# [spend] day-to-day spending, [bill] bill payment, [seed] history moves made by the seeder.
+OUR_TAGS = ("[payroll", "[event", "[firstfund", "[spend", "[bill", "[seed")
+IDS_PATH = Path(__file__).resolve().parent.parent / "data" / "nessie_ids.json"
+LIVE = "live"
 
 
 class NessieError(RuntimeError):
@@ -43,11 +48,35 @@ def _key() -> str:
     return key
 
 
+CACHE_SECONDS = 15   # GETs are reused this long; any write we make clears the cache
+_cache: dict = {}
+
+
+def clear_cache() -> None:
+    _cache.clear()
+
+
 def request(method: str, path: str, body: dict | None = None, params: dict | None = None) -> Any:
-    """Retries connection errors and 5xx. A POST/DELETE is retried only if it never reached
-    Nessie (connection failed), since a 5xx or read timeout may already have been applied."""
+    """One Nessie call. A live profile reads ~24 lists, and one button click rebuilds the profile
+    several times, so GETs are cached briefly. Only this app writes these accounts, so clearing
+    on every write keeps the cache exact; the expiry covers other processes."""
     if path.split("?")[0].rstrip("/") == "/data":
         raise ValueError("refusing to touch /data")
+    if method != "GET":
+        _cache.clear()
+        return _send(method, path, body, params)
+    key = (path, tuple(sorted((params or {}).items())))
+    hit = _cache.get(key)
+    if hit and time.monotonic() - hit[0] < CACHE_SECONDS:
+        return copy.deepcopy(hit[1])
+    result = _send(method, path, body, params)
+    _cache[key] = (time.monotonic(), copy.deepcopy(result))
+    return result
+
+
+def _send(method: str, path: str, body: dict | None, params: dict | None) -> Any:
+    """Retries connection errors and 5xx. A POST/DELETE is retried only if it never reached
+    Nessie (connection failed), since a 5xx or read timeout may already have been applied."""
     query = {"key": _key(), **(params or {})}
     for attempt in range(RETRIES + 1):
         try:
@@ -168,30 +197,74 @@ def create_merchant(name: str, category: str) -> dict:
 
 # ---------- ledger balance ----------
 
-def account_balance(account_id: str, seed_balance: float) -> float:
+def is_ours(txn: dict) -> bool:
+    return txn.get("status") != "cancelled" and str(txn.get("description", "")).startswith(OUR_TAGS)
+
+
+def account_balance(account_id: str, seed_balance: float, liability: bool = False) -> float:
     """Balance from our own records: the balance we seeded plus every transaction we tagged.
 
     Used instead of Nessie's `balance` field, which may lag or ignore pending transactions
     (the spike hasn't confirmed either way). Cancelled transactions don't count.
+    liability=True is for the credit card: purchases raise the amount owed, payments lower it.
     """
     def ours(txns: list[dict]) -> float:
-        return sum(t["amount"] for t in txns
-                   if t.get("status") != "cancelled" and str(t.get("description", "")).startswith(OUR_TAGS))
+        return sum(t["amount"] for t in txns if is_ours(t))
 
-    total = (seed_balance
-             + ours(get_deposits(account_id))
-             - ours(get_withdrawals(account_id))
-             - ours(get_purchases(account_id))
-             - ours(get_transfers(account_id, role="payer"))
-             + ours(get_transfers(account_id, role="payee")))
-    return round(total, 2)
+    net = (ours(get_deposits(account_id))
+           - ours(get_withdrawals(account_id))
+           - ours(get_purchases(account_id))
+           - ours(get_transfers(account_id, role="payer"))
+           + ours(get_transfers(account_id, role="payee")))
+    return round(seed_balance - net if liability else seed_balance + net, 2)
+
+
+# ---------- Nessie ids (written by scripts/seed_nessie.py) ----------
+
+def load_ids() -> dict:
+    """{persona: {customer_id, accounts: {...}, seed: {...}}, "_merchants": {...}}"""
+    try:
+        return json.loads(IDS_PATH.read_text())
+    except FileNotFoundError:
+        return {}
+
+
+def save_ids(ids: dict) -> None:
+    IDS_PATH.write_text(json.dumps(ids, indent=2, sort_keys=True) + "\n")
+
+
+def mode() -> str:
+    return os.environ.get("NESSIE_MODE", "fixture")
 
 
 # ---------- demo stub (in-memory; what the web layer calls today) ----------
 
 _PERSONAS_PATH = Path(__file__).resolve().parent.parent / "data" / "personas.json"
-_SEED: dict = json.loads(_PERSONAS_PATH.read_text())
+OTHER_BILLS = "Other bills"
+OTHER_BILLS_DUE_IN = 29   # days from SIM_START; outside every persona's first payday window
+
+
+def _with_other_bills(p: dict) -> dict:
+    """personas.json lists the bills that matter for payday, but monthly_bills can be larger.
+    The remainder becomes one "Other bills" line so bills paid over time match monthly_bills."""
+    rest = round(p["monthly_bills"] - sum(b["amount"] for b in p["upcoming_bills"]), 2)
+    if rest > 0:
+        p["upcoming_bills"].append({"name": OTHER_BILLS, "amount": rest, "due_in_days": OTHER_BILLS_DUE_IN})
+    return p
+
+
+_SEED: dict = {cid: _with_other_bills(p) for cid, p in json.loads(_PERSONAS_PATH.read_text()).items()}
 _STATE: dict = copy.deepcopy(_SEED)
+
+
+def persona_seed(customer_id: str) -> dict:
+    """The persona's starting numbers (personas.json + Other bills). Seeding and live mode read this."""
+    return copy.deepcopy(_SEED[customer_id])
+
+
+def _live():
+    from core import live   # imported lazily: core.live imports core.profile, which imports this module
+    return live
 
 
 def list_customers() -> list[dict]:
@@ -205,6 +278,9 @@ def get_customer_raw(customer_id: str) -> dict:
 
 
 def reset(customer_id: str | None = None) -> None:
+    """Back to the starting numbers. Live mode re-seeds the persona's Nessie accounts."""
+    if mode() == LIVE:
+        return _live().reset(customer_id)
     if customer_id is None:
         _STATE.clear()
         _STATE.update(copy.deepcopy(_SEED))
@@ -214,21 +290,27 @@ def reset(customer_id: str | None = None) -> None:
 
 def transfer_to_investing(customer_id: str, amount: float) -> str:
     """Checking -> Investing account. Returns a transfer id."""
+    if mode() == LIVE:
+        return _live().transfer_to_investing(customer_id, amount)
     c = _STATE[customer_id]
-    c["checking_balance"] -= amount
-    c["invested_balance"] += amount
+    c["checking_balance"] = round(c["checking_balance"] - amount, 2)
+    c["invested_balance"] = round(c["invested_balance"] + amount, 2)
     return f"stub-xfer-{uuid.uuid4().hex[:8]}"
 
 
 def deposit_paycheck(customer_id: str) -> float:
+    if mode() == LIVE:
+        return _live().deposit_paycheck(customer_id)
     c = _STATE[customer_id]
-    c["checking_balance"] += c["paycheck_amount"]
+    c["checking_balance"] = round(c["checking_balance"] + c["paycheck_amount"], 2)
     c["days_to_payday"] = 14
     return c["paycheck_amount"]
 
 
 def advance_days(customer_id: str, days: int) -> None:
     """Move the demo clock forward: day-to-day spending and bills that come due leave checking."""
+    if mode() == LIVE:
+        return _live().advance_days(customer_id, days)
     c = _STATE[customer_id]
     c["days_to_payday"] = max(0, c["days_to_payday"] - days)
     c["checking_balance"] = round(c["checking_balance"] - c["monthly_spending"] * days / 30, 2)
@@ -240,19 +322,33 @@ def advance_days(customer_id: str, days: int) -> None:
 
 
 def record_purchase(customer_id: str, name: str, amount: float) -> None:
-    """Life event, e.g. 'Unexpected $600 car repair'. Pulls from checking, then cushion."""
+    """Life event, e.g. 'Unexpected $600 car repair'. Savings covers it; anything savings
+    can't cover goes on the credit card. Checking (earmarked for bills) is left alone."""
+    if mode() == LIVE:
+        return _live().record_purchase(customer_id, name, amount)
     c = _STATE[customer_id]
-    from_checking = min(amount, max(0.0, c["checking_balance"]))
-    c["checking_balance"] -= from_checking
-    c["cash_cushion"] -= amount - from_checking
+    from_savings = min(amount, max(0.0, c["cash_cushion"]))
+    c["cash_cushion"] = round(c["cash_cushion"] - from_savings, 2)
+    c["card_debt"] = round(c["card_debt"] + amount - from_savings, 2)
+
+
+def raise_paycheck(customer_id: str, amount: float) -> None:
+    """Paychecks go up by `amount` from now on, and the first raise lands in checking now."""
+    if mode() == LIVE:
+        return _live().raise_paycheck(customer_id, amount)
+    c = _STATE[customer_id]
+    c["paycheck_amount"] = round(c["paycheck_amount"] + amount, 2)
+    c["monthly_income"] = round(c["monthly_income"] + 2 * amount, 2)   # two paychecks a month
+    c["checking_balance"] = round(c["checking_balance"] + amount, 2)
 
 
 def apply_raise(customer_id: str, pct: float) -> None:
-    c = _STATE[customer_id]
-    c["monthly_income"] = round(c["monthly_income"] * (1 + pct / 100), 2)
-    c["paycheck_amount"] = round(c["paycheck_amount"] * (1 + pct / 100), 2)
+    paycheck = _live().current_paycheck(customer_id) if mode() == LIVE else _STATE[customer_id]["paycheck_amount"]
+    raise_paycheck(customer_id, round(paycheck * pct / 100, 2))
 
 
 def apply_market_move(customer_id: str, pct: float) -> None:
+    if mode() == LIVE:
+        return _live().apply_market_move(customer_id, pct)
     c = _STATE[customer_id]
     c["invested_balance"] = round(c["invested_balance"] * (1 + pct / 100), 2)
