@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 KEY = os.environ.get("NESSIE_API_KEY")
-BASE = "http://api.nessieisreal.com"
+BASE = "https://api.nessieisreal.com"   # HTTPS only: plain HTTP (port 80) is refused
 if not KEY:
     sys.exit("NESSIE_API_KEY missing: put it in .env")
 

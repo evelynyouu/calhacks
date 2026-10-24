@@ -41,7 +41,7 @@ def test_get_sends_key_and_timeout(fake):
     queue.append((200, {"_id": "a1", "balance": 100}))
     assert nessie.get_account("a1") == {"_id": "a1", "balance": 100}
     assert calls[0]["method"] == "GET"
-    assert calls[0]["url"] == "http://api.nessieisreal.com/accounts/a1"
+    assert calls[0]["url"] == "https://api.nessieisreal.com/accounts/a1"
     assert calls[0]["params"] == {"key": "test-key"}
     assert calls[0]["timeout"] == 10
 
@@ -175,7 +175,7 @@ def test_delete_account(fake):
     calls, queue = fake
     queue.append((204, None))
     assert nessie.delete_account("a1") is None
-    assert (calls[0]["method"], calls[0]["url"]) == ("DELETE", "http://api.nessieisreal.com/accounts/a1")
+    assert (calls[0]["method"], calls[0]["url"]) == ("DELETE", "https://api.nessieisreal.com/accounts/a1")
 
 
 # ---------- ledger balance ----------

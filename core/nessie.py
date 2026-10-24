@@ -1,7 +1,7 @@
 """Nessie API client.  OWNER: Evelyn.
 
 Two halves:
-- HTTP client (top): thin wrappers over http://api.nessieisreal.com. Used by seeding and,
+- HTTP client (top): thin wrappers over https://api.nessieisreal.com. Used by seeding and,
   later, the live profile. One shared team key from .env.
 - Demo stub (bottom): an in-memory copy of personas.json that the web layer calls today
   (deposit_paycheck, advance_days, ...). Those keep their signatures when they go live.
@@ -27,7 +27,7 @@ from core import state
 
 load_dotenv()
 
-BASE = "http://api.nessieisreal.com"
+BASE = "https://api.nessieisreal.com"   # HTTPS only: plain HTTP (port 80) is refused
 TIMEOUT = 10
 RETRIES = 2                                     # extra attempts after the first
 # Description prefixes for every transaction we write (see docs/EVELYN_API.md):
