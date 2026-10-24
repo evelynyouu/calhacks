@@ -64,6 +64,16 @@ Claude never generates numbers. Every number on screen is rendered by Jinja from
 | Sam | Ready; payday invests $50 instead of $150 because rent is due in 4 days |
 | Alex | Tier 4 ($65K), starts with a fund preloaded |
 
+## Deploy (Render)
+
+1. Push this repo to GitHub (see Git steps below).
+2. In Render: **New → Blueprint**, connect the repo. Render reads `render.yaml` and creates the `firstfund` web service automatically (free plan, Python runtime, health check at `/health`).
+3. After the service is created, open it in the Render dashboard → **Environment** and fill in the `sync: false` secrets: `ANTHROPIC_API_KEY`, `NESSIE_API_KEY`, `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`. (`CLAUDE_MODEL` and `ALPACA_BASE_URL` already have values from `render.yaml`.)
+4. Trigger a deploy (push to the connected branch, or **Manual Deploy** in the dashboard).
+5. Visit the service URL once it's live to confirm `/` loads.
+
+**Cold start warning:** Render's free tier sleeps the service after inactivity, and the first request after sleeping can take 30–60s to wake up. Open the site yourself a minute or two before judging walks over, so it's warm when they see it.
+
 ## Known gaps
 
 - Session state is in memory: one demo user at a time, resets on server restart.
