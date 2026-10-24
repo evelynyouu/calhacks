@@ -39,18 +39,14 @@ functions keep their names, and `core/models.py` is untouched. Details of each c
 
 ## Ethan (app, agent)
 
-- **PR #1 is yours to review:** the bank activity feed, the live/offline badge, and the payday
-  breakdown bar on the money panel. It touches `app/routes/pages.py` (one line in `_ctx`) and
-  `app/templates/partials/money.html`. https://github.com/evelynyouu/calhacks/pull/1
-- **Bug found in the live run-through (your file):** after the scripted intake finishes, any further
-  chat message is a 500. `agent/claude_agent.py`, `_scripted_turn` does `_QUESTIONS[step - 1]` with
-  `step == 6`. A fix, before that line:
-  ```python
-  if step > len(_QUESTIONS):
-      return "Your fund is built. Try Fast-forward to payday or the crash test.", events
-  ```
-  It only happens with no `ANTHROPIC_API_KEY` (the scripted fallback), so it would hit exactly when
-  the wifi is bad.
+Three PRs touching your files were merged on 2026-10-24 (Evelyn approved merging them; please skim):
+- **#1:** the money panel has a bank activity feed, a "Live: Capital One Nessie" / "Demo data" /
+  "Nessie offline: demo data" badge, and a payday breakdown bar. `app/routes/pages.py` passes
+  `activity`, `nessie_mode` and `nessie_offline` from `_ctx`.
+- **#2:** the scripted chat no longer 500s on messages after the intake is done (only hit with no
+  `ANTHROPIC_API_KEY`, i.e. bad wifi). Test: `tests/test_scripted_chat.py`.
+- **#3:** Tailwind, htmx and Chart.js are bundled in `app/static/vendor/`, so the page looks right and
+  the buttons work with no internet (before, htmx failed to load offline and nothing was clickable).
 - `run_payday` now returns `PaydayRun`, a `PaydayResult` subclass with an extra `breakdown`
   dict (the bar's numbers). Anything that takes a `PaydayResult` still works.
 - For Render: set `NESSIE_MODE=live` and `NESSIE_API_KEY` in the dashboard if you want live Nessie
