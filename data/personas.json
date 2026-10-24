@@ -1,0 +1,73 @@
+{
+  "sim_start": "2026-10-23",
+  "personas": {
+    "maria": {
+      "name": "Maria",
+      "last_name": "Lopez",
+      "tagline": "First job, $1,200 on a credit card",
+      "pay_frequency": "biweekly",
+      "paycheck": 1250,
+      "last_payday": "2026-10-16",
+      "card_apr": 0.2499,
+      "monthly_spending": 900,
+      "balances": {"checking": 600, "savings": 2500, "investing": 0, "card": 1200},
+      "bills": [
+        {"name": "Rent", "category": "rent", "amount": 950, "due_day": 1},
+        {"name": "Phone", "category": "phone", "amount": 60, "due_day": 15},
+        {"name": "Utilities", "category": "utility", "amount": 80, "due_day": 20},
+        {"name": "Streaming", "category": "subscription", "amount": 60, "due_day": 27}
+      ]
+    },
+    "jordan": {
+      "name": "Jordan",
+      "last_name": "Kim",
+      "tagline": "Steady paycheck, under a month of savings",
+      "pay_frequency": "biweekly",
+      "paycheck": 1150,
+      "last_payday": "2026-10-16",
+      "card_apr": 0.2299,
+      "monthly_spending": 1000,
+      "balances": {"checking": 650, "savings": 900, "investing": 0, "card": 0},
+      "bills": [
+        {"name": "Rent", "category": "rent", "amount": 1000, "due_day": 1},
+        {"name": "Transit pass", "category": "transit", "amount": 80, "due_day": 5},
+        {"name": "Phone", "category": "phone", "amount": 50, "due_day": 12},
+        {"name": "Utilities", "category": "utility", "amount": 70, "due_day": 20}
+      ]
+    },
+    "sam": {
+      "name": "Sam",
+      "last_name": "Rivera",
+      "tagline": "Stable paycheck, 3 months saved, $3K invested",
+      "pay_frequency": "biweekly",
+      "paycheck": 1400,
+      "last_payday": "2026-10-16",
+      "card_apr": 0.2199,
+      "monthly_spending": 900,
+      "balances": {"checking": 430, "savings": 7000, "investing": 3000, "card": 0},
+      "bills": [
+        {"name": "Rent", "category": "rent", "amount": 1100, "due_day": 3},
+        {"name": "Phone", "category": "phone", "amount": 60, "due_day": 8},
+        {"name": "Utilities", "category": "utility", "amount": 90, "due_day": 18},
+        {"name": "Internet", "category": "internet", "amount": 50, "due_day": 22}
+      ]
+    },
+    "alex": {
+      "name": "Alex",
+      "last_name": "Chen",
+      "tagline": "High earner, $65K invested",
+      "pay_frequency": "biweekly",
+      "paycheck": 3400,
+      "last_payday": "2026-10-16",
+      "card_apr": 0.1999,
+      "monthly_spending": 1800,
+      "balances": {"checking": 3000, "savings": 20000, "investing": 65000, "card": 0},
+      "bills": [
+        {"name": "Rent", "category": "rent", "amount": 2200, "due_day": 1},
+        {"name": "Utilities", "category": "utility", "amount": 150, "due_day": 10},
+        {"name": "Phone", "category": "phone", "amount": 80, "due_day": 14},
+        {"name": "Internet", "category": "internet", "amount": 70, "due_day": 25}
+      ]
+    }
+  }
+}
