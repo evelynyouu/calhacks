@@ -355,6 +355,11 @@ _offline_lock = threading.Lock()
 # click applied to it too. If Nessie drops out, the app switches to it, so the screen continues
 # from exactly what it last showed (including the click that hit the outage) with no jump.
 _SHADOW: dict = {}
+# Personas with a click in flight. While one is, reads from other requests (a double-click, a second
+# tab) don't refresh its shadow copy: the click applies its own effect once when it finishes, and a
+# read that already saw the click's write would make it count twice.
+_clicks: dict = {}
+_clicks_lock = threading.Lock()
 
 
 def offline_reason() -> str | None:
@@ -415,7 +420,9 @@ def go_online() -> None:
 
 def sync_shadow(cid: str, p, as_of) -> None:
     """Called after each successful live read: the fallback copy becomes exactly what's on screen."""
-    if not _offline:
+    with _clicks_lock:
+        busy = _clicks.get(cid, 0) > 0
+    if not _offline and not busy:
         old = _SHADOW.get(cid, {})
         _SHADOW[cid] = _state_from_snapshot(cid, p, as_of)
         if "activity" in old:
@@ -456,12 +463,21 @@ def _demo(name: str, fx, customer_id, *args):
     if not _configured_live():
         return fx(_STATE, customer_id, *args)
     if not _offline:
-        done, value = _try_live(name, customer_id, *args)
-        if done:
-            for cid in ([customer_id] if customer_id else list(_SHADOW)):
-                if cid in _SHADOW:
-                    fx(_SHADOW, cid, *args)   # keep the fallback copy in step
-            return value
+        targets = [customer_id] if customer_id else list(_SEED)
+        with _clicks_lock:
+            for cid in targets:
+                _clicks[cid] = _clicks.get(cid, 0) + 1
+        try:
+            done, value = _try_live(name, customer_id, *args)
+            if done:
+                for cid in targets:
+                    if cid in _SHADOW:
+                        fx(_SHADOW, cid, *args)   # keep the fallback copy in step
+                return value
+        finally:
+            with _clicks_lock:
+                for cid in targets:
+                    _clicks[cid] -= 1
     return fx(_SHADOW, customer_id, *args)
 
 

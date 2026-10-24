@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from pathlib import Path
@@ -164,7 +165,7 @@ def derive_live(customer_id: str, ids: dict) -> FinancialProfile:
 def _save_cache(p: FinancialProfile, as_of: date) -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     path = CACHE_DIR / f"{p.customer_id}.json"
-    tmp = path.with_suffix(".tmp")
+    tmp = path.with_name(f"{path.name}.{threading.get_ident()}.tmp")   # per thread: two requests can save at once
     tmp.write_text(json.dumps({**to_dict(p), "_as_of": as_of.isoformat()}, indent=2))
     tmp.replace(path)   # atomic, so a fallback read never sees half a file
 
