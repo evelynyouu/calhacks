@@ -1,82 +1,73 @@
-"""One-off Nessie behavior check. Answers, before we build on it:
+"""Live smoke test of core/nessie.py against the real Nessie API.  OWNER: Evelyn.
 
-1. Do POSTed transactions change account.balance (and how fast)?
-2. Is a backdated transaction_date accepted and preserved?
-3. What status do new transactions get (pending vs executed)?
-4. Do transfers move money on both sides?
+Creates a throwaway customer with a checking and a savings account, writes one of each
+transaction type through our client, reads everything back, checks our ledger balance, and
+deletes both accounts. (Nessie can't delete customers, so an empty "Spike Test" customer stays.)
 
-Creates a throwaway customer + two accounts, deletes the accounts at the end.
+What it found on 2026-10-24, and what the client does about it:
+- Nessie never applies transactions to an account's `balance`, so core.nessie.account_balance
+  computes balances from our tagged transactions instead.
+- Backdated transaction dates are kept as sent.
+- Transfers have no destination field, so a move is a withdrawal + deposit pair.
+- Purchases take purchase_date and need a status; bills need a payment_date; amounts are whole
+  dollars. Leaving these out makes reading the list back fail.
+- An empty transfer list comes back as a 404.
+
 Usage: .venv/bin/python scripts/nessie_spike.py
 """
-import os
+from __future__ import annotations
+
 import sys
-import time
+from pathlib import Path
 
-import httpx
-from dotenv import load_dotenv
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-load_dotenv()
-KEY = os.environ.get("NESSIE_API_KEY")
-BASE = "https://api.nessieisreal.com"   # HTTPS only: plain HTTP (port 80) is refused
-if not KEY:
-    sys.exit("NESSIE_API_KEY missing: put it in .env")
+from core import nessie   # noqa: E402
 
 
-def call(method, path, body=None):
-    r = httpx.request(method, f"{BASE}{path}", params={"key": KEY}, json=body, timeout=15)
-    print(f"  {method} {path} -> {r.status_code}")
+def check(label: str, ok: bool, detail: str = "") -> bool:
+    print(f"  [{'ok' if ok else 'FAIL'}] {label}{f'  ({detail})' if detail else ''}")
+    return ok
+
+
+def main() -> int:
+    nessie.CACHE_SECONDS = 0
+    results = []
+    cust = nessie.create_customer("Spike", "Test")["_id"]
+    chk = nessie.create_account(cust, "Checking", "spike checking", 1000)["_id"]
+    sav = nessie.create_account(cust, "Savings", "spike savings", 500)["_id"]
     try:
-        data = r.json()
-    except ValueError:
-        data = r.text
-    if r.status_code >= 400:
-        print("   ", data)
-    return data
+        merchant = nessie.load_ids().get("_merchants", {}).get("groceries") \
+            or nessie.create_merchant("FirstFund Spike", "Testing")["_id"]
+        print("writes:")
+        nessie.create_deposit(chk, 100, "2026-09-01", "[payroll] spike")
+        nessie.create_withdrawal(chk, 30, "2026-09-02", "[event] spike")
+        nessie.create_purchase(chk, merchant, 40, "2026-09-03", "[spend] spike")
+        nessie.create_transfer(chk, sav, 50, "2026-09-04", "[firstfund] spike")
+        nessie.create_bill(chk, "Landlord", "Rent", 1100, 3, "2026-11-03")
+        print("  all five writes accepted")
+
+        print("reads:")
+        deposits = nessie.get_deposits(chk)
+        results.append(check("backdated deposit date kept",
+                             any(d["transaction_date"] == "2026-09-01" for d in deposits)))
+        results.append(check("purchases read back", len(nessie.get_purchases(chk)) == 1))
+        bills = nessie.get_bills(chk)
+        results.append(check("bills read back", [b["nickname"] for b in bills] == ["Rent"]))
+        results.append(check("empty transfer list reads as []", nessie.get_transfers(sav) == []))
+
+        print("balances:")
+        results.append(check("ledger checking", nessie.account_balance(chk, 1000) == 980, "1000 + 100 - 30 - 40 - 50"))
+        results.append(check("ledger savings", nessie.account_balance(sav, 500) == 550, "500 + 50"))
+        print(f"  Nessie's own balance field: checking={nessie.get_account(chk)['balance']}, "
+              f"savings={nessie.get_account(sav)['balance']} (it doesn't apply transactions)")
+    finally:
+        nessie.delete_account(chk)
+        nessie.delete_account(sav)
+        print("cleanup: both spike accounts deleted")
+    print("PASS" if all(results) else "FAIL")
+    return 0 if all(results) else 1
 
 
-def balance(acct_id):
-    return call("GET", f"/accounts/{acct_id}").get("balance")
-
-
-print("create customer")
-cust = call("POST", "/customers", {
-    "first_name": "Spike", "last_name": "Test",
-    "address": {"street_number": "1", "street_name": "Test St", "city": "Berkeley", "state": "CA", "zip": "94720"},
-})["objectCreated"]
-
-print("create checking + savings (balance 1000 / 500)")
-chk = call("POST", f"/customers/{cust['_id']}/accounts",
-           {"type": "Checking", "nickname": "spike checking", "rewards": 0, "balance": 1000})["objectCreated"]
-sav = call("POST", f"/customers/{cust['_id']}/accounts",
-           {"type": "Savings", "nickname": "spike savings", "rewards": 0, "balance": 500})["objectCreated"]
-
-try:
-    print("backdated deposit 100 on 2026-09-01")
-    dep = call("POST", f"/accounts/{chk['_id']}/deposits", {
-        "medium": "balance", "transaction_date": "2026-09-01", "amount": 100, "description": "[payroll] spike",
-    })
-    print("   created:", dep.get("objectCreated") if isinstance(dep, dict) else dep)
-
-    print("withdrawal 30")
-    call("POST", f"/accounts/{chk['_id']}/withdrawals",
-         {"medium": "balance", "transaction_date": "2026-09-02", "amount": 30, "description": "[event] spike"})
-
-    print("transfer 50 checking -> savings")
-    call("POST", f"/accounts/{chk['_id']}/transfers",
-         {"medium": "balance", "payee_id": sav["_id"], "transaction_date": "2026-09-03", "amount": 50,
-          "description": "[firstfund] spike"})
-
-    for wait in (0, 5, 20):
-        if wait:
-            time.sleep(wait)
-        print(f"balances after +{wait}s: checking={balance(chk['_id'])} (expect 1020) savings={balance(sav['_id'])} (expect 550)")
-
-    print("deposit as stored:")
-    for d in call("GET", f"/accounts/{chk['_id']}/deposits"):
-        print("   ", {k: d.get(k) for k in ("transaction_date", "status", "amount", "description")})
-    for t in call("GET", f"/accounts/{chk['_id']}/transfers"):
-        print("    transfer", {k: t.get(k) for k in ("transaction_date", "status", "amount", "type")})
-finally:
-    print("cleanup")
-    call("DELETE", f"/accounts/{chk['_id']}")
-    call("DELETE", f"/accounts/{sav['_id']}")
+if __name__ == "__main__":
+    sys.exit(main())

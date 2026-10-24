@@ -1,0 +1,68 @@
+{
+  "_merchants": {
+    "auto": "bfcbfb67-4571-4d39-9632-6951679e6a16",
+    "dining": "d12885ce-8f3a-4d05-ba5f-7acd36c0a6a8",
+    "groceries": "8eac0d4a-1cf2-4768-97ec-e6c09151690a",
+    "transit": "70b1363f-d337-4aeb-9381-0770e149dee0"
+  },
+  "alex": {
+    "accounts": {
+      "card": "50ffb61c-b543-4c1e-ae91-50561c64d9f6",
+      "checking": "7b796e46-6ce4-4c0d-9b84-11f913a6bada",
+      "investing": "511bb08e-0940-44e2-a98e-fe1977df8f0b",
+      "savings": "558fa8ae-a463-4349-8fcd-6120bf466afd"
+    },
+    "customer_id": "9a6524fd-8aaf-45cf-9788-a1666ce4903d",
+    "seed": {
+      "card": 0,
+      "checking": 4000,
+      "investing": 65000,
+      "savings": 22000.0
+    }
+  },
+  "jordan": {
+    "accounts": {
+      "card": "09f4f383-29d5-4a6c-95f8-1fcfbdbb36ae",
+      "checking": "c0ba55a8-3f1f-4330-811d-e177e9fb8ca7",
+      "investing": "9b6396e1-7f06-41ee-b06c-45cfce1c7d4c",
+      "savings": "9b5cc16f-873f-4858-aa2a-9614552c25d8"
+    },
+    "customer_id": "f6512e2c-6e49-4101-a014-6cbedc76a642",
+    "seed": {
+      "card": 0,
+      "checking": 600,
+      "investing": 0,
+      "savings": 700.0
+    }
+  },
+  "maria": {
+    "accounts": {
+      "card": "220a7617-a025-48a2-9171-6d7a333d88ae",
+      "checking": "6b4857ed-d786-4d75-8860-6da7b88b3a73",
+      "investing": "5fdc9bc6-02d3-4e1a-b3d0-3410a6c1fe76",
+      "savings": "6bd05795-52fa-44ca-a4a0-3b02b65ccc49"
+    },
+    "customer_id": "39795a67-f644-4880-8375-0c585087a996",
+    "seed": {
+      "card": 1200,
+      "checking": 900,
+      "investing": 0,
+      "savings": 600.0
+    }
+  },
+  "sam": {
+    "accounts": {
+      "card": "a481e7b7-b9ca-4d30-ac09-e4ad5db37d73",
+      "checking": "d4392988-e59b-4319-9fc3-b95e444774a4",
+      "investing": "5e8b9415-5e4a-4120-b89a-0dcd9d159e20",
+      "savings": "de361303-5808-4633-9e95-9a0390207fc2"
+    },
+    "customer_id": "d74a30f4-a0c0-4a2f-8d82-580493597d19",
+    "seed": {
+      "card": 0,
+      "checking": 575,
+      "investing": 3000,
+      "savings": 6600.0
+    }
+  }
+}

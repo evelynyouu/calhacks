@@ -82,18 +82,24 @@ def apply_market_move(cid: str, pct: float) -> None:
 def activity(cid: str) -> list[dict]:
     """Every tagged transaction on the persona's accounts (cached GETs, so this is cheap after a profile)."""
     acct = _accounts(cid)
-    role = {account_id: r for r, account_id in acct.items()}
-    items = []
+    items, outs, ins = [], [], []
     for r, aid in acct.items():
-        for t in filter(nessie.is_ours, nessie.get_deposits(aid)):
-            items.append(nessie.activity_item(t["transaction_date"], t["description"], t["amount"], "in", r))
-        for t in filter(nessie.is_ours, nessie.get_withdrawals(aid)):
-            items.append(nessie.activity_item(t["transaction_date"], t["description"], t["amount"], "out", r))
+        ins += [(r, t) for t in filter(nessie.is_ours, nessie.get_deposits(aid))]
+        outs += [(r, t) for t in filter(nessie.is_ours, nessie.get_withdrawals(aid))]
         for t in filter(nessie.is_ours, nessie.get_purchases(aid)):
             items.append(nessie.activity_item(nessie.txn_date(t), t["description"], t["amount"], "out", r))
-        for t in filter(nessie.is_ours, nessie.get_transfers(aid, role="payer")):
-            items.append(nessie.activity_item(t["transaction_date"], t["description"], t["amount"], "move", r,
-                                              role.get(t["payee_id"])))
+    # A move between the persona's accounts is a withdrawal + deposit with the same date, amount and
+    # description (Nessie transfers have no destination); show each pair as one "move" line.
+    for r_out, w in outs:
+        key = (nessie.txn_date(w), w["amount"], w["description"])
+        match = next((i for i, (r_in, d) in enumerate(ins)
+                      if r_in != r_out and (nessie.txn_date(d), d["amount"], d["description"]) == key), None)
+        if match is None:
+            items.append(nessie.activity_item(key[0], w["description"], w["amount"], "out", r_out))
+        else:
+            r_in, _ = ins.pop(match)
+            items.append(nessie.activity_item(key[0], w["description"], w["amount"], "move", r_out, r_in))
+    items += [nessie.activity_item(nessie.txn_date(d), d["description"], d["amount"], "in", r) for r, d in ins]
     return items
 
 

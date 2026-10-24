@@ -16,7 +16,10 @@ _ETFS = {r["ticker"]: r for r in csv.DictReader(
 CORE_BY_RISK = {1: "AOK", 2: "AOM", 3: "AOR", 4: "AOA"}
 RISK_LABELS = {1: "Conservative", 2: "Moderate", 3: "Growth", 4: "Aggressive"}
 TILTS_BY_INTEREST = {"tech": ["QQQ", "XLK"], "healthcare": ["XLV"], "clean_energy": ["ICLN"]}
-TILT_CAP = 0.25          # Lance: 20–30%
+# Max share in interest tilts, by risk level. Sector funds swing far harder than
+# the cores (ICLN lost over half its value 2021–23), so a conservative fund only
+# gets a taste and only an aggressive one reaches a quarter.
+TILT_CAP_BY_RISK = {1: 0.10, 2: 0.15, 3: 0.20, 4: 0.25}
 # PLACEHOLDER worst calendar year per core (Saahil: compute from cached prices)
 _WORST = {"AOK": (2022, -13.9), "AOM": (2022, -15.6), "AOR": (2022, -16.9), "AOA": (2022, -18.1)}
 # PLACEHOLDER pairs with heavy holdings overlap (Saahil: compute from holdings)
@@ -37,7 +40,7 @@ def build_portfolio(risk_level: int, interests: list[str] | None = None) -> Port
             tilt_tickers.remove(sorted(pair)[1])
 
     holdings = []
-    tilt_w = TILT_CAP if tilt_tickers else 0.0
+    tilt_w = TILT_CAP_BY_RISK[risk_level] if tilt_tickers else 0.0
     holdings.append(_holding(core_t, 1 - tilt_w, "core"))
     for t in tilt_tickers:
         holdings.append(_holding(t, tilt_w / len(tilt_tickers), "tilt"))

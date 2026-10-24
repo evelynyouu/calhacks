@@ -125,7 +125,7 @@ def test_live_numbers(fake):
 def test_fast_forward_with_fund_transfers_to_investing(fake):
     from core.portfolio import build_portfolio
     r = fast_forward_to_payday("sam", build_portfolio(2, []))
-    assert r.invested_amount == 50 and r.transfer_id in fake.txns["transfers"]
+    assert r.invested_amount == 50 and r.transfer_id in fake.txns["deposits"]   # the deposit side of the move
     assert get_profile("sam").invested_balance == 3050
 
 

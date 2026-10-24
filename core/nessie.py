@@ -162,9 +162,13 @@ def txn_date(txn: dict) -> str:
     return str(txn.get("transaction_date") or txn.get("purchase_date"))[:10]
 
 
-def _txn(amount: float, on: str, description: str, **extra) -> dict:
-    return {"medium": "balance", "transaction_date": on, "amount": int(whole(amount)), "description": description,
-            **extra}
+# Write bodies follow what the real API accepts (measured 2026-10-24, scripts/nessie_spike.py):
+# deposits/withdrawals take transaction_date; purchases take purchase_date and must carry a
+# status (one without breaks reading the account's purchases); amounts are whole dollars.
+
+def _txn(amount: float, on: str, description: str, date_field: str = "transaction_date", **extra) -> dict:
+    return {"medium": "balance", date_field: on, "status": "completed", "amount": int(whole(amount)),
+            "description": description, **extra}
 
 
 def get_deposits(account_id: str) -> list[dict]:
@@ -188,21 +192,26 @@ def get_purchases(account_id: str) -> list[dict]:
 
 
 def create_purchase(account_id: str, merchant_id: str, amount: float, on: str, description: str) -> dict:
-    return _post(f"/accounts/{account_id}/purchases", _txn(amount, on, description, merchant_id=merchant_id))
+    return _post(f"/accounts/{account_id}/purchases",
+                 _txn(amount, on, description, date_field="purchase_date", merchant_id=merchant_id))
 
 
-def get_transfers(account_id: str, role: str | None = None) -> list[dict]:
-    """role: "payer" (money out), "payee" (money in), or None for Nessie's default.
-    The ?type= filter isn't in Nessie's docs, so the direction is also checked here."""
-    items = request("GET", f"/accounts/{account_id}/transfers", params={"type": role} if role else None)
-    key = {"payer": "payer_id", "payee": "payee_id"}.get(role)
-    if key and items and all(key in t for t in items):
-        items = [t for t in items if t[key] == account_id]
-    return items
+def get_transfers(account_id: str) -> list[dict]:
+    """Nessie answers an empty transfer list with a 404, so that counts as no transfers."""
+    try:
+        return request("GET", f"/accounts/{account_id}/transfers")
+    except NessieError as e:
+        if e.status == 404:
+            return []
+        raise
 
 
 def create_transfer(from_id: str, to_id: str, amount: float, on: str, description: str) -> dict:
-    return _post(f"/accounts/{from_id}/transfers", _txn(amount, on, description, payee_id=to_id))
+    """Move money between two of the persona's accounts. Nessie's transfers have no destination
+    field, so a move is a tagged withdrawal from one account plus a tagged deposit to the other.
+    Returns the deposit."""
+    create_withdrawal(from_id, amount, on, description)
+    return create_deposit(to_id, amount, on, description)
 
 
 # ---------- bills / merchants ----------
@@ -211,10 +220,12 @@ def get_bills(account_id: str) -> list[dict]:
     return request("GET", f"/accounts/{account_id}/bills")
 
 
-def create_bill(account_id: str, payee: str, nickname: str, amount: float, recurring_day: int) -> dict:
+def create_bill(account_id: str, payee: str, nickname: str, amount: float, recurring_day: int,
+                payment_date: str) -> dict:
+    """payment_date is required in practice: a bill without one makes reading the account's bills fail."""
     return _post(f"/accounts/{account_id}/bills", {
         "status": "recurring", "payee": payee, "nickname": nickname,
-        "payment_amount": round(amount, 2), "recurring_date": recurring_day,
+        "payment_amount": round(amount, 2), "recurring_date": recurring_day, "payment_date": payment_date,
     })
 
 
@@ -235,8 +246,9 @@ def is_ours(txn: dict) -> bool:
 def account_balance(account_id: str, seed_balance: float, liability: bool = False) -> float:
     """Balance from our own records: the balance we seeded plus every transaction we tagged.
 
-    Used instead of Nessie's `balance` field, which may lag or ignore pending transactions
-    (the spike hasn't confirmed either way). Cancelled transactions don't count.
+    Nessie never applies transactions to its own `balance` field (confirmed against the real
+    API: it stays at the opening value), so this is the balance. Cancelled transactions don't
+    count. Moves between accounts are withdrawal + deposit pairs, so transfers aren't read.
     liability=True is for the credit card: purchases raise the amount owed, payments lower it.
     """
     def ours(txns: list[dict]) -> float:
@@ -244,9 +256,7 @@ def account_balance(account_id: str, seed_balance: float, liability: bool = Fals
 
     net = (ours(get_deposits(account_id))
            - ours(get_withdrawals(account_id))
-           - ours(get_purchases(account_id))
-           - ours(get_transfers(account_id, role="payer"))
-           + ours(get_transfers(account_id, role="payee")))
+           - ours(get_purchases(account_id)))
     return round(seed_balance - net if liability else seed_balance + net, 2)
 
 

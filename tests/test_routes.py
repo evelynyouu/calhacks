@@ -99,3 +99,14 @@ def test_market_drop_lowers_sam_balance():
 def test_alex_tier4():
     r = client.get("/p/alex")
     assert "Tier 4" in r.text
+
+
+def test_session_context_includes_payday_and_events():
+    client.post("/p/sam/event/payday")
+    ctx = claude_agent._session_context(state.get("sam"))
+    assert "Fast-forward to payday" in ctx
+    assert "Invested $50" in ctx
+
+
+def test_session_context_empty_for_fresh_session():
+    assert claude_agent._session_context(state.get("sam")) == ""

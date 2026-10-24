@@ -39,12 +39,27 @@ def chat_turn(session: Session, user_text: str) -> tuple[str, set[str]]:
         return _scripted_turn(session, user_text)
 
 
+def _session_context(session: Session) -> str:
+    """What already happened in the app this session, so chat can answer questions about it.
+    The numbers come from Python results, so they are allowed to be stated."""
+    lines: list[str] = []
+    if session.events:
+        lines.append("Life events so far (newest first): " + "; ".join(session.events))
+    if session.last_payday:
+        lines.append("Last payday: " + " ".join(session.last_payday.reasons))
+    if session.crash:
+        lines.append("Last crash test: " + " ".join(session.crash.explanation_facts))
+    if not lines:
+        return ""
+    return "\n\nWhat already happened in the app this session (app-computed, safe to cite):\n- " + "\n- ".join(lines)
+
+
 def _claude_turn(client, session: Session, user_text: str) -> tuple[str, set[str]]:
     session.messages.append({"role": "user", "content": user_text})
     events: set[str] = set()
     for _ in range(MAX_TOOL_ROUNDS):
         resp = client.messages.create(
-            model=MODEL, max_tokens=600, system=SYSTEM_PROMPT, tools=TOOLS, messages=session.messages,
+            model=MODEL, max_tokens=600, system=SYSTEM_PROMPT + _session_context(session), tools=TOOLS, messages=session.messages,
         )
         session.messages.append({"role": "assistant", "content": resp.content})
         if resp.stop_reason != "tool_use":

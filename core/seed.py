@@ -102,7 +102,8 @@ def _write_history(plan: dict, acct: dict, merchants: dict) -> None:
     p = plan["persona"]
     chk = acct["checking"]
     for b in plan["bills"]:
-        nessie.create_bill(chk, b["name"], b["name"], b["amount"], b["recurring_date"])
+        nessie.create_bill(chk, b["name"], b["name"], b["amount"], b["recurring_date"],
+                           next_due(b["recurring_date"], SIM_START).isoformat())
     for d in plan["paydays"]:
         nessie.create_deposit(chk, p["paycheck_amount"], d.isoformat(), "[payroll] paycheck")
     for x in plan["purchases"]:

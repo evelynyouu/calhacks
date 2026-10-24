@@ -100,7 +100,8 @@ def run_payday(customer_id: str, portfolio: Portfolio | None) -> PaydayResult:
     paycheck = nessie.deposit_paycheck(customer_id)
     p = get_profile(customer_id)
     r = check_readiness(p)
-    planned = 0.0 if r.status == "not_yet" else round(r.safe_monthly_amount / 2, 2)   # two paychecks a month
+    # Two paychecks a month, in whole $5 steps: Nessie only moves whole dollars, and the plan invests in $5 steps.
+    planned = 0.0 if r.status == "not_yet" else math.floor(r.safe_monthly_amount / 2 / STEP) * STEP
 
     d = safety_check(p.checking_balance, planned, p.days_to_payday, p.upcoming_bills, p.monthly_spending)
     reasons = [f"Paycheck of {_money(paycheck)} detected."]
