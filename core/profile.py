@@ -58,11 +58,12 @@ def _live_profile(customer_id: str) -> FinancialProfile:
     try:
         p = derive_live(customer_id, ids)
         as_of, _ = live_clock(customer_id, ids)
-    except (nessie.NessieError, requests.RequestException) as e:
-        if not nessie.is_outage(e):
+    except (nessie.NessieError, nessie.StaleIds, requests.RequestException) as e:
+        if not nessie.needs_fallback(e):
             raise
-        nessie.go_offline(f"{type(e).__name__}: {e}")   # continues from the cached live numbers
+        nessie.go_offline(nessie.describe_failure(e))   # continues on the shadow copy: what was on screen
         return get_profile(customer_id)
+    nessie.sync_shadow(customer_id, p, as_of)
     _save_cache(p, as_of)
     return p
 
@@ -99,13 +100,14 @@ def live_clock(customer_id: str, ids: dict | None = None) -> tuple[date, float]:
     deposits = [d for d in nessie.get_deposits(acct["checking"]) if nessie.is_ours(d)]
     payroll = [d for d in deposits if d["description"].startswith("[payroll]")]
     if not payroll:
-        raise ValueError(f"{customer_id}: no [payroll] deposits in Nessie; re-seed this persona")
+        raise nessie.StaleIds(f"{customer_id}: no [payroll] deposits in Nessie")
     latest = max(payroll, key=_date)
     paycheck = latest["amount"]
     raises = [(d, RAISED_TO.search(d["description"])) for d in deposits if d["description"].startswith("[payroll-adj]")]
-    raises = [(d, m) for d, m in raises if m and _date(d) >= _date(latest)]
-    if raises:
-        paycheck = float(max(raises, key=lambda dm: _date(dm[0]))[1].group(1).replace(",", ""))
+    raises = [(i, d, m) for i, (d, m) in enumerate(raises) if m and _date(d) >= _date(latest)]
+    if raises:   # newest date wins; on the same day, the one written last (Nessie lists in creation order)
+        _, _, m = max(raises, key=lambda idm: (_date(idm[1]), idm[0]))
+        paycheck = float(m.group(1).replace(",", ""))
     return today, paycheck
 
 
@@ -163,9 +165,12 @@ def cached_snapshot(customer_id: str) -> tuple[FinancialProfile, date] | None:
         d = json.loads((CACHE_DIR / f"{customer_id}.json").read_text())
     except (FileNotFoundError, ValueError):
         return None
-    as_of = date.fromisoformat(d.pop("_as_of", state.SIM_START.isoformat()))
-    d["upcoming_bills"] = [Bill(**b) for b in d["upcoming_bills"]]
-    return FinancialProfile(**d), as_of
+    try:
+        as_of = date.fromisoformat(d.pop("_as_of", state.SIM_START.isoformat()))
+        d["upcoming_bills"] = [Bill(**b) for b in d["upcoming_bills"]]
+        return FinancialProfile(**d), as_of
+    except (TypeError, KeyError, ValueError, AttributeError):   # old format or corrupt: ignore it
+        return None
 
 
 def load_cached(customer_id: str) -> FinancialProfile | None:

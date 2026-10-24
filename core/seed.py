@@ -176,15 +176,25 @@ def seed(personas: list[str] | None = None, reset: str | None = None, save: bool
     return nessie.load_ids()
 
 
+_building: set = set()   # personas whose spare is being built right now (guarded by _ids_lock)
+
+
 def ensure_spares(personas, merchants: dict | None = None) -> None:
-    """Builds a spare copy of each persona that doesn't have one yet."""
+    """Builds a spare copy of each persona that doesn't have one yet. Two rebuilds racing (two quick
+    resets) build one spare, not two with one left orphaned in Nessie."""
     merchants = merchants or nessie.load_ids()["_merchants"]
     for cid in personas:
-        if cid in nessie.load_ids().get("_spares", {}):
-            continue
-        entry = seed_persona(cid, merchants)
-        _update_ids(lambda ids: ids.setdefault("_spares", {}).__setitem__(cid, entry))
-        print(f"{cid}: spare ready (customer {entry['customer_id']})")
+        with _ids_lock:
+            if cid in _building or cid in nessie.load_ids().get("_spares", {}):
+                continue
+            _building.add(cid)
+        try:
+            entry = seed_persona(cid, merchants)
+            _update_ids(lambda ids: ids.setdefault("_spares", {}).__setitem__(cid, entry))
+            print(f"{cid}: spare ready (customer {entry['customer_id']})")
+        finally:
+            with _ids_lock:
+                _building.discard(cid)
 
 
 def reset_persona(cid: str) -> None:

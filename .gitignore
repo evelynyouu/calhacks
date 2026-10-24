@@ -8,3 +8,5 @@ venv/
 data/state.json
 data/state.tmp
 data/cache/
+.env.*
+!.env.example

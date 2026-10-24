@@ -14,9 +14,9 @@ def sandbox(monkeypatch, tmp_path):
     monkeypatch.setattr(profile, "CACHE_DIR", tmp_path / "cache")
 
     def no_network(*args, **kwargs):
-        raise RuntimeError("real HTTP is blocked in tests; patch nessie.requests.request or nessie._send")
+        raise RuntimeError("real HTTP is blocked in tests; patch nessie._http or nessie._send")
 
-    monkeypatch.setattr(nessie.requests, "request", no_network)
+    monkeypatch.setattr(nessie, "_http", no_network)
     nessie.clear_cache()
     nessie.go_online()   # a test that simulated an outage must not leave the app "offline"
     nessie.reset()
