@@ -1,0 +1,195 @@
+"""Nessie HTTP client, offline: requests.request is faked. No network, no key needed."""
+import json
+
+import pytest
+import requests
+
+from core import nessie
+
+
+def _response(status, body):
+    r = requests.Response()
+    r.status_code = status
+    r._content = json.dumps(body).encode()
+    return r
+
+
+@pytest.fixture
+def fake(monkeypatch):
+    """Queue (status, body) tuples or exceptions; every call is recorded."""
+    calls, queue = [], []
+
+    def request(method, url, params=None, json=None, timeout=None):
+        calls.append({"method": method, "url": url, "params": params, "json": json, "timeout": timeout})
+        item = queue.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return _response(*item)
+
+    monkeypatch.setenv("NESSIE_API_KEY", "test-key")
+    monkeypatch.setattr(nessie.requests, "request", request)
+    monkeypatch.setattr(nessie.time, "sleep", lambda _: None)
+    return calls, queue
+
+
+# ---------- transport ----------
+
+def test_get_sends_key_and_timeout(fake):
+    calls, queue = fake
+    queue.append((200, {"_id": "a1", "balance": 100}))
+    assert nessie.get_account("a1") == {"_id": "a1", "balance": 100}
+    assert calls[0]["method"] == "GET"
+    assert calls[0]["url"] == "http://api.nessieisreal.com/accounts/a1"
+    assert calls[0]["params"] == {"key": "test-key"}
+    assert calls[0]["timeout"] == 10
+
+
+def test_get_retries_5xx_twice_then_succeeds(fake):
+    calls, queue = fake
+    queue += [(503, {}), (502, {}), (200, [])]
+    assert nessie.get_accounts("c1") == []
+    assert len(calls) == 3
+
+
+def test_get_gives_up_after_two_retries(fake):
+    calls, queue = fake
+    queue += [(500, {"m": 1}), (500, {"m": 2}), (500, {"m": 3})]
+    with pytest.raises(nessie.NessieError) as e:
+        nessie.get_customer("c1")
+    assert len(calls) == 3
+    assert e.value.status == 500 and e.value.body == {"m": 3}
+
+
+def test_get_retries_connection_errors(fake):
+    calls, queue = fake
+    queue += [requests.ConnectionError("down"), requests.ReadTimeout("slow"), (200, {"_id": "c1"})]
+    assert nessie.get_customer("c1") == {"_id": "c1"}
+    assert len(calls) == 3
+
+
+def test_post_retried_when_connection_failed(fake):
+    calls, queue = fake
+    queue += [requests.ConnectionError("down"), (201, {"objectCreated": {"_id": "d1"}})]
+    assert nessie.create_deposit("a1", 100, "2026-10-30", "[payroll]")["_id"] == "d1"
+    assert len(calls) == 2
+
+
+def test_post_not_retried_on_5xx(fake):
+    # The POST may have been applied before the 5xx; retrying could duplicate a transaction.
+    calls, queue = fake
+    queue.append((500, {"message": "boom"}))
+    with pytest.raises(nessie.NessieError):
+        nessie.create_deposit("a1", 100, "2026-10-30", "[payroll]")
+    assert len(calls) == 1
+
+
+def test_post_not_retried_after_read_timeout(fake):
+    calls, queue = fake
+    queue.append(requests.ReadTimeout("slow"))
+    with pytest.raises(requests.ReadTimeout):
+        nessie.create_deposit("a1", 100, "2026-10-30", "[payroll]")
+    assert len(calls) == 1
+
+
+def test_4xx_raises_with_status_and_body_no_retry(fake):
+    calls, queue = fake
+    queue.append((404, {"message": "Invalid ID"}))
+    with pytest.raises(nessie.NessieError) as e:
+        nessie.get_account("nope")
+    assert (e.value.status, e.value.body) == (404, {"message": "Invalid ID"})
+    assert len(calls) == 1
+
+
+def test_refuses_data_endpoint(fake):
+    calls, _ = fake
+    for path in ("/data", "/data/", "/data?type=Accounts"):
+        with pytest.raises(ValueError):
+            nessie.request("DELETE", path)
+    assert calls == []
+    assert not [n for n in dir(nessie) if "data" in n.lower() and callable(getattr(nessie, n))]
+
+
+def test_missing_key(monkeypatch):
+    monkeypatch.delenv("NESSIE_API_KEY", raising=False)
+    with pytest.raises(RuntimeError):
+        nessie.get_account("a1")
+
+
+# ---------- endpoints ----------
+
+def test_create_customer_unwraps_object_created(fake):
+    calls, queue = fake
+    queue.append((201, {"code": 201, "message": "Created customer", "objectCreated": {"_id": "c9"}}))
+    assert nessie.create_customer("Sam", "Rivera") == {"_id": "c9"}
+    assert calls[0]["url"].endswith("/customers")
+    assert calls[0]["json"]["first_name"] == "Sam" and "address" in calls[0]["json"]
+
+
+def test_create_account_body(fake):
+    calls, queue = fake
+    queue.append((201, {"objectCreated": {"_id": "a9"}}))
+    nessie.create_account("c9", "Savings", "FirstFund Investing", 3000)
+    assert calls[0]["url"].endswith("/customers/c9/accounts")
+    assert calls[0]["json"] == {"type": "Savings", "nickname": "FirstFund Investing", "rewards": 0, "balance": 3000}
+
+
+def test_transaction_bodies(fake):
+    calls, queue = fake
+    queue += [(201, {"objectCreated": {}})] * 4
+    nessie.create_deposit("a1", 1400, "2026-10-30", "[payroll]")
+    nessie.create_withdrawal("a1", 900, "2026-10-30", "[event] market drop")
+    nessie.create_purchase("a1", "m1", 600, "2026-10-30", "[event] car repair")
+    nessie.create_transfer("a1", "a2", 50, "2026-10-30", "[firstfund] payday")
+    dep, wd, pur, xfer = (c["json"] for c in calls)
+    assert dep == {"medium": "balance", "transaction_date": "2026-10-30", "amount": 1400, "description": "[payroll]"}
+    assert wd["transaction_date"] == "2026-10-30" and wd["amount"] == 900
+    assert pur["purchase_date"] == "2026-10-30" and pur["merchant_id"] == "m1" and "transaction_date" not in pur
+    assert xfer["payee_id"] == "a2"
+    assert [c["url"].rsplit("/", 1)[1] for c in calls] == ["deposits", "withdrawals", "purchases", "transfers"]
+
+
+def test_create_bill_and_merchant(fake):
+    calls, queue = fake
+    queue += [(201, {"objectCreated": {"_id": "b1"}}), (201, {"objectCreated": {"_id": "m1"}})]
+    assert nessie.create_bill("a1", "Landlord", "Rent", 1100, 3)["_id"] == "b1"
+    assert nessie.create_merchant("Mike's Auto", "auto")["_id"] == "m1"
+    assert calls[0]["json"]["recurring_date"] == 3 and calls[0]["json"]["status"] == "recurring"
+    assert calls[1]["url"].endswith("/merchants")
+
+
+def test_list_endpoints(fake):
+    calls, queue = fake
+    queue += [(200, [])] * 5
+    nessie.get_deposits("a1")
+    nessie.get_withdrawals("a1")
+    nessie.get_purchases("a1")
+    nessie.get_transfers("a1", role="payee")
+    nessie.get_bills("a1")
+    assert [c["url"].rsplit("/", 1)[1] for c in calls] == ["deposits", "withdrawals", "purchases", "transfers", "bills"]
+    assert calls[3]["params"] == {"key": "test-key", "type": "payee"}
+
+
+def test_delete_account(fake):
+    calls, queue = fake
+    queue.append((204, None))
+    assert nessie.delete_account("a1") is None
+    assert (calls[0]["method"], calls[0]["url"]) == ("DELETE", "http://api.nessieisreal.com/accounts/a1")
+
+
+# ---------- ledger balance ----------
+
+def test_account_balance_sums_only_our_tagged_transactions(fake):
+    _, queue = fake
+
+    def t(amount, description, status="pending"):
+        return {"amount": amount, "description": description, "status": status}
+
+    queue += [
+        (200, [t(1400, "[payroll]"), t(200, "[payroll-adj] raise"), t(999, "someone else's deposit")]),  # deposits
+        (200, [t(900, "[event] market drop"), t(5, "[event] old", status="cancelled")]),               # withdrawals
+        (200, [t(600, "[event] car repair"), t(40, "groceries")]),                                    # purchases
+        (200, [t(50, "[firstfund] payday")]),                                                         # transfers out
+        (200, [t(600, "[event] cover car repair")]),                                                  # transfers in
+    ]
+    # 1000 + 1400 + 200 - 900 - 600 - 50 + 600
+    assert nessie.account_balance("a1", 1000) == 1650
