@@ -8,9 +8,14 @@ Every paycheck invests itself, but never before rent is paid.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env          # add ANTHROPIC_API_KEY (optional: works offline without it)
+git config core.hooksPath scripts/git-hooks   # blocks commits containing .env or any key from it
 uvicorn app.main:app --reload
 pytest -q                     # readiness answer key
 ```
+
+**Bank side / Nessie:** how to plug in, demo vs. live mode, and the reset rule are in
+[`docs/TEAM_INTEGRATION.md`](docs/TEAM_INTEGRATION.md). Never commit `.env`: keys go there and in
+Render's Environment settings only.
 
 Open http://localhost:8000. With no API key, chat runs a scripted intake so the demo never dies on wifi.
 
@@ -65,7 +70,7 @@ Claude never generates numbers. Every number on screen is rendered by Jinja from
 
 1. Push this repo to GitHub (see Git steps below).
 2. In Render: **New → Blueprint**, connect the repo. Render reads `render.yaml` and creates the `firstfund` web service automatically (free plan, Python runtime, health check at `/health`).
-3. After the service is created, open it in the Render dashboard → **Environment** and fill in the `sync: false` secrets: `ANTHROPIC_API_KEY`, `NESSIE_API_KEY`, `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`. (`CLAUDE_MODEL` and `ALPACA_BASE_URL` already have values from `render.yaml`.)
+3. After the service is created, open it in the Render dashboard → **Environment** and fill in the `sync: false` secrets: `ANTHROPIC_API_KEY`, `NESSIE_API_KEY`, `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`. (`CLAUDE_MODEL` and `ALPACA_BASE_URL` already have values from `render.yaml`.) For real Nessie data also add `NESSIE_MODE=live`; without it the site runs on demo data.
 4. Trigger a deploy (push to the connected branch, or **Manual Deploy** in the dashboard).
 5. Visit the service URL once it's live to confirm `/` loads.
 
