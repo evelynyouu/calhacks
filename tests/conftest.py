@@ -18,6 +18,8 @@ def sandbox(monkeypatch, tmp_path):
 
     monkeypatch.setattr(nessie.requests, "request", no_network)
     nessie.clear_cache()
+    nessie.go_online()   # a test that simulated an outage must not leave the app "offline"
     nessie.reset()
     yield
+    nessie.go_online()
     nessie.reset()

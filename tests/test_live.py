@@ -159,9 +159,12 @@ def test_cache_fallback_when_nessie_errors(fake, monkeypatch):
         raise requests.ConnectionError("wifi")
 
     monkeypatch.setattr(nessie, "request", down)
-    assert get_profile("sam") == good
-    with pytest.raises(requests.ConnectionError):
-        get_profile("maria")   # never cached
+    assert get_profile("sam") == good                  # the last live numbers
+    assert nessie.offline_reason()
+    nessie.go_online()
+    start = in_mode(monkeypatch, "fixture", get_profile, "maria")
+    nessie.go_offline("test")
+    assert get_profile("maria") == start               # never seen live: starts from her starting numbers
 
 
 def test_unseeded_persona_is_keyerror(fake, monkeypatch):
@@ -223,12 +226,13 @@ def test_failed_reset_keeps_the_old_persona_and_cleans_up(fake, monkeypatch):
         return real(method, path, body, params)
 
     monkeypatch.setattr(nessie, "_send", flaky)
-    with pytest.raises(nessie.NessieError):
-        reset_persona("sam")
+    assert reset_persona("sam") == before               # a 5xx is an outage: the demo resets on demo data
+    assert nessie.offline_reason()
     monkeypatch.setattr(nessie, "_send", real)
-    assert nessie.load_ids()["sam"] == old             # still points at the working accounts
+    assert nessie.load_ids()["sam"] == old             # Nessie still points at the working accounts
     assert set(fake.accounts) == accounts_before        # half-made accounts were deleted
-    assert get_profile("sam") == before
+    nessie.go_online()
+    assert get_profile("sam") == before                 # and live Sam is untouched
 
 
 def test_live_survives_a_restart_that_wipes_local_state(fake, monkeypatch):
@@ -253,3 +257,63 @@ def test_clock_and_paycheck_are_read_from_nessie(fake):
     fast_forward_to_payday("sam")
     apply_life_event("sam", "raise")
     assert live_clock("sam") == (state.SIM_START + timedelta(days=1), 2250)
+
+
+# ---------- Nessie going down mid-demo ----------
+
+def _nessie_goes_down(monkeypatch):
+    def down(*a, **k):
+        raise requests.ConnectionError("venue wifi died")
+    monkeypatch.setattr(nessie, "_send", down)
+    nessie.clear_cache()
+
+
+def test_buttons_keep_working_when_nessie_goes_down(fake, monkeypatch):
+    fast_forward_to_payday("sam")                      # live, on Nessie
+    apply_life_event("sam", "raise")
+    shown = get_profile("sam")
+    _nessie_goes_down(monkeypatch)
+    assert get_profile("sam") == shown                 # last numbers on screen, no jump
+    assert nessie.offline_reason()                     # the app knows it's running on demo data now
+    after = apply_life_event("sam", "car_repair")      # a button press with Nessie down works
+    assert after.cash_cushion == shown.cash_cushion - 600
+    r = fast_forward_to_payday("sam")                  # and payday too
+    assert r.paycheck_detected == 2250
+    # it carries on exactly like demo mode would from the same numbers
+    for step in (lambda c: fast_forward_to_payday(c), lambda c: apply_life_event(c, "car_repair"),
+                 lambda c: apply_life_event(c, "raise")):
+        in_mode(monkeypatch, "fixture", step, "sam")
+    nessie.go_online()
+    in_mode(monkeypatch, "fixture", nessie.reset, "sam")
+
+
+def test_failure_on_first_click_falls_back_too(fake, monkeypatch):
+    before = get_profile("sam")
+    _nessie_goes_down(monkeypatch)
+    r = fast_forward_to_payday("sam")
+    assert (r.planned_amount, r.invested_amount) == (150, 50)   # the demo line still works offline
+    assert get_profile("sam").checking_balance == before.checking_balance - 35 + 2050
+    nessie.go_online()
+
+
+def test_bugs_in_our_requests_are_not_hidden(fake, monkeypatch):
+    def bad_request(*a, **k):
+        raise nessie.NessieError("POST", "/accounts/x/deposits", 400, "amount: field required")
+    get_profile("sam")
+    monkeypatch.setattr(nessie, "_send", bad_request)
+    nessie.clear_cache()
+    with pytest.raises(nessie.NessieError):
+        apply_life_event("sam", "raise")
+    assert not nessie.offline_reason()
+
+
+def test_app_buttons_answer_200_when_nessie_is_down(fake, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    c = TestClient(app)
+    assert c.get("/p/sam").status_code == 200
+    _nessie_goes_down(monkeypatch)
+    for event in ("payday", "car_repair", "raise", "market_drop"):
+        assert c.post(f"/p/sam/event/{event}").status_code == 200, event
+    assert c.get("/p/alex").status_code == 200        # other personas too
+    nessie.go_online()

@@ -275,7 +275,68 @@ def save_ids(ids: dict) -> None:
 
 
 def mode() -> str:
-    return os.environ.get("NESSIE_MODE", "fixture")
+    """"live" or "fixture". Live drops to fixture for the rest of the run if Nessie goes down."""
+    return "fixture" if _offline else os.environ.get("NESSIE_MODE", "fixture")
+
+
+# ---------- Nessie going down mid-demo ----------
+# On an outage (no connection, a timeout, or a 5xx from Nessie) the app switches to the in-memory
+# demo data for the rest of the run, starting from the last live numbers each persona showed, so
+# nothing on screen jumps and the button that hit the outage still completes. A 4xx is a bug in
+# our request and is raised, not hidden. Restart the server to go back to live Nessie.
+
+_offline: str | None = None
+_offline_lock = threading.Lock()
+
+
+def offline_reason() -> str | None:
+    """Why the app fell back to demo data, or None while it's live (or was always fixture)."""
+    return _offline
+
+
+def is_outage(e: BaseException) -> bool:
+    return isinstance(e, requests.RequestException) or (isinstance(e, NessieError) and e.status >= 500)
+
+
+def go_offline(reason: str) -> None:
+    global _offline
+    with _offline_lock:
+        if _offline:
+            return
+        from core import profile   # lazily: core.profile imports this module
+        for cid in _SEED:
+            snap = profile.cached_snapshot(cid)
+            _STATE[cid] = _state_from_snapshot(cid, *snap) if snap else copy.deepcopy(_SEED[cid])
+        _offline = reason
+
+
+def go_online() -> None:
+    global _offline
+    _offline = None
+
+
+def _state_from_snapshot(cid: str, p, as_of) -> dict:
+    """Fixture state that continues from a live profile (what the screen last showed)."""
+    c = copy.deepcopy(_SEED[cid])
+    c.update(monthly_income=p.monthly_income, monthly_bills=p.monthly_bills, monthly_spending=p.monthly_spending,
+             checking_balance=p.checking_balance, cash_cushion=p.cash_cushion, card_debt=p.card_debt,
+             card_apr=p.card_apr, invested_balance=p.invested_balance, paycheck_amount=p.paycheck_amount,
+             days_to_payday=p.days_to_payday, as_of=as_of.isoformat(),
+             upcoming_bills=[{"name": b.name, "amount": b.amount, "due_in_days": b.due_in_days}
+                             for b in p.upcoming_bills])
+    return c
+
+
+def _try_live(name: str, *args):
+    """(True, result) from the live implementation, or (False, None) after an outage so the
+    caller runs the fixture path instead."""
+    try:
+        return True, getattr(_live(), name)(*args)
+    except Exception as e:
+        if not is_outage(e):
+            raise
+        go_offline(f"{type(e).__name__}: {e}")
+        return False, None
 
 
 # ---------- demo stub (in-memory; what the web layer calls today) ----------
@@ -325,7 +386,9 @@ def get_customer_raw(customer_id: str) -> dict:
 def reset(customer_id: str | None = None) -> None:
     """Back to the starting numbers. Live mode re-seeds the persona's Nessie accounts."""
     if mode() == LIVE:
-        return _live().reset(customer_id)
+        done, value = _try_live("reset", customer_id)
+        if done:
+            return value
     if customer_id is None:
         _STATE.clear()
         _STATE.update(copy.deepcopy(_SEED))
@@ -336,7 +399,9 @@ def reset(customer_id: str | None = None) -> None:
 def transfer_to_investing(customer_id: str, amount: float) -> str:
     """Checking -> Investing account. Returns a transfer id."""
     if mode() == LIVE:
-        return _live().transfer_to_investing(customer_id, amount)
+        done, value = _try_live("transfer_to_investing", customer_id, amount)
+        if done:
+            return value
     c = _STATE[customer_id]
     c["checking_balance"] = round(c["checking_balance"] - amount, 2)
     c["invested_balance"] = round(c["invested_balance"] + amount, 2)
@@ -345,7 +410,9 @@ def transfer_to_investing(customer_id: str, amount: float) -> str:
 
 def deposit_paycheck(customer_id: str) -> float:
     if mode() == LIVE:
-        return _live().deposit_paycheck(customer_id)
+        done, value = _try_live("deposit_paycheck", customer_id)
+        if done:
+            return value
     c = _STATE[customer_id]
     c["checking_balance"] = round(c["checking_balance"] + c["paycheck_amount"], 2)
     c["days_to_payday"] = 14
@@ -355,7 +422,9 @@ def deposit_paycheck(customer_id: str) -> float:
 def advance_days(customer_id: str, days: int) -> None:
     """Move the demo clock forward: day-to-day spending and bills that come due leave checking."""
     if mode() == LIVE:
-        return _live().advance_days(customer_id, days)
+        done, value = _try_live("advance_days", customer_id, days)
+        if done:
+            return value
     c = _STATE[customer_id]
     start = date.fromisoformat(c["as_of"])
     end = start + timedelta(days=days)
@@ -374,7 +443,9 @@ def record_purchase(customer_id: str, name: str, amount: float) -> None:
     """Life event, e.g. 'Unexpected $600 car repair'. Savings covers it; anything savings
     can't cover goes on the credit card. Checking (earmarked for bills) is left alone."""
     if mode() == LIVE:
-        return _live().record_purchase(customer_id, name, amount)
+        done, value = _try_live("record_purchase", customer_id, name, amount)
+        if done:
+            return value
     c = _STATE[customer_id]
     amount = whole(amount)
     from_savings = whole(min(amount, max(0.0, c["cash_cushion"])))
@@ -386,7 +457,9 @@ def raise_paycheck(customer_id: str, amount: float) -> None:
     """Paychecks go up by `amount` from now on, and the first raise lands in checking now."""
     amount = whole(amount)
     if mode() == LIVE:
-        return _live().raise_paycheck(customer_id, amount)
+        done, value = _try_live("raise_paycheck", customer_id, amount)
+        if done:
+            return value
     c = _STATE[customer_id]
     c["paycheck_amount"] = round(c["paycheck_amount"] + amount, 2)
     c["monthly_income"] = round(c["monthly_income"] + 2 * amount, 2)   # two paychecks a month
@@ -394,13 +467,17 @@ def raise_paycheck(customer_id: str, amount: float) -> None:
 
 
 def apply_raise(customer_id: str, pct: float) -> None:
-    paycheck = _live().current_paycheck(customer_id) if mode() == LIVE else _STATE[customer_id]["paycheck_amount"]
+    done, paycheck = _try_live("current_paycheck", customer_id) if mode() == LIVE else (False, None)
+    if not done:
+        paycheck = _STATE[customer_id]["paycheck_amount"]
     raise_paycheck(customer_id, round(paycheck * pct / 100, 2))
 
 
 def apply_market_move(customer_id: str, pct: float) -> None:
     if mode() == LIVE:
-        return _live().apply_market_move(customer_id, pct)
+        done, value = _try_live("apply_market_move", customer_id, pct)
+        if done:
+            return value
     c = _STATE[customer_id]
     change = whole(c["invested_balance"] * pct / 100)
     c["invested_balance"] = round(c["invested_balance"] + change, 2)

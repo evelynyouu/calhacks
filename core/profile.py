@@ -57,12 +57,13 @@ def _live_profile(customer_id: str) -> FinancialProfile:
         raise KeyError(customer_id)   # not seeded (the app shows 404)
     try:
         p = derive_live(customer_id, ids)
-    except (nessie.NessieError, requests.RequestException):
-        cached = load_cached(customer_id)
-        if cached is None:
+        as_of, _ = live_clock(customer_id, ids)
+    except (nessie.NessieError, requests.RequestException) as e:
+        if not nessie.is_outage(e):
             raise
-        return cached
-    _save_cache(p)
+        nessie.go_offline(f"{type(e).__name__}: {e}")   # continues from the cached live numbers
+        return get_profile(customer_id)
+    _save_cache(p, as_of)
     return p
 
 
@@ -148,18 +149,28 @@ def derive_live(customer_id: str, ids: dict) -> FinancialProfile:
     )
 
 
-def _save_cache(p: FinancialProfile) -> None:
+def _save_cache(p: FinancialProfile, as_of: date) -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    (CACHE_DIR / f"{p.customer_id}.json").write_text(json.dumps(to_dict(p), indent=2))
+    path = CACHE_DIR / f"{p.customer_id}.json"
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps({**to_dict(p), "_as_of": as_of.isoformat()}, indent=2))
+    tmp.replace(path)   # atomic, so a fallback read never sees half a file
+
+
+def cached_snapshot(customer_id: str) -> tuple[FinancialProfile, date] | None:
+    """The last good live profile and its sim date, or None."""
+    try:
+        d = json.loads((CACHE_DIR / f"{customer_id}.json").read_text())
+    except (FileNotFoundError, ValueError):
+        return None
+    as_of = date.fromisoformat(d.pop("_as_of", state.SIM_START.isoformat()))
+    d["upcoming_bills"] = [Bill(**b) for b in d["upcoming_bills"]]
+    return FinancialProfile(**d), as_of
 
 
 def load_cached(customer_id: str) -> FinancialProfile | None:
-    try:
-        d = json.loads((CACHE_DIR / f"{customer_id}.json").read_text())
-    except FileNotFoundError:
-        return None
-    d["upcoming_bills"] = [Bill(**b) for b in d["upcoming_bills"]]
-    return FinancialProfile(**d)
+    snap = cached_snapshot(customer_id)
+    return snap[0] if snap else None
 
 
 # ---------- live vs fixture ----------
