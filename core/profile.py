@@ -72,7 +72,6 @@ def _date(txn: dict, key: str = "transaction_date") -> date:
 def _prefetch(acct: dict) -> None:
     """Fetch every list the profile reads in parallel; the reads below then hit the GET cache."""
     calls = [(fn, a, {}) for a in acct.values() for fn in (nessie.get_deposits, nessie.get_withdrawals, nessie.get_purchases)]
-    calls += [(nessie.get_transfers, a, {"role": role}) for a in acct.values() for role in ("payer", "payee")]
     calls.append((nessie.get_bills, acct["checking"], {}))
     with ThreadPoolExecutor(max_workers=8) as pool:
         for future in [pool.submit(fn, a, **kw) for fn, a, kw in calls]:

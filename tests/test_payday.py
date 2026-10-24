@@ -103,3 +103,18 @@ def test_rounds_down_to_five():
 def test_days_to_payday_must_be_positive():
     with pytest.raises(ValueError):
         safety_check(1000, 100, 0, [], 0)
+
+
+def test_planned_and_invested_are_whole_five_dollar_steps(monkeypatch):
+    """Readiness can produce a planned amount like $189.50; Nessie only moves whole dollars."""
+    import core.payday as payday_mod
+    real = payday_mod.check_readiness
+
+    def odd_amount(p):
+        r = real(p)
+        r.safe_monthly_amount = 379.0   # -> $189.50 a paycheck before rounding
+        return r
+
+    monkeypatch.setattr(payday_mod, "check_readiness", odd_amount)
+    r = payday("alex", build_portfolio(2, []))   # Alex has room to invest the full planned amount
+    assert (r.planned_amount, r.invested_amount) == (185, 185)

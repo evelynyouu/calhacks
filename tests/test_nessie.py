@@ -136,27 +136,32 @@ def test_create_account_body(fake):
 
 
 def test_transaction_bodies(fake):
+    """The exact shapes the real API accepted (measured 2026-10-24)."""
     calls, queue = fake
-    queue += [(201, {"objectCreated": {}})] * 4
+    queue += [(201, {"objectCreated": {"_id": f"t{i}"}}) for i in range(5)]
     nessie.create_deposit("a1", 1400, "2026-10-30", "[payroll]")
     nessie.create_withdrawal("a1", 900, "2026-10-30", "[event] market drop")
     nessie.create_purchase("a1", "m1", 600, "2026-10-30", "[event] car repair")
-    nessie.create_transfer("a1", "a2", 50, "2026-10-30", "[firstfund] payday")
-    dep, wd, pur, xfer = (c["json"] for c in calls)
-    assert dep == {"medium": "balance", "transaction_date": "2026-10-30", "amount": 1400, "description": "[payroll]"}
-    assert wd["transaction_date"] == "2026-10-30" and wd["amount"] == 900
-    assert pur["transaction_date"] == "2026-10-30" and pur["merchant_id"] == "m1"   # per Nessie's docs
-    assert all(isinstance(c["json"]["amount"], int) for c in calls)
-    assert xfer["payee_id"] == "a2"
-    assert [c["url"].rsplit("/", 1)[1] for c in calls] == ["deposits", "withdrawals", "purchases", "transfers"]
+    moved = nessie.create_transfer("a1", "a2", 50, "2026-10-30", "[firstfund] payday")
+    dep, wd, pur, move_out, move_in = (c["json"] for c in calls)
+    assert dep == {"medium": "balance", "transaction_date": "2026-10-30", "status": "completed", "amount": 1400,
+                   "description": "[payroll]"}
+    assert wd == dict(dep, amount=900, description="[event] market drop")
+    assert pur == {"medium": "balance", "purchase_date": "2026-10-30", "status": "completed", "amount": 600,
+                   "description": "[event] car repair", "merchant_id": "m1"}
+    # a move is a withdrawal from one account and a deposit to the other (Nessie transfers have no destination)
+    assert [c["url"].rsplit("/accounts/", 1)[1] for c in calls[3:]] == ["a1/withdrawals", "a2/deposits"]
+    assert move_out == move_in == dict(dep, amount=50, description="[firstfund] payday")
+    assert moved == {"_id": "t4"}
 
 
 def test_create_bill_and_merchant(fake):
     calls, queue = fake
     queue += [(201, {"objectCreated": {"_id": "b1"}}), (201, {"objectCreated": {"_id": "m1"}})]
-    assert nessie.create_bill("a1", "Landlord", "Rent", 1100, 3)["_id"] == "b1"
+    assert nessie.create_bill("a1", "Landlord", "Rent", 1100, 3, "2026-11-03")["_id"] == "b1"
     assert nessie.create_merchant("Mike's Auto", "auto")["_id"] == "m1"
     assert calls[0]["json"]["recurring_date"] == 3 and calls[0]["json"]["status"] == "recurring"
+    assert calls[0]["json"]["payment_date"] == "2026-11-03"   # without it, reading bills back fails
     assert calls[1]["url"].endswith("/merchants")
 
 
@@ -166,10 +171,9 @@ def test_list_endpoints(fake):
     nessie.get_deposits("a1")
     nessie.get_withdrawals("a1")
     nessie.get_purchases("a1")
-    nessie.get_transfers("a1", role="payee")
+    nessie.get_transfers("a1")
     nessie.get_bills("a1")
     assert [c["url"].rsplit("/", 1)[1] for c in calls] == ["deposits", "withdrawals", "purchases", "transfers", "bills"]
-    assert calls[3]["params"] == {"key": "test-key", "type": "payee"}
 
 
 def test_delete_account(fake):
@@ -191,11 +195,9 @@ def test_account_balance_sums_only_our_tagged_transactions(fake):
         (200, [t(1400, "[payroll]"), t(200, "[payroll-adj] raise"), t(999, "someone else's deposit")]),  # deposits
         (200, [t(900, "[event] market drop"), t(5, "[event] old", status="cancelled")]),               # withdrawals
         (200, [t(600, "[event] car repair"), t(40, "groceries")]),                                    # purchases
-        (200, [t(50, "[firstfund] payday")]),                                                         # transfers out
-        (200, [t(600, "[event] cover car repair")]),                                                  # transfers in
     ]
-    # 1000 + 1400 + 200 - 900 - 600 - 50 + 600
-    assert nessie.account_balance("a1", 1000) == 1650
+    # 1000 + 1400 + 200 - 900 - 600; transfers aren't read (moves are withdrawal + deposit pairs)
+    assert nessie.account_balance("a1", 1000) == 1100
 
 
 # ---------- GET cache ----------
@@ -244,9 +246,9 @@ def test_get_in_flight_during_a_write_is_not_cached(monkeypatch):
     assert nessie.get_deposits("a1") == [1, 2]       # the next read must not get the stale [1]
 
 
-def test_transfer_direction_is_checked_even_if_nessie_ignores_the_filter(fake):
+def test_empty_transfer_list_404_means_no_transfers(fake):
     _, queue = fake
-    both = [{"payer_id": "a1", "payee_id": "a2", "amount": 50}, {"payer_id": "a2", "payee_id": "a1", "amount": 600}]
-    queue += [(200, both), (200, both)]   # server returns both directions for either ?type=
-    assert [t["amount"] for t in nessie.get_transfers("a1", role="payer")] == [50]
-    assert [t["amount"] for t in nessie.get_transfers("a1", role="payee")] == [600]
+    queue += [(404, "No transfers found for this account")] + [(500, {"message": "boom"})] * 3   # 5xx GETs retry twice
+    assert nessie.get_transfers("a1") == []
+    with pytest.raises(nessie.NessieError):
+        nessie.get_transfers("a1")   # other errors still raise
