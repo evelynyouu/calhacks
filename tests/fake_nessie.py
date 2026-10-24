@@ -1,7 +1,9 @@
-"""In-memory stand-in for the Nessie API, swapped in for core.nessie.request in tests.
+"""In-memory stand-in for the Nessie API, swapped in for core.nessie._send in tests.
 
-Implements the endpoints core/nessie.py uses, with Nessie's response shapes
-(objectCreated on POST, lists on GET, ?type=payer|payee on transfers).
+It enforces the schema measured against the real API on 2026-10-24 (scripts/nessie_spike.py
+plus field probes): which fields each write requires and forbids, whole-dollar amounts, and
+the read-side quirks (an empty transfer list is a 404; a purchase without `status` or a bill
+without `payment_date` makes the whole list fail to read).
 """
 from __future__ import annotations
 
@@ -11,6 +13,15 @@ import re
 from core import nessie
 
 TXN_KINDS = ("deposits", "withdrawals", "purchases", "transfers", "bills")
+
+# kind: (required fields, optional fields); anything else is "extra fields not permitted"
+SCHEMA = {
+    "deposits": ({"medium", "transaction_date", "status", "amount", "description"}, set()),
+    "withdrawals": ({"medium", "amount"}, {"transaction_date", "status", "description"}),
+    "purchases": ({"merchant_id", "medium", "amount"}, {"purchase_date", "status", "description"}),
+    "transfers": ({"transaction_date", "status", "amount", "description"}, set()),
+    "bills": ({"status", "payee", "payment_amount"}, {"nickname", "recurring_date", "payment_date"}),
+}
 
 
 class FakeNessie:
@@ -25,6 +36,16 @@ class FakeNessie:
     def _new(self, prefix: str) -> str:
         return f"{prefix}{next(self._ids)}"
 
+    @staticmethod
+    def _validate(method, path, kind, body):
+        required, optional = SCHEMA[kind]
+        errors = [f"{f}: field required" for f in sorted(required - set(body))]
+        errors += [f"{f}: extra fields not permitted" for f in sorted(set(body) - required - optional)]
+        if kind != "bills" and "amount" in body and not isinstance(body["amount"], int):
+            errors.append(f"amount: value is not a valid integer ({body['amount']!r})")
+        if errors:
+            raise nessie.NessieError(method, path, 400, " | ".join(errors))
+
     def request(self, method, path, body=None, params=None):
         self.calls.append((method, path, body, params))
         if path.split("?")[0].rstrip("/") == "/data":
@@ -34,9 +55,14 @@ class FakeNessie:
             self.customers[cid] = {"_id": cid, **body}
             return {"code": 201, "objectCreated": self.customers[cid]}
         if method == "POST" and path == "/merchants":
+            if "name" not in body:
+                raise nessie.NessieError(method, path, 400, "name: field required")
             mid = self._new("merch")
             self.merchants[mid] = {"_id": mid, **body}
             return {"code": 201, "objectCreated": self.merchants[mid]}
+
+        if method == "GET" and path == "/accounts":
+            return list(self.accounts.values())
 
         m = re.fullmatch(r"/customers/([^/]+)(/accounts)?", path)
         if m:
@@ -54,37 +80,31 @@ class FakeNessie:
         m = re.fullmatch(r"/accounts/([^/]+)(?:/([a-z]+))?", path)
         if m:
             aid, kind = m.groups()
+            if kind is None and method == "DELETE":
+                self.accounts.pop(aid, None)   # real Nessie answers 200 even if it's already gone
+                for store in self.txns.values():
+                    for tid in [t for t, r in store.items() if r["account_id"] == aid]:
+                        del store[tid]
+                return None
             if aid not in self.accounts:
                 raise nessie.NessieError(method, path, 404, {"message": "Invalid ID"})
             if kind is None:
-                if method == "DELETE":
-                    del self.accounts[aid]
-                    for store in self.txns.values():
-                        for tid in [t for t, r in store.items() if aid in (r["account_id"], r.get("payee_id"))]:
-                            del store[tid]
-                    return None
                 return self.accounts[aid]
             store = self.txns[kind]
             if method == "POST":
-                # Nessie's documented schema: amounts are integers (whole dollars) and every
-                # transaction, purchases included, is dated with transaction_date.
-                if kind != "bills":
-                    if not isinstance(body.get("amount"), int):
-                        raise nessie.NessieError(method, path, 400, {"message": f"amount must be an integer: {body.get('amount')!r}"})
-                    if "transaction_date" not in body:
-                        raise nessie.NessieError(method, path, 400, {"message": "transaction_date is required"})
+                self._validate(method, path, kind, body)
                 tid = self._new(kind[:3])
-                store[tid] = {"_id": tid, "account_id": aid, "status": "pending", **body}
-                if kind == "transfers":
-                    store[tid]["payer_id"] = aid
+                store[tid] = {"_id": tid, "account_id": aid, **body}
+                if kind == "withdrawals":
+                    store[tid].update(type="withdrawal", payer_id=aid)
                 return {"code": 201, "objectCreated": store[tid]}
-            if kind == "transfers":
-                role = (params or {}).get("type")
-                if role == "payer":
-                    return [r for r in store.values() if r["payer_id"] == aid]
-                if role == "payee":
-                    return [r for r in store.values() if r["payee_id"] == aid]
-                return [r for r in store.values() if aid in (r["payer_id"], r["payee_id"])]
-            return [r for r in store.values() if r["account_id"] == aid]
+            items = [r for r in store.values() if r["account_id"] == aid]
+            if kind == "transfers" and not items:
+                raise nessie.NessieError(method, path, 404, "No transfers found for this account")
+            if kind == "purchases" and any("status" not in r for r in items):
+                raise nessie.NessieError(method, path, 400, "1 validation error for Purchase: status field required")
+            if kind == "bills" and any("payment_date" not in r for r in items):
+                raise nessie.NessieError(method, path, 400, "1 validation error for Bill: payment_date field required")
+            return items
 
         raise AssertionError(f"FakeNessie: unhandled {method} {path}")

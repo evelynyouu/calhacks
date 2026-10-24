@@ -116,6 +116,9 @@ def _scripted_turn(session: Session, user_text: str) -> tuple[str, set[str]]:
             return r["headline"] + ". " + " ".join(r["reasons"]), events
         return f"{r['headline']}. Let's build your fund. {_QUESTIONS[0][1]}", events
 
+    if step > len(_QUESTIONS):   # intake done and the fund is built; more chat must not index past the list
+        return "Your fund is built. Try Fast-forward to payday or the crash test.", events
+
     key = _QUESTIONS[step - 1][0]
     session.intake[key] = _parse(key, user_text)
     if step < len(_QUESTIONS):

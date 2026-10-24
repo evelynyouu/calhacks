@@ -7,13 +7,18 @@ that fell due in that window; and one [seed] transfer that moves the leftover to
 Opening balances are solved so the balances on SIM_START equal the persona's numbers.
 
 Idempotent: ids go to data/nessie_ids.json and personas already there are skipped.
-reset_persona deletes only that persona's accounts (by stored id), never anything else.
+Each persona also gets a pre-built spare copy (ids["_spares"]), so the app's reset button just
+swaps the spare in; the old accounts are deleted and the next spare built in the background.
+Deletes only touch accounts whose ids we stored, never anything else.
 """
 from __future__ import annotations
 
 import contextlib
 import itertools
 import json
+import threading
+import time
+import traceback
 from datetime import date, timedelta
 
 from core import nessie, state
@@ -102,7 +107,8 @@ def _write_history(plan: dict, acct: dict, merchants: dict) -> None:
     p = plan["persona"]
     chk = acct["checking"]
     for b in plan["bills"]:
-        nessie.create_bill(chk, b["name"], b["name"], b["amount"], b["recurring_date"])
+        nessie.create_bill(chk, b["name"], b["name"], b["amount"], b["recurring_date"],
+                           next_due(b["recurring_date"], SIM_START).isoformat())
     for d in plan["paydays"]:
         nessie.create_deposit(chk, p["paycheck_amount"], d.isoformat(), "[payroll] paycheck")
     for x in plan["purchases"]:
@@ -126,36 +132,127 @@ def _delete_accounts(account_ids) -> None:
                 raise
 
 
-def seed(personas: list[str] | None = None, reset: str | None = None, save: bool = True) -> dict:
+# The ids file is updated from the request thread and from background rebuilds; every
+# read-modify-write goes through this lock so neither overwrites the other.
+_ids_lock = nessie.IDS_LOCK
+_background: list[threading.Thread] = []
+PAUSE_BACKGROUND = False   # tests set this to look at the fast path before the rebuild runs
+
+
+def _update_ids(change, save: bool = True) -> dict:
+    """Saved ids also go to the Nessie registry, so another server (or this one after its disk is
+    wiped) finds the current accounts. "_seq" orders the copies; the newest wins."""
+    if save:
+        nessie.pull_ids()   # in any mode: a seeder run on an old file mustn't publish it over a newer reset
+    with _ids_lock:
+        ids = nessie.load_ids()
+        before = json.dumps(ids, sort_keys=True)
+        change(ids)
+        save = save and json.dumps(ids, sort_keys=True) != before   # nothing changed: nothing to write
+        if save:
+            ids["_seq"] = max(time.time_ns(), ids.get("_seq", 0) + 1)
+            nessie.save_ids(ids)
+        snapshot = json.loads(json.dumps(ids))
+    if save:
+        nessie.publish_ids(snapshot)   # outside the lock: a slow Nessie mustn't hold up a reset click
+    return ids
+
+
+def seed(personas: list[str] | None = None, reset: str | None = None, save: bool = True,
+         spares: bool = True) -> dict:
     """Seeds every persona in `personas` (default: all) that isn't in the ids file yet.
     `reset` is always (re)created: its new accounts are built first, and only once that succeeds
-    are its old accounts deleted, so a failed reset leaves the old persona working."""
-    ids = nessie.load_ids()
-    merchants = ensure_merchants(ids)
-    if save:
-        nessie.save_ids(ids)
+    are its old accounts deleted, so a failed reset leaves the old persona working.
+    With `spares`, each persona also gets a pre-built spare copy for the fast reset."""
+    merchants = {}
+    _update_ids(lambda ids: merchants.update(ensure_merchants(ids)), save)
     todo = list(personas or nessie._SEED)
     if reset and reset not in todo:
         todo.append(reset)
     for cid in todo:
-        if cid in ids and cid != reset:
+        if cid in nessie.load_ids() and cid != reset:
             print(f"{cid}: already seeded, skipping (use --reset {cid} to recreate)")
             continue
         entry = seed_persona(cid, merchants)
-        old = ids.get(cid)
-        ids[cid] = entry
-        if save:
-            nessie.save_ids(ids)   # after each persona, so a failure midway keeps what was made
-        if old:
-            _delete_accounts(old["accounts"].values())
+        old = []
+        _update_ids(lambda ids: (old.append(ids.get(cid)), ids.__setitem__(cid, entry)), save)
+        if old[0]:
+            _delete_accounts(old[0]["accounts"].values())
             if save:
                 state.clear(cid)
-        print(f"{cid}: {'re-seeded' if old else 'seeded'} customer {entry['customer_id']}")
-    return ids
+        print(f"{cid}: {'re-seeded' if old[0] else 'seeded'} customer {entry['customer_id']}")
+    if save and spares:
+        ensure_spares(todo, merchants)
+    return nessie.load_ids()
+
+
+_building: set = set()   # personas whose spare is being built right now (guarded by _ids_lock)
+
+
+def ensure_spares(personas, merchants: dict | None = None) -> None:
+    """Builds a spare copy of each persona that doesn't have one yet. Two rebuilds racing (two quick
+    resets) build one spare, not two with one left orphaned in Nessie."""
+    merchants = merchants or nessie.load_ids()["_merchants"]
+    for cid in personas:
+        with _ids_lock:
+            if cid in _building or cid in nessie.load_ids().get("_spares", {}):
+                continue
+            _building.add(cid)
+        try:
+            entry = seed_persona(cid, merchants)
+            _update_ids(lambda ids: ids.setdefault("_spares", {}).__setitem__(cid, entry))
+            print(f"{cid}: spare ready (customer {entry['customer_id']})")
+        finally:
+            with _ids_lock:
+                _building.discard(cid)
 
 
 def reset_persona(cid: str) -> None:
-    seed([cid], reset=cid)
+    """The app's reset button. Swaps in the pre-built spare (no Nessie writes on the click), then
+    deletes the old accounts and builds the next spare in the background. Without a spare (two
+    resets in a row) it rebuilds the persona the slow way."""
+    taken = []
+
+    def swap(ids):
+        spare = ids.get("_spares", {}).pop(cid, None)
+        if spare:
+            taken.extend([ids.get(cid), spare])
+            ids[cid] = spare
+
+    _update_ids(swap)
+    if taken:
+        old, _ = taken
+        state.clear(cid)
+        print(f"{cid}: reset to its spare copy")
+        _in_background(_retire_and_rebuild, cid, old)
+        return
+    seed([cid], reset=cid, spares=False)
+    _in_background(ensure_spares, [cid])
+
+
+def _retire_and_rebuild(cid: str, old: dict | None) -> None:
+    if old:
+        _delete_accounts(old["accounts"].values())
+    ensure_spares([cid])
+
+
+def _in_background(fn, *args) -> None:
+    def run():
+        while PAUSE_BACKGROUND:
+            time.sleep(0.01)
+        try:
+            fn(*args)
+        except Exception:   # a failed rebuild must not take the app down; the next reset just goes slow
+            traceback.print_exc()
+
+    t = threading.Thread(target=run, name=f"seed-{fn.__name__}", daemon=True)
+    _background.append(t)
+    t.start()
+
+
+def wait_for_background() -> None:
+    while _background:
+        _background.pop(0).join()
 
 
 @contextlib.contextmanager

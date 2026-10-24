@@ -1,6 +1,15 @@
 <section id="money" class="card">
   <div class="flex flex-wrap items-center justify-between gap-3">
-    <p class="eyebrow">Your money · live from the bank</p>
+    <div class="flex items-center gap-2">
+      <p class="eyebrow">Your money</p>
+      {% if nessie_offline %}
+      <span class="rounded-full bg-sun-100 px-2 py-0.5 text-xs font-medium text-ink/80" title="{{ nessie_offline }}">Nessie offline: demo data</span>
+      {% elif nessie_mode == 'live' %}
+      <span class="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">Live: Capital One Nessie</span>
+      {% else %}
+      <span class="rounded-full bg-ink/5 px-2 py-0.5 text-xs text-ink/60">Demo data</span>
+      {% endif %}
+    </div>
     <div class="flex flex-wrap gap-2">
       {% for key, label in [('payday', 'Fast-forward to payday'), ('car_repair', '$600 car repair'), ('raise', 'Got a raise'), ('market_drop', 'Market drops 30%')] %}
       <button class="{% if key == 'payday' %}btn{% else %}btn-ghost{% endif %}"
@@ -24,6 +33,17 @@
         <li class="py-1.5 flex justify-between"><span>{{ b.name }}</span><span class="tabular-nums">{{ b.amount | money }} · {{ b.due_in_days }}d</span></li>
         {% endfor %}
       </ul>
+      {% if activity %}
+      <p class="text-sm font-medium mt-4 mb-1">Bank activity</p>
+      <ul class="text-xs space-y-0.5">
+        {% for a in activity[:6] %}
+        <li class="flex justify-between gap-2">
+          <span class="text-ink/60">{{ a.on[5:] }} · <code>[{{ a.tag }}]</code> {{ a.text }}{% if a.to %} ({{ a.account }} → {{ a.to }}){% endif %}</span>
+          <span class="tabular-nums">{% if a.flow == 'in' %}+{% elif a.flow == 'out' %}−{% endif %}{{ a.amount | money }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
       {% if s.events %}
       <p class="text-sm font-medium mt-4 mb-1">Recent events</p>
       <ul class="text-xs text-ink/60 space-y-0.5">{% for e in s.events[:4] %}<li>{{ e }}</li>{% endfor %}</ul>
@@ -34,6 +54,32 @@
       {% set pd = s.last_payday %}
       {% if pd %}
       <p class="text-sm font-medium mb-2">Payday: invested {{ pd.invested_amount | money }} of {{ pd.planned_amount | money }} planned</p>
+      {% set bd = pd.breakdown %}
+      {% if bd %}
+      <figure class="mb-3" aria-label="How the {{ bd.cash | money }} in checking on payday is split">
+        <div class="flex h-3 w-full gap-0.5 overflow-hidden rounded bg-ink/5">
+          {% for seg in bd.segments if seg.amount > 0 %}
+          <div class="h-full first:rounded-l last:rounded-r" style="width: {{ '%.2f' % seg.pct }}%; background: {{ seg.color }}"
+               title="{{ seg.tip }}: {{ seg.amount | money }}"></div>
+          {% endfor %}
+        </div>
+        <dl class="mt-2 grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
+          {% for seg in bd.segments %}
+          <div class="flex items-center justify-between gap-2">
+            <dt class="flex items-center gap-1.5 text-ink/60"><span class="inline-block h-2 w-2 rounded-sm" style="background: {{ seg.color }}"></span>{{ seg.label }}</dt>
+            <dd class="tabular-nums">{{ seg.amount | money }}</dd>
+          </div>
+          {% endfor %}
+          {% if bd.left %}
+          <div class="flex items-center justify-between gap-2">
+            <dt class="flex items-center gap-1.5 text-ink/60"><span class="inline-block h-2 w-2 rounded-sm border border-ink/30"></span>Left in checking</dt>
+            <dd class="tabular-nums">{{ bd.left | money }}</dd>
+          </div>
+          {% endif %}
+        </dl>
+        {% if bd.short %}<figcaption class="mt-1 text-xs text-ink/70">Checking is {{ bd.short | money }} short of bills, spending and the buffer, so nothing was invested.</figcaption>{% endif %}
+      </figure>
+      {% endif %}
       {% if s.last_payday_explanation != pd.reasons | join(' ') %}<p class="text-sm">{{ s.last_payday_explanation }}</p>{% endif %}
       <ul class="mt-2 text-xs text-ink/60 space-y-0.5">{% for r in pd.reasons %}<li>• {{ r }}</li>{% endfor %}</ul>
       {% if pd.transfer_id %}<p class="mt-2 text-xs">Nessie transfer <code>{{ pd.transfer_id }}</code></p>{% endif %}

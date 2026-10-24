@@ -1,7 +1,8 @@
 """Raw Nessie data -> FinancialProfile.  OWNER: Evelyn.
 
 NESSIE_MODE=fixture (default): reads the in-memory personas (core/nessie.py stub). No network.
-NESSIE_MODE=live: derives the profile from Nessie using the ids in data/nessie_ids.json. The last
+NESSIE_MODE=live: derives the profile from Nessie using the ids in data/nessie_ids.json (kept in step
+with the copy in Nessie's registry account, see nessie.pull_ids). The last
 good live profile is cached in data/cache/{persona}.json and served if Nessie errors.
 
     python -m core.profile [persona ...]          # print profiles in the current mode
@@ -10,7 +11,9 @@ good live profile is cached in data/cache/{persona}.json and served if Nessie er
 from __future__ import annotations
 
 import json
+import re
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from pathlib import Path
@@ -44,8 +47,13 @@ def get_profile(customer_id: str) -> FinancialProfile:
         invested_balance=c["invested_balance"],
         paycheck_amount=c["paycheck_amount"],
         days_to_payday=c["days_to_payday"],
-        upcoming_bills=[Bill(**b) for b in c["upcoming_bills"]],
+        upcoming_bills=_by_due_date([Bill(**b) for b in c["upcoming_bills"]]),
     )
+
+
+def _by_due_date(bills: list[Bill]) -> list[Bill]:
+    """Soonest first, in both modes (Nessie doesn't return bills in a stable order)."""
+    return sorted(bills, key=lambda b: (b.due_in_days, b.name))
 
 
 # ---------- live ----------
@@ -55,13 +63,28 @@ def _live_profile(customer_id: str) -> FinancialProfile:
     if ids is None:
         raise KeyError(customer_id)   # not seeded (the app shows 404)
     try:
-        p = derive_live(customer_id, ids)
-    except (nessie.NessieError, requests.RequestException):
-        cached = load_cached(customer_id)
-        if cached is None:
+        try:
+            p = derive_live(customer_id, ids)
+            as_of, _ = live_clock(customer_id, ids)
+        except (nessie.NessieError, nessie.StaleIds) as e:
+            # A reset may have swapped this persona's accounts while we were reading the old ones:
+            # re-read the ids once before deciding the ids are stale.
+            # Or another server reset it: then the Nessie registry has the new ids.
+            if nessie.needs_fallback(e):
+                nessie.pull_ids(force=True)
+            fresh = nessie.load_ids().get(customer_id)
+            if not nessie.needs_fallback(e) or fresh is None or fresh == ids:
+                raise
+            ids = fresh
+            p = derive_live(customer_id, ids)
+            as_of, _ = live_clock(customer_id, ids)
+    except (nessie.NessieError, nessie.StaleIds, requests.RequestException) as e:
+        if not nessie.needs_fallback(e):
             raise
-        return cached
-    _save_cache(p)
+        nessie.go_offline(nessie.describe_failure(e))   # continues on the shadow copy: what was on screen
+        return get_profile(customer_id)
+    if nessie.sync_shadow(customer_id, p, as_of):
+        _save_cache(p, as_of)   # only when the shadow is in step, so the cached balances and feed agree
     return p
 
 
@@ -72,27 +95,56 @@ def _date(txn: dict, key: str = "transaction_date") -> date:
 def _prefetch(acct: dict) -> None:
     """Fetch every list the profile reads in parallel; the reads below then hit the GET cache."""
     calls = [(fn, a, {}) for a in acct.values() for fn in (nessie.get_deposits, nessie.get_withdrawals, nessie.get_purchases)]
-    calls += [(nessie.get_transfers, a, {"role": role}) for a in acct.values() for role in ("payer", "payee")]
     calls.append((nessie.get_bills, acct["checking"], {}))
     with ThreadPoolExecutor(max_workers=8) as pool:
         for future in [pool.submit(fn, a, **kw) for fn, a, kw in calls]:
             future.result()   # re-raise the first error, so the cache fallback kicks in
 
 
+RAISED_TO = re.compile(r"to \$?([\d,]+(?:\.\d+)?)")
+
+
+def live_clock(customer_id: str, ids: dict | None = None) -> tuple[date, float]:
+    """(today, current paycheck) for a live persona, read from Nessie rather than a local file,
+    so a server restart (Render wipes local files) can't lose them.
+
+    Today is the date of the newest transaction we wrote (fast-forward always writes one dated
+    the new day), never earlier than SIM_START. The paycheck is the newest [payroll] deposit,
+    unless a raise ("[payroll-adj] raise to 2250") was recorded on or after it.
+    """
+    acct = (ids or nessie.load_ids()[customer_id])["accounts"]
+    dates = [nessie.txn_date(t) for a in acct.values()
+             for t in nessie.get_deposits(a) + nessie.get_withdrawals(a) + nessie.get_purchases(a) if nessie.is_ours(t)]
+    today = max([state.SIM_START] + [date.fromisoformat(d) for d in dates])
+
+    deposits = [d for d in nessie.get_deposits(acct["checking"]) if nessie.is_ours(d)]
+    payroll = [d for d in deposits if d["description"].startswith("[payroll]")]
+    if not payroll:
+        raise nessie.StaleIds(f"{customer_id}: no [payroll] deposits in Nessie")
+    latest = max(payroll, key=_date)
+    paycheck = latest["amount"]
+    raises = [(d, RAISED_TO.search(d["description"])) for d in deposits if d["description"].startswith("[payroll-adj]")]
+    raises = [(d, m) for d, m in raises if m and _date(d) >= _date(latest)]
+    if raises:
+        # Newest date wins. Nessie doesn't list in creation order, so on the same day take the highest
+        # "raise to N": raises only go up, so that's the latest one.
+        newest = max(_date(d) for d, _ in raises)
+        paycheck = max(float(m.group(1).replace(",", "")) for d, m in raises if _date(d) == newest)
+    return today, paycheck
+
+
 def derive_live(customer_id: str, ids: dict) -> FinancialProfile:
     persona = nessie.persona_seed(customer_id)
     acct, seed = ids["accounts"], ids["seed"]
-    as_of = state.as_of(customer_id)
     if nessie.CACHE_SECONDS > 0:
         _prefetch(acct)
+    as_of, paycheck = live_clock(customer_id, ids)
 
     payroll = [d for d in nessie.get_deposits(acct["checking"])
                if nessie.is_ours(d) and d["description"].startswith("[payroll]")]
     if not payroll:
         raise ValueError(f"{customer_id}: no [payroll] deposits in Nessie; re-seed this persona")
-    latest = max(payroll, key=_date)
-    paycheck = state.paycheck_override(customer_id) or latest["amount"]
-    last_payday = _date(latest)
+    last_payday = _date(max(payroll, key=_date))
 
     # Spending average comes from the seeded history before the sim started, so it stays put
     # while the demo clock moves (the [spend] lumps fast-forward writes are later than SIM_START).
@@ -117,22 +169,47 @@ def derive_live(customer_id: str, ids: dict) -> FinancialProfile:
         invested_balance=nessie.account_balance(acct["investing"], seed["investing"]),
         paycheck_amount=paycheck,
         days_to_payday=max(0, (last_payday + timedelta(days=PAY_PERIOD_DAYS) - as_of).days),
-        upcoming_bills=bills,
+        upcoming_bills=_by_due_date(bills),
     )
 
 
-def _save_cache(p: FinancialProfile) -> None:
+def _save_cache(p: FinancialProfile, as_of: date) -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    (CACHE_DIR / f"{p.customer_id}.json").write_text(json.dumps(to_dict(p), indent=2))
+    path = CACHE_DIR / f"{p.customer_id}.json"
+    tmp = path.with_name(f"{path.name}.{threading.get_ident()}.tmp")   # per thread: two requests can save at once
+    feed = nessie._SHADOW.get(p.customer_id, {}).get("activity")   # the live feed, for an offline fallback
+    extra = {"_as_of": as_of.isoformat(), **({"_activity": feed} if feed is not None else {})}
+    tmp.write_text(json.dumps({**to_dict(p), **extra}, indent=2))
+    tmp.replace(path)   # atomic, so a fallback read never sees half a file
+
+
+def cached_snapshot(customer_id: str) -> tuple[FinancialProfile, date] | None:
+    """The last good live profile and its sim date, or None."""
+    try:
+        d = json.loads((CACHE_DIR / f"{customer_id}.json").read_text())
+    except (FileNotFoundError, ValueError):
+        return None
+    try:
+        d.pop("_activity", None)
+        as_of = date.fromisoformat(d.pop("_as_of", state.SIM_START.isoformat()))
+        d["upcoming_bills"] = [Bill(**b) for b in d["upcoming_bills"]]
+        return FinancialProfile(**d), as_of
+    except (TypeError, KeyError, ValueError, AttributeError):   # old format or corrupt: ignore it
+        return None
+
+
+def cached_activity(customer_id: str) -> list[dict] | None:
+    """The live feed saved with the last good profile, or None."""
+    try:
+        feed = json.loads((CACHE_DIR / f"{customer_id}.json").read_text()).get("_activity")
+    except (FileNotFoundError, ValueError, AttributeError):
+        return None
+    return feed if isinstance(feed, list) else None
 
 
 def load_cached(customer_id: str) -> FinancialProfile | None:
-    try:
-        d = json.loads((CACHE_DIR / f"{customer_id}.json").read_text())
-    except FileNotFoundError:
-        return None
-    d["upcoming_bills"] = [Bill(**b) for b in d["upcoming_bills"]]
-    return FinancialProfile(**d)
+    snap = cached_snapshot(customer_id)
+    return snap[0] if snap else None
 
 
 # ---------- live vs fixture ----------

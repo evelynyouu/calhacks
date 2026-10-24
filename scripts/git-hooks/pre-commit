@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Blocks commits that would put an API key on GitHub.
+# Turn it on once per clone:   git config core.hooksPath scripts/git-hooks
+# 1. No .env files (only .env.example is allowed).
+# 2. No secret value from your local .env (any *KEY*/*SECRET*/*TOKEN* entry) anywhere in the staged changes.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+bad_env=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '(^|/)\.env($|\.)' | grep -v -E '(^|/)\.env\.example$' || true)
+if [ -n "$bad_env" ]; then
+  echo "pre-commit: refusing to commit env files (they hold API keys):" >&2
+  echo "$bad_env" | sed 's/^/  /' >&2
+  echo "Unstage with: git restore --staged <file>" >&2
+  exit 1
+fi
+
+[ -f .env ] || exit 0
+found=0
+while IFS='=' read -r name value; do
+  case "$name" in *KEY*|*SECRET*|*TOKEN*) ;; *) continue ;; esac
+  value="${value%%#*}"; value="${value//[[:space:]\"\']/}"
+  [ ${#value} -ge 12 ] || continue
+  if git diff --cached -U0 | grep -F -q -- "$value"; then
+    echo "pre-commit: the value of $name from .env is in your staged changes. Remove it before committing." >&2
+    found=1
+  fi
+done < <(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' .env)
+exit $found

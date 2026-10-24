@@ -1,7 +1,8 @@
-"""Demo state for live mode: the sim clock and paycheck overrides, per persona.  OWNER: Evelyn.
+"""The sim clock's start date and calendar helpers.  OWNER: Evelyn.
 
-Lives in data/state.json (gitignored). Nothing reads date.today(): "today" for a persona is
-its sim clock, which starts at SIM_START and only moves when the demo fast-forwards.
+Nothing reads date.today(): "today" for a persona is its sim clock, which starts at SIM_START and
+only moves when the demo fast-forwards. Live mode reads the clock from Nessie
+(core.profile.live_clock); data/state.json is legacy and only cleared on reset.
 """
 from __future__ import annotations
 

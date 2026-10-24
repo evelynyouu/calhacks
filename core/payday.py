@@ -10,7 +10,7 @@ the core/nessie.py demo functions, so they work the same in fixture and live mod
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterable, Literal
 
 from core import broker, nessie, rebalance
@@ -42,6 +42,38 @@ class PaydayDecision:
     reason: PaydayReason
 
 
+@dataclass
+class PaydayRun(PaydayResult):
+    """A PaydayResult plus the numbers behind it, for the payday breakdown bar."""
+    breakdown: dict = field(default_factory=dict)
+
+
+# Bar colors: the app's clay / sun / moss plus a blue, validated together (dataviz validator, light, on #fff)
+BAR_SEGMENTS = (   # key, legend label, tooltip, color
+    ("bills", "Bills due", "Bills due before the next paycheck", "#c2603a"),
+    ("spending", "Spending", "Day-to-day spending until the next paycheck", "#c99a1a"),
+    ("buffer", "Buffer", "Buffer that always stays in checking", "#2a78d6"),
+    ("invested", "Invested", "Moved to your FirstFund Investing account", "#2f7a4f"),
+)
+
+
+def breakdown(cash: float, d: PaydayDecision) -> dict:
+    """How payday's checking balance splits up. If bills + spending + buffer exceed the cash,
+    the bar is scaled to what's needed and `short` says by how much."""
+    amounts = {"bills": round(sum(b.amount for b in d.bills_due), 2), "spending": d.spend_reserved,
+               "buffer": d.buffer, "invested": d.invest}
+    used = sum(amounts.values())
+    total = max(cash, used) or 1.0
+    left = round(max(0.0, cash - used), 2)
+    return {
+        "cash": round(cash, 2),
+        "segments": [{"key": k, "label": label, "tip": tip, "color": color, "amount": amounts[k],
+                      "pct": amounts[k] / total * 100} for k, label, tip, color in BAR_SEGMENTS],
+        "left": left, "left_pct": left / total * 100,
+        "short": round(max(0.0, used - cash), 2),
+    }
+
+
 def safety_check(checking_after_deposit: float, planned: float, days_to_payday: int,
                  upcoming_bills: Iterable[Bill], monthly_spending: float) -> PaydayDecision:
     """How much of `planned` is safe to invest now. Bills due today or on the next payday count."""
@@ -68,7 +100,8 @@ def run_payday(customer_id: str, portfolio: Portfolio | None) -> PaydayResult:
     paycheck = nessie.deposit_paycheck(customer_id)
     p = get_profile(customer_id)
     r = check_readiness(p)
-    planned = 0.0 if r.status == "not_yet" else round(r.safe_monthly_amount / 2, 2)   # two paychecks a month
+    # Two paychecks a month, in whole $5 steps: Nessie only moves whole dollars, and the plan invests in $5 steps.
+    planned = 0.0 if r.status == "not_yet" else math.floor(r.safe_monthly_amount / 2 / STEP) * STEP
 
     d = safety_check(p.checking_balance, planned, p.days_to_payday, p.upcoming_bills, p.monthly_spending)
     reasons = [f"Paycheck of {_money(paycheck)} detected."]
@@ -99,7 +132,7 @@ def run_payday(customer_id: str, portfolio: Portfolio | None) -> PaydayResult:
     elif d.invest > 0 and buy_underweight:
         xfer = nessie.transfer_to_investing(customer_id, d.invest)
         trades = list(buy_underweight(customer_id, d.invest) or [])
-    return PaydayResult(paycheck, planned, d.invest, xfer, trades, reasons)
+    return PaydayRun(paycheck, planned, d.invest, xfer, trades, reasons, breakdown(p.checking_balance, d))
 
 
 def fast_forward_to_payday(customer_id: str, portfolio: Portfolio | None = None) -> PaydayResult:
