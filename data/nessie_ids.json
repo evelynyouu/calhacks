@@ -53,12 +53,12 @@
     },
     "sam": {
       "accounts": {
-        "card": "9eeca77a-5f5d-4f8d-be14-a5b99ec246f0",
-        "checking": "769889b9-e507-4379-bd0f-8cdd43d2114c",
-        "investing": "4944a4f6-4230-483c-9a5f-cbacb9748b64",
-        "savings": "1adfce77-c0f3-4870-9bef-4d8ccb650c00"
+        "card": "b64768f1-4294-4308-abec-cb431d8884e2",
+        "checking": "339bf8e0-4398-4988-92b9-b951adce8954",
+        "investing": "cbc3ba78-dc59-4621-9770-dcebca664ffd",
+        "savings": "427c1b0d-15c5-45d4-8eba-a4155391fb49"
       },
-      "customer_id": "7c1046cb-9bf3-4e55-89b1-8dabd31e1982",
+      "customer_id": "38751041-a60a-40e4-a2d2-dd9f3685da7d",
       "seed": {
         "card": 0,
         "checking": 575,
@@ -114,12 +114,12 @@
   },
   "sam": {
     "accounts": {
-      "card": "37d07e54-06ce-496c-a388-50960534e56b",
-      "checking": "4d7f8cb1-25d7-4851-8afd-c9e5eb5b6100",
-      "investing": "eed8d223-ddea-425e-92b1-b17b6e5dd43d",
-      "savings": "1672d0ce-e0bb-49c5-8eb4-950dc31bd4c7"
+      "card": "1ef22a0f-7c45-4f0d-9489-0870794677ea",
+      "checking": "96015a2f-c48f-4c3a-a12f-100e8c207368",
+      "investing": "060c32c6-eea5-464b-b77d-e23723610bd5",
+      "savings": "ca667660-5c14-4451-b309-436db7fc8939"
     },
-    "customer_id": "06c2c663-4515-4f22-a89f-b4f1b3994278",
+    "customer_id": "3f6b2e6f-e685-415c-aa72-4c558f6d6c86",
     "seed": {
       "card": 0,
       "checking": 575,
