@@ -94,6 +94,7 @@ paycheck or calendar is stored locally: it is all read back from Nessie on each 
 | `POST`/`GET /accounts/{id}/purchases` | day-to-day spending at merchants, the car repair on the card |
 | `POST`/`GET /accounts/{id}/bills` | recurring bills (rent, phone, card minimum) with their due day |
 | `GET /accounts/{id}/transfers` | read for completeness (see quirks below) |
+| `GET /accounts` | finds the "FirstFund registry" account that holds the current ids |
 
 We **never** call `DELETE /data`. It wipes every team's data on the shared key.
 
@@ -106,7 +107,7 @@ We **never** call `DELETE /data`. It wipes every team's data on the shared key.
 | **$600 car repair** | savings covers what it can (`[event]` move Savings → Checking, then a purchase at Mike's Auto); any remainder goes on the credit card |
 | **Got a raise** | a `[payroll-adj]` deposit for the first raise, tagged "raise to N" so every later paycheck uses the new amount |
 | **Market drops 30%** | an `[event]` withdrawal of 30% from the Investing account |
-| **Reset** | swaps in a pre-built spare copy of the persona (instant), then deletes the old accounts and builds the next spare in the background |
+| **Reset** | swaps in a pre-built spare copy of the persona (instant) and writes the new ids to the registry account, then deletes the old accounts and builds the next spare in the background |
 
 ### The Nessie quirks we designed around
 
@@ -130,8 +131,15 @@ Each quirk has a test in `tests/fake_nessie.py`, a fake that enforces the same r
 A persona's "today" is not the computer's date. Every persona starts on **2026-10-23**, and the
 clock only moves when you fast-forward. In live mode the clock is read *from Nessie*: it's the date
 of the newest transaction we wrote. The current paycheck is read the same way (the newest
-`[payroll]` deposit, or a later raise). So a server restart, or Render wiping its disk, loses
-nothing; the next page load rebuilds the whole state from the bank.
+`[payroll]` deposit, or a later raise).
+
+Even *which accounts* belong to each persona is kept in Nessie. A reset moves a persona to new
+accounts, so every time the ids change, the app also writes the whole ids file to a "FirstFund
+registry" account, as a $1 `[registry]` deposit whose description holds the ids and a sequence
+number. On start, or when its ids point at deleted accounts, a server reads the newest copy. So a
+server restart, Render wiping its disk or redeploying an old `data/nessie_ids.json`, or a teammate
+resetting a persona on their laptop loses nothing: the next page load finds the current accounts and
+rebuilds the whole state from the bank.
 
 ### Staying up when Nessie doesn't
 
@@ -144,8 +152,8 @@ A demo can't die because the wifi blinks. If Nessie times out, refuses the conne
 - The badge changes to "Nessie offline: demo data", with a reason that never contains the API key.
 - Restart the server to go back to live.
 
-The same fallback kicks in if `data/nessie_ids.json` points at accounts that no longer exist, with
-the hint "re-seed or reset this persona". Pressing Reset fixes it.
+The same fallback kicks in if the ids point at accounts that no longer exist and the registry has
+nothing newer, with the hint "re-seed or reset this persona". Pressing Reset fixes it.
 
 ---
 
@@ -271,9 +279,9 @@ python -m scripts.seed_nessie --reset sam     # delete Sam's accounts (by stored
 python -m scripts.seed_nessie --dry-run sam   # print every request; send and write nothing
 ```
 
-**If you reset a persona in live mode (button or CLI), commit `data/nessie_ids.json`.** The persona
-moves to new accounts, and other machines would otherwise point at deleted ones (the app falls back
-to demo data with a hint if that happens).
+A reset moves the persona to new accounts. You don't need to commit the file afterwards: the new
+ids are also saved in Nessie (see [the ids registry](#no-local-state-the-bank-is-the-clock)), and
+every machine picks them up on its next start. Committing it anyway is harmless.
 
 ---
 
@@ -304,7 +312,7 @@ pytest -q                     # demo-data mode
 NESSIE_MODE=live pytest -q    # same suite; live paths run against tests/fake_nessie.py (no network)
 ```
 
-172 tests, green in both modes. Tests never touch the real API (`tests/conftest.py` blocks it).
+179 tests, green in both modes. Tests never touch the real API (`tests/conftest.py` blocks it).
 What they cover:
 
 - **Readiness answer key** for all four personas (`test_readiness.py`)
@@ -314,6 +322,8 @@ What they cover:
 - **Nessie client**: retries, timeouts, no double-sent writes, key never in an error message
   (`test_nessie.py`)
 - **Outages mid-click**, restarts, stale ids, reset races (`test_live.py`)
+- **The ids registry**: a redeploy with an old ids file, a reset on another machine, the registry
+  being unreachable (`test_registry.py`)
 - **Life events**, routes, scripted chat, offline front-end assets, no secrets in the repo
 
 ---

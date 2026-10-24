@@ -34,8 +34,9 @@ TIMEOUT = (3, 6)   # (connect, read) seconds: a hanging Nessie should hit the fa
 RETRIES = 3   # extra attempts after the first (backoff 0.5 + 1 + 2 s); real Nessie sometimes refuses connections briefly
 # Description prefixes for every transaction we write (see docs/EVELYN_API.md):
 # [payroll] paycheck, [payroll-adj] raise, [event] life event, [firstfund] auto-invest,
-# [spend] day-to-day spending, [bill] bill payment, [seed] history moves made by the seeder.
-OUR_TAGS = ("[payroll", "[event", "[firstfund", "[spend", "[bill", "[seed")
+# [spend] day-to-day spending, [bill] bill payment, [seed] history moves made by the seeder,
+# [registry] a copy of the ids file (see publish_ids).
+OUR_TAGS = ("[payroll", "[event", "[firstfund", "[spend", "[bill", "[seed", "[registry")
 IDS_PATH = Path(__file__).resolve().parent.parent / "data" / "nessie_ids.json"
 LIVE = "live"
 
@@ -324,8 +325,19 @@ def account_balance(account_id: str, seed_balance: float, liability: bool = Fals
 
 # ---------- Nessie ids (written by scripts/seed_nessie.py) ----------
 
+# Every read-modify-write of the ids file holds this (seed's rebuilds, and the registry pull below).
+IDS_LOCK = threading.RLock()
+
+
 def load_ids() -> dict:
-    """{persona: {customer_id, accounts: {...}, seed: {...}}, "_merchants": {...}}"""
+    """{persona: {customer_id, accounts: {...}, seed: {...}}, "_merchants": {...}, "_seq": n}
+    In live mode the first call also picks up a newer copy from the Nessie registry (see below)."""
+    if mode() == LIVE and not _registry["pulled"]:
+        pull_ids()
+    return _read_ids()
+
+
+def _read_ids() -> dict:
     try:
         return json.loads(IDS_PATH.read_text())
     except FileNotFoundError:
@@ -337,6 +349,67 @@ def save_ids(ids: dict) -> None:
     tmp = IDS_PATH.with_name(f"{IDS_PATH.name}.{threading.get_ident()}.tmp")
     tmp.write_text(json.dumps(ids, indent=2, sort_keys=True) + "\n")
     os.replace(tmp, IDS_PATH)
+
+
+# ---------- the ids registry: the current ids, kept in Nessie itself ----------
+# A reset moves a persona to new accounts and deletes the old ones. The new ids used to live only in
+# the local file, so a server whose disk was wiped (Render's free plan sleeps and redeploys) or another
+# teammate's machine pointed at deleted accounts. Now every save is also written to Nessie, as a $1
+# deposit on a "FirstFund registry" account whose description holds the whole ids file. The copy with
+# the highest "_seq" (a timestamp set on save) is the current one.
+
+REGISTRY_NICKNAME = "FirstFund registry"
+REGISTRY_TAG = "[registry] "
+_registry = {"account": None, "pulled": False}
+_registry_lock = threading.Lock()
+
+
+def _registry_accounts() -> list[str]:
+    """Normally one; two if two machines created it at once (both are read, the first is written)."""
+    return sorted(a["_id"] for a in _send("GET", "/accounts", None, None)
+                  if a.get("nickname") == REGISTRY_NICKNAME)
+
+
+def publish_ids(ids: dict) -> None:
+    """Write `ids` to the registry. Best effort: if Nessie is unreachable the local file still has
+    them, and the next save publishes again."""
+    try:
+        with _registry_lock:
+            if _registry["account"] is None:
+                found = _registry_accounts()
+                _registry["account"] = found[0] if found else create_account(
+                    create_customer("FirstFund", "Registry")["_id"], "Checking", REGISTRY_NICKNAME, 0)["_id"]
+            account = _registry["account"]
+        create_deposit(account, 1, state.SIM_START.isoformat(), REGISTRY_TAG + json.dumps(ids, sort_keys=True))
+    except (NessieError, requests.RequestException, RuntimeError) as e:
+        print(f"nessie: couldn't save the ids to the registry ({describe_failure(e)}); the local file has them")
+
+
+def pull_ids(force: bool = False) -> bool:
+    """Replace the local ids file with the registry's newest copy if that is newer. Runs once per
+    process, and again (force) when the local ids turn out to point at deleted accounts.
+    True if the file changed. Never raises: without the registry the local file is all we have."""
+    with _registry_lock:
+        if _registry["pulled"] and not force:
+            return False
+        _registry["pulled"] = True
+        newest: dict | None = None
+        try:
+            for account in _registry_accounts():
+                _registry["account"] = _registry["account"] or account
+                for d in _send("GET", f"/accounts/{account}/deposits", None, None):
+                    if str(d.get("description", "")).startswith(REGISTRY_TAG):
+                        record = json.loads(d["description"][len(REGISTRY_TAG):])
+                        if newest is None or record.get("_seq", 0) > newest.get("_seq", 0):
+                            newest = record
+        except (NessieError, requests.RequestException, RuntimeError, ValueError) as e:
+            print(f"nessie: couldn't read the ids registry ({describe_failure(e)}); using the local file")
+            return False
+    with IDS_LOCK:
+        if newest and newest.get("_seq", 0) > _read_ids().get("_seq", 0):
+            save_ids(newest)
+            return True
+    return False
 
 
 def mode() -> str:

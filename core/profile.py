@@ -1,7 +1,8 @@
 """Raw Nessie data -> FinancialProfile.  OWNER: Evelyn.
 
 NESSIE_MODE=fixture (default): reads the in-memory personas (core/nessie.py stub). No network.
-NESSIE_MODE=live: derives the profile from Nessie using the ids in data/nessie_ids.json. The last
+NESSIE_MODE=live: derives the profile from Nessie using the ids in data/nessie_ids.json (kept in step
+with the copy in Nessie's registry account, see nessie.pull_ids). The last
 good live profile is cached in data/cache/{persona}.json and served if Nessie errors.
 
     python -m core.profile [persona ...]          # print profiles in the current mode
@@ -68,6 +69,9 @@ def _live_profile(customer_id: str) -> FinancialProfile:
         except (nessie.NessieError, nessie.StaleIds) as e:
             # A reset may have swapped this persona's accounts while we were reading the old ones:
             # re-read the ids once before deciding the ids are stale.
+            # Or another server reset it: then the Nessie registry has the new ids.
+            if nessie.needs_fallback(e):
+                nessie.pull_ids(force=True)
             fresh = nessie.load_ids().get(customer_id)
             if not nessie.needs_fallback(e) or fresh is None or fresh == ids:
                 raise

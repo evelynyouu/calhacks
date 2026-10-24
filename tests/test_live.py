@@ -365,7 +365,8 @@ def test_reset_swaps_in_the_spare_without_rebuilding(fake, monkeypatch):
         n = len(fake.calls)
         assert reset_persona("sam") == start
         posts = [c for c in fake.calls[n:] if c[0] == "POST"]
-        assert posts == []                            # nothing rebuilt on the click itself
+        # nothing rebuilt on the click itself; the one write is the new ids going to the registry
+        assert [c[2]["description"][:len(nessie.REGISTRY_TAG)] for c in posts] == [nessie.REGISTRY_TAG]
         assert nessie.load_ids()["sam"] == spare
     finally:
         seed.PAUSE_BACKGROUND = False
@@ -457,13 +458,17 @@ def test_a_one_off_read_failure_does_not_drop_the_click(fake, monkeypatch):
 
 
 def test_stale_ids_after_a_restart_fall_back_instead_of_500(fake, monkeypatch):
-    """Render restores the committed nessie_ids.json on restart, which can point at deleted accounts."""
+    """Render restores the committed nessie_ids.json on restart, which can point at deleted accounts.
+    The registry normally has the current ids (tests/test_registry.py); without it, demo data, not a 500."""
     from fastapi.testclient import TestClient
     from app.main import app
     committed = nessie.IDS_PATH.read_text()
     reset_persona("sam")
     seed.wait_for_background()                                   # old accounts deleted
+    for t in [t for t, d in fake.txns["deposits"].items() if d["description"].startswith(nessie.REGISTRY_TAG)]:
+        del fake.txns["deposits"][t]                             # no registry copy to recover from
     nessie.IDS_PATH.write_text(committed)                        # the restart
+    nessie._registry.update(account=None, pulled=False)
     nessie.clear_cache()
     r = TestClient(app, raise_server_exceptions=False).get("/p/sam")
     assert r.status_code == 200
@@ -509,6 +514,7 @@ def test_two_quick_resets_leave_no_orphan_accounts(fake):
     ids = nessie.load_ids()
     referenced = {a for k, v in ids.items() if not k.startswith("_") for a in v["accounts"].values()}
     referenced |= {a for v in ids["_spares"].values() for a in v["accounts"].values()}
+    referenced |= {a for a, v in fake.accounts.items() if v["nickname"] == nessie.REGISTRY_NICKNAME}
     assert set(fake.accounts) <= referenced
 
 
