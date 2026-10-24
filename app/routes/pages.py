@@ -47,7 +47,7 @@ def _ctx(request: Request, cid: str, **extra) -> dict:
         "request": request, "cid": cid, "profile": profile, "readiness": readiness,
         "tier": tier_for(profile.invested_balance), "s": s, "portfolio": s.portfolio, "sim": sim,
         "pie_data": _pie(s.portfolio), "fan_data": to_dict(sim) if sim else None,
-        "activity": nessie.recent_activity(cid), "nessie_mode": nessie.mode(),
+        "activity": nessie.recent_activity(cid), "nessie_mode": nessie.mode(), "nessie_offline": nessie.offline_reason(),
         **extra,
     }
 

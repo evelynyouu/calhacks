@@ -10,6 +10,7 @@ good live profile is cached in data/cache/{persona}.json and served if Nessie er
 from __future__ import annotations
 
 import json
+import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
@@ -56,12 +57,13 @@ def _live_profile(customer_id: str) -> FinancialProfile:
         raise KeyError(customer_id)   # not seeded (the app shows 404)
     try:
         p = derive_live(customer_id, ids)
-    except (nessie.NessieError, requests.RequestException):
-        cached = load_cached(customer_id)
-        if cached is None:
+        as_of, _ = live_clock(customer_id, ids)
+    except (nessie.NessieError, requests.RequestException) as e:
+        if not nessie.is_outage(e):
             raise
-        return cached
-    _save_cache(p)
+        nessie.go_offline(f"{type(e).__name__}: {e}")   # continues from the cached live numbers
+        return get_profile(customer_id)
+    _save_cache(p, as_of)
     return p
 
 
@@ -78,20 +80,47 @@ def _prefetch(acct: dict) -> None:
             future.result()   # re-raise the first error, so the cache fallback kicks in
 
 
+RAISED_TO = re.compile(r"to \$?([\d,]+(?:\.\d+)?)")
+
+
+def live_clock(customer_id: str, ids: dict | None = None) -> tuple[date, float]:
+    """(today, current paycheck) for a live persona, read from Nessie rather than a local file,
+    so a server restart (Render wipes local files) can't lose them.
+
+    Today is the date of the newest transaction we wrote (fast-forward always writes one dated
+    the new day), never earlier than SIM_START. The paycheck is the newest [payroll] deposit,
+    unless a raise ("[payroll-adj] raise to 2250") was recorded on or after it.
+    """
+    acct = (ids or nessie.load_ids()[customer_id])["accounts"]
+    dates = [nessie.txn_date(t) for a in acct.values()
+             for t in nessie.get_deposits(a) + nessie.get_withdrawals(a) + nessie.get_purchases(a) if nessie.is_ours(t)]
+    today = max([state.SIM_START] + [date.fromisoformat(d) for d in dates])
+
+    deposits = [d for d in nessie.get_deposits(acct["checking"]) if nessie.is_ours(d)]
+    payroll = [d for d in deposits if d["description"].startswith("[payroll]")]
+    if not payroll:
+        raise ValueError(f"{customer_id}: no [payroll] deposits in Nessie; re-seed this persona")
+    latest = max(payroll, key=_date)
+    paycheck = latest["amount"]
+    raises = [(d, RAISED_TO.search(d["description"])) for d in deposits if d["description"].startswith("[payroll-adj]")]
+    raises = [(d, m) for d, m in raises if m and _date(d) >= _date(latest)]
+    if raises:
+        paycheck = float(max(raises, key=lambda dm: _date(dm[0]))[1].group(1).replace(",", ""))
+    return today, paycheck
+
+
 def derive_live(customer_id: str, ids: dict) -> FinancialProfile:
     persona = nessie.persona_seed(customer_id)
     acct, seed = ids["accounts"], ids["seed"]
-    as_of = state.as_of(customer_id)
     if nessie.CACHE_SECONDS > 0:
         _prefetch(acct)
+    as_of, paycheck = live_clock(customer_id, ids)
 
     payroll = [d for d in nessie.get_deposits(acct["checking"])
                if nessie.is_ours(d) and d["description"].startswith("[payroll]")]
     if not payroll:
         raise ValueError(f"{customer_id}: no [payroll] deposits in Nessie; re-seed this persona")
-    latest = max(payroll, key=_date)
-    paycheck = state.paycheck_override(customer_id) or latest["amount"]
-    last_payday = _date(latest)
+    last_payday = _date(max(payroll, key=_date))
 
     # Spending average comes from the seeded history before the sim started, so it stays put
     # while the demo clock moves (the [spend] lumps fast-forward writes are later than SIM_START).
@@ -120,18 +149,28 @@ def derive_live(customer_id: str, ids: dict) -> FinancialProfile:
     )
 
 
-def _save_cache(p: FinancialProfile) -> None:
+def _save_cache(p: FinancialProfile, as_of: date) -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    (CACHE_DIR / f"{p.customer_id}.json").write_text(json.dumps(to_dict(p), indent=2))
+    path = CACHE_DIR / f"{p.customer_id}.json"
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps({**to_dict(p), "_as_of": as_of.isoformat()}, indent=2))
+    tmp.replace(path)   # atomic, so a fallback read never sees half a file
+
+
+def cached_snapshot(customer_id: str) -> tuple[FinancialProfile, date] | None:
+    """The last good live profile and its sim date, or None."""
+    try:
+        d = json.loads((CACHE_DIR / f"{customer_id}.json").read_text())
+    except (FileNotFoundError, ValueError):
+        return None
+    as_of = date.fromisoformat(d.pop("_as_of", state.SIM_START.isoformat()))
+    d["upcoming_bills"] = [Bill(**b) for b in d["upcoming_bills"]]
+    return FinancialProfile(**d), as_of
 
 
 def load_cached(customer_id: str) -> FinancialProfile | None:
-    try:
-        d = json.loads((CACHE_DIR / f"{customer_id}.json").read_text())
-    except FileNotFoundError:
-        return None
-    d["upcoming_bills"] = [Bill(**b) for b in d["upcoming_bills"]]
-    return FinancialProfile(**d)
+    snap = cached_snapshot(customer_id)
+    return snap[0] if snap else None
 
 
 # ---------- live vs fixture ----------

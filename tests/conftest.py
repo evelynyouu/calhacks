@@ -3,7 +3,7 @@ blocked, so running pytest with NESSIE_MODE=live in the environment can never to
 Nessie key or the real data/ files. Tests that want live mode opt in (see tests/test_live.py)."""
 import pytest
 
-from core import nessie, profile, state
+from core import nessie, profile, seed, state
 
 
 @pytest.fixture(autouse=True)
@@ -18,6 +18,10 @@ def sandbox(monkeypatch, tmp_path):
 
     monkeypatch.setattr(nessie.requests, "request", no_network)
     nessie.clear_cache()
+    nessie.go_online()   # a test that simulated an outage must not leave the app "offline"
     nessie.reset()
     yield
+    seed.PAUSE_BACKGROUND = False
+    seed.wait_for_background()   # a background rebuild must finish inside the test that started it
+    nessie.go_online()
     nessie.reset()

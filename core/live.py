@@ -1,14 +1,15 @@
 """Live-mode side effects behind the core/nessie.py demo functions.  OWNER: Evelyn.
 
 Each function writes tagged Nessie transactions with the same effect the fixture stub has on its
-in-memory numbers, so the app behaves the same in both modes. The sim clock is in core/state.py.
+in-memory numbers, so the app behaves the same in both modes. The sim clock and the current
+paycheck are read back from Nessie (core.profile.live_clock), so nothing lives in local files.
 """
 from __future__ import annotations
 
 from datetime import timedelta
 
 from core import nessie, seed, state
-from core.profile import get_profile
+from core.profile import get_profile, live_clock
 
 
 def _accounts(cid: str) -> dict:
@@ -16,7 +17,7 @@ def _accounts(cid: str) -> dict:
 
 
 def _today(cid: str) -> str:
-    return state.as_of(cid).isoformat()
+    return live_clock(cid)[0].isoformat()
 
 
 def current_paycheck(cid: str) -> float:
@@ -34,7 +35,7 @@ def advance_days(cid: str, days: int) -> None:
     if days <= 0:
         return
     acct, merchants = _accounts(cid), nessie.load_ids()["_merchants"]
-    start = state.as_of(cid)
+    start = live_clock(cid)[0]
     end = start + timedelta(days=days)
     spend = nessie.whole(get_profile(cid).monthly_spending * days / 30)
     if spend:
@@ -43,7 +44,6 @@ def advance_days(cid: str, days: int) -> None:
     for b in nessie.get_bills(acct["checking"]):
         for d in state.occurrences(b["recurring_date"], start, end):
             nessie.create_withdrawal(acct["checking"], b["payment_amount"], d.isoformat(), f"[bill] {b['nickname']}")
-    state.update(cid, as_of=end.isoformat())
 
 
 def transfer_to_investing(cid: str, amount: float) -> str:
@@ -66,8 +66,8 @@ def record_purchase(cid: str, name: str, amount: float) -> None:
 
 
 def raise_paycheck(cid: str, amount: float) -> None:
-    state.update(cid, paycheck_override=round(current_paycheck(cid) + amount, 2))
-    nessie.create_deposit(_accounts(cid)["checking"], amount, _today(cid), "[payroll-adj] raise")
+    new = round(current_paycheck(cid) + amount, 2)
+    nessie.create_deposit(_accounts(cid)["checking"], amount, _today(cid), f"[payroll-adj] raise to {new:g}")
 
 
 def apply_market_move(cid: str, pct: float) -> None:

@@ -2,7 +2,9 @@
   <div class="flex flex-wrap items-center justify-between gap-3">
     <div class="flex items-center gap-2">
       <p class="eyebrow">Your money</p>
-      {% if nessie_mode == 'live' %}
+      {% if nessie_offline %}
+      <span class="rounded-full bg-sun-100 px-2 py-0.5 text-xs font-medium text-ink/80" title="{{ nessie_offline }}">Nessie offline: demo data</span>
+      {% elif nessie_mode == 'live' %}
       <span class="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">Live: Capital One Nessie</span>
       {% else %}
       <span class="rounded-full bg-ink/5 px-2 py-0.5 text-xs text-ink/60">Demo data</span>
