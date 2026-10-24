@@ -18,8 +18,11 @@
   <script src="/static/vendor/htmx-2.0.4.min.js"></script>
   <script src="/static/vendor/chart-4.4.4.umd.js"></script>
   <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/tape.css">
 </head>
 <body class="bg-paper text-ink font-sans antialiased min-h-screen">
+  {# Ticker strip: pinned to the top of every page. Pages without it (login) override this block with nothing. #}
+  {% block tape %}<div class="tape-dock">{% include "partials/tape_loader.html" %}</div>{% endblock %}
   <header class="max-w-6xl mx-auto px-4 sm:px-6 py-5 flex items-center justify-between">
     <a href="/" class="font-display text-2xl font-bold tracking-tight">First<span class="text-moss-500">Fund</span></a>
     {% block header_right %}{% endblock %}

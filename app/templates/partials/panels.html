@@ -1,0 +1,10 @@
+{# Response to a side-panel action: the panels plus, optionally, a line posted into the chat. #}
+{% with swap_oob=True %}
+  {% if 'fund' in oob %}{% include "partials/fund_card.html" %}{% endif %}
+  {% if 'account' in oob %}{% include "partials/account.html" %}{% endif %}
+  {% if 'tier' in oob %}{% include "partials/tier.html" %}{% endif %}
+  {% if 'today' in oob and rows is defined %}{% include "partials/today.html" %}{% endif %}
+{% endwith %}
+{% if chat_note %}
+<div hx-swap-oob="beforeend:#chat-messages">{% with m = chat_note %}{% include "partials/chat_bubble.html" %}{% endwith %}</div>
+{% endif %}

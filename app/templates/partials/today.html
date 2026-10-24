@@ -1,0 +1,32 @@
+{# Portfolio tab: the fund's value and each holding's move today. Rows link to the Markets tab. #}
+<section id="today" {% if swap_oob %}hx-swap-oob="true"{% endif %} class="card">
+  <div class="flex flex-wrap items-start justify-between gap-2">
+    <div>
+      <p class="eyebrow">Your fund</p>
+      <p class="font-display text-4xl font-bold mt-1 tabular-nums">{{ value | money2 }}</p>
+      {% set up = day_change >= 0 %}
+      <p class="mt-0.5 text-sm font-medium {{ 'text-moss-600' if up else 'text-clay-500' }}">
+        {{ '+' if up else '−' }}{{ day_change | abs | money2 }} ({{ day_pct | signed(2) }}) today
+      </p>
+    </div>
+    <span class="rounded-full px-2 py-0.5 text-xs {{ 'bg-emerald-100 text-emerald-800' if live_market and not fast_forwarded else 'bg-ink/5 text-ink/60' }}">
+      {% if fast_forwarded %}Demo date {{ a.today | day }}: simulated{% elif live_market %}Live prices · Nasdaq, delayed{% else %}Simulated prices{% endif %}
+    </span>
+  </div>
+  <ul class="mt-4 divide-y divide-ink/10">
+    {% for r in rows %}
+    <li>
+      <a href="/p/{{ cid }}/markets?s={{ r.ticker }}" class="flex items-center justify-between gap-3 py-2.5 hover:bg-paper/60 -mx-2 px-2 rounded-lg">
+        <span class="min-w-0">
+          <span class="font-semibold">{{ r.ticker }}</span>
+          <span class="block truncate text-xs text-ink/55">{{ r.info.label }}{% if r.info.kind == 'stock' %} · single company{% endif %}</span>
+        </span>
+        <span class="flex items-center gap-3 shrink-0">
+          <span class="tabular-nums text-sm">{{ r.value | money2 }}</span>
+          {% if r.quote %}<span class="pill {{ 'pill-up' if r.quote.change_pct >= 0 else 'pill-down' }}">{{ r.quote.change_pct | signed(2) }}</span>{% endif %}
+        </span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</section>

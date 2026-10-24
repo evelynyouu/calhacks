@@ -1,16 +1,17 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="pt-8 pb-10 max-w-2xl">
-  <h1 class="font-display text-4xl sm:text-5xl font-bold leading-tight">Every paycheck invests itself, but never before rent is paid.</h1>
-  <p class="mt-4 text-lg text-ink/70">Pick a demo customer to connect their (mock) bank account.</p>
+  <h1 class="font-display text-4xl sm:text-5xl font-bold leading-tight">Your own index fund, built around you. Every paycheck invests itself.</h1>
+  <p class="mt-4 text-lg text-ink/70">Answer a few questions and FirstFund builds a fund from thousands of companies plus the industries you care about. You pick how much of each paycheck goes in; a report keeps you up to date and suggests what to do next.</p>
 </section>
+<p class="eyebrow mb-3">Pick a demo customer (mock bank account)</p>
 <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
   {% for p in personas %}
   <a href="/p/{{ p.id }}" class="card hover:-translate-y-0.5 hover:shadow-md transition block">
     <div class="w-10 h-10 rounded-full bg-moss-100 text-moss-700 grid place-items-center font-display font-bold text-lg">{{ p.name[0] }}</div>
     <h2 class="mt-3 font-display text-xl font-bold">{{ p.name }}</h2>
     <p class="text-sm text-ink/60 mt-1">{{ p.blurb }}</p>
-    <p class="mt-4 text-sm font-medium text-moss-600">Connect bank →</p>
+    <p class="mt-4 text-sm font-medium text-moss-600">Start →</p>
   </a>
   {% endfor %}
 </div>

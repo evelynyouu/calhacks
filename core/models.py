@@ -61,7 +61,7 @@ class Readiness:
 
 # ---------- Engine side (Saahil: portfolio.py / sim.py / rebalance.py / broker.py) ----------
 
-HoldingRole = Literal["core", "tilt", "block"]
+HoldingRole = Literal["core", "tilt", "stock"]
 
 
 @dataclass
@@ -69,7 +69,7 @@ class Holding:
     ticker: str
     name: str
     weight: float             # 0..1, all holdings sum to 1
-    role: HoldingRole
+    role: HoldingRole         # core: VTI/VXUS/BND; tilt: one fund per interest; stock: a single company
     expense_ratio: float      # percent, e.g. 0.15 means 0.15%
 
 
@@ -145,6 +145,8 @@ class TierPolicy:
     balance_range: str
     check_frequency: str
     behaviors: list[str]
+    review_every_days: int = 30   # how often the report is refreshed and trades are prepared
+    auto_trades: bool = False     # can the report prepare trades for the customer to confirm
 
 
 def to_dict(obj) -> dict:

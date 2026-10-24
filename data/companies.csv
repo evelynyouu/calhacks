@@ -1,0 +1,57 @@
+ticker,name,etf,price
+AAPL,Apple,XLK,347.725
+MSFT,Microsoft,XLK,524.51
+NVDA,NVIDIA,SMH,210.96
+AMZN,Amazon,XLY,248
+AVGO,Broadcom,SMH,321.68
+AMD,AMD,SMH,516.79
+TSM,Taiwan Semiconductor,SMH,418.51
+ASML,ASML,SMH,1571.8
+NVO,Novo Nordisk,XLV,39.05
+TM,Toyota,XLY,196.79
+ORCL,Oracle,IGV,126.16
+CRM,Salesforce,IGV,248.57
+PLTR,Palantir,IGV,196.75
+CSCO,Cisco,CIBR,106.5
+CRWD,CrowdStrike,CIBR,257.57
+PANW,Palo Alto Networks,CIBR,380.55
+ISRG,Intuitive Surgical,BOTZ,452.29
+TER,Teradyne,BOTZ,308.85
+LLY,Eli Lilly,XLV,1273.46
+JNJ,Johnson & Johnson,XLV,263.81
+ABBV,AbbVie,XLV,285.64
+UNH,UnitedHealth,XLV,418.09
+VRTX,Vertex Pharmaceuticals,XBI,523.93
+REGN,Regeneron,XBI,805.02
+ALNY,Alnylam,XBI,224.03
+FSLR,First Solar,ICLN,171.99
+ENPH,Enphase Energy,ICLN,31.6
+XOM,Exxon Mobil,XLE,183.21
+CVX,Chevron,XLE,233.21
+COP,ConocoPhillips,XLE,150.8
+BRK.B,Berkshire Hathaway,XLF,542.19
+JPM,JPMorgan Chase,XLF,331.58
+V,Visa,XLF,407.92
+PLD,Prologis,VNQ,126.45
+AMT,American Tower,VNQ,188.97
+EQIX,Equinix,VNQ,955.03
+TSLA,Tesla,XLY,372.22
+HD,Home Depot,XLY,319.83
+COST,Costco,XLP,1003.32
+WMT,Walmart,XLP,119.89
+PG,Procter & Gamble,XLP,161.02
+KO,Coca-Cola,XLP,92.71
+PEP,PepsiCo,XLP,135.77
+GE,GE Aerospace,XLI,285.64
+CAT,Caterpillar,XLI,687
+RTX,RTX,ITA,191.01
+BA,Boeing,ITA,188.35
+META,Meta Platforms,XLC,642.62
+GOOGL,Alphabet,XLC,320.21
+NFLX,Netflix,XLC,65.85
+NEE,NextEra Energy,XLU,82.1
+SO,Southern Company,XLU,92.89
+DUK,Duke Energy,XLU,124.98
+RBLX,Roblox,ESPO,52.89
+NTDOY,Nintendo,ESPO,20
+BABA,Alibaba,VWO,99.64

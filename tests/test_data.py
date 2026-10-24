@@ -1,7 +1,7 @@
 """Data files match what the code reads.  OWNER: Lance.
 
-personas.json feeds Evelyn's Nessie seeding and the readiness answer key; etfs.csv feeds
-Saahil's portfolio builder and price cache. These catch a renamed field or missing ticker
+personas.json feeds Evelyn's Nessie seeding; etfs.csv, companies.csv and holdings.csv feed the
+fund builder, the simulated market and the report. These catch a renamed field or missing ticker
 before the demo does.
 """
 import csv
@@ -12,9 +12,10 @@ from pathlib import Path
 import pytest
 
 from agent.tools import TOOLS
+from core.intake import BY_KEY, INTEREST_WORDS
 from core.models import FinancialProfile
 from core.policy import tier_for
-from core.portfolio import CORE_BY_RISK, TILTS_BY_INTEREST
+from core.portfolio import CORE_MIX_BY_RISK, THEMES
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 PERSONAS = json.loads((DATA / "personas.json").read_text())
@@ -50,22 +51,45 @@ def test_listed_bills_fit_inside_monthly_bills(cid):
     assert all(b["due_in_days"] >= 0 for b in p["upcoming_bills"])
 
 
-def test_core_funds_exist_with_matching_risk_level():
-    for level, ticker in CORE_BY_RISK.items():
-        assert ETFS[ticker]["role"] == "core"
-        assert int(ETFS[ticker]["risk_level"]) == level
+def test_core_mixes_use_core_funds_and_add_up():
+    for level, mix in CORE_MIX_BY_RISK.items():
+        assert all(ETFS[t]["role"] == "core" for t in mix), level
+        assert sum(mix.values()) == pytest.approx(1.0), level
 
 
-def test_tilt_funds_exist_with_matching_theme():
-    for interest, tickers in TILTS_BY_INTEREST.items():
-        for t in tickers:
-            assert ETFS[t]["role"] == "tilt"
-            assert ETFS[t]["theme"] == interest
+def test_more_risk_never_means_more_bonds():
+    bonds = [CORE_MIX_BY_RISK[level]["BND"] for level in sorted(CORE_MIX_BY_RISK)]
+    assert bonds == sorted(bonds, reverse=True)
 
 
-def test_claude_interest_options_match_tilts():
-    build = next(t for t in TOOLS if t["name"] == "build_fund")
-    assert set(build["input_schema"]["properties"]["interests"]["items"]["enum"]) == set(TILTS_BY_INTEREST)
+def test_every_theme_has_one_fund_with_a_label_and_description():
+    tilts = [r for r in ETFS.values() if r["role"] == "tilt"]
+    assert len({r["theme"] for r in tilts}) == len(tilts)
+    assert all(r["label"] and r["about"] for r in ETFS.values())
+
+
+def test_interest_chips_and_claude_tools_match_the_themes():
+    assert {v for v, _ in BY_KEY["interests"].options} == set(THEMES)
+    update = next(t for t in TOOLS if t["name"] == "update_interests")
+    assert set(update["input_schema"]["properties"]["add"]["items"]["enum"]) == set(THEMES)
+
+
+def test_every_theme_can_be_typed_as_other():
+    assert set(INTEREST_WORDS) == set(THEMES)
+
+
+def test_look_through_holdings_point_at_known_funds_and_companies():
+    holdings = list(csv.DictReader((DATA / "holdings.csv").open()))
+    companies = {r["ticker"] for r in csv.DictReader((DATA / "companies.csv").open())}
+    for r in holdings:
+        assert r["etf"] in ETFS and r["ticker"] in companies, r
+    for etf in {r["etf"] for r in holdings}:
+        assert sum(float(r["weight_pct"]) for r in holdings if r["etf"] == etf) < 100, etf
+
+
+def test_market_params_are_sane():
+    for t, r in ETFS.items():
+        assert float(r["price"]) > 0 and 0 <= float(r["beta"]) <= 2 and 0 < float(r["resid_vol"]) < 1, t
 
 
 def test_expense_ratios_are_sane_percents():
@@ -79,7 +103,15 @@ def test_tier_boundaries(balance, tier):
     assert tier_for(balance).tier == tier
 
 
-def test_bigger_balances_never_check_less_often():
+def test_bigger_balances_never_review_less_often():
     order = ["Monthly", "Every 2 weeks", "Weekly"]
-    freqs = [tier_for(b).check_frequency for b in (0, 5_000, 20_000, 50_000)]
+    balances = (0, 5_000, 20_000, 50_000, 100_000)
+    freqs = [tier_for(b).check_frequency for b in balances]
     assert [order.index(f) for f in freqs] == sorted(order.index(f) for f in freqs)
+    days = [tier_for(b).review_every_days for b in balances]
+    assert days == sorted(days, reverse=True)
+
+
+def test_auto_trades_unlock_at_5k():
+    assert not tier_for(4_999).auto_trades
+    assert all(tier_for(b).auto_trades for b in (5_000, 20_000, 50_000, 100_000))

@@ -336,11 +336,13 @@ def test_bugs_in_our_requests_are_not_hidden(fake, monkeypatch):
 def test_app_buttons_answer_200_when_nessie_is_down(fake, monkeypatch):
     from fastapi.testclient import TestClient
     from app.main import app
+    from tests.fund_helpers import make_fund
     c = TestClient(app)
+    make_fund("sam")
     assert c.get("/p/sam").status_code == 200
     _nessie_goes_down(monkeypatch)
-    for event in ("payday", "car_repair", "raise", "market_drop"):
-        assert c.post(f"/p/sam/event/{event}").status_code == 200, event
+    for action in ("paycheck", "raise", "market_drop"):
+        assert c.post(f"/p/sam/{action}").status_code == 200, action
     assert c.get("/p/alex").status_code == 200        # other personas too
     nessie.go_online()
 
@@ -389,10 +391,12 @@ def test_reset_without_a_spare_rebuilds(fake):
 def test_badge_says_when_nessie_dropped_out(fake, monkeypatch):
     from fastapi.testclient import TestClient
     from app.main import app
+    from tests.fund_helpers import make_fund
     c = TestClient(app)
+    make_fund("sam")
     assert "Live: Capital One Nessie" in c.get("/p/sam").text
     _nessie_goes_down(monkeypatch)
-    page = c.post("/p/sam/event/payday").text
+    page = c.post("/p/sam/paycheck").text
     assert "Nessie offline" in page and "Live: Capital One Nessie" not in page
 
 
@@ -434,10 +438,12 @@ def test_outage_right_after_the_paycheck_lands_still_completes_payday(fake, monk
         if method == "POST" and body and body.get("description") == "[payroll] paycheck":
             st["down"] = True
         return r
+    from tests.fund_helpers import make_fund
+    make_fund("sam", paycheck_pct=10)
     monkeypatch.setattr(nessie, "_send", flaky)
-    r = TestClient(app, raise_server_exceptions=False).post("/p/sam/event/payday")
-    assert r.status_code == 200 and "invested $50 of $150" in r.text
-    assert get_profile("sam").checking_balance == before.checking_balance - 35 + 2050
+    r = TestClient(app, raise_server_exceptions=False).post("/p/sam/paycheck")
+    assert r.status_code == 200 and "Invested $205 (10%)" in r.text
+    assert get_profile("sam").checking_balance == before.checking_balance - 35 + 2050 - 205
 
 
 def test_a_one_off_read_failure_does_not_drop_the_click(fake, monkeypatch):

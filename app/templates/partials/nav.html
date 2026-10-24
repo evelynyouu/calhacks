@@ -1,0 +1,8 @@
+<nav id="nav" {% if swap_oob %}hx-swap-oob="true"{% endif %} class="mb-5 -mx-1 flex gap-1 overflow-x-auto border-b border-ink/10" aria-label="Sections">
+  {% if s.done %}
+  {% for key, label, href in [('portfolio', 'Portfolio', ''), ('markets', 'Markets', '/markets'), ('news', 'News', '/news'),
+                               ('chat', 'Chat', '/chat'), ('report', 'Report', '/report'), ('account', 'Account', '/account')] %}
+  <a href="/p/{{ cid }}{{ href }}" class="tab {% if tab == key %}tab-active{% endif %}" {% if tab == key %}aria-current="page"{% endif %}>{{ label }}</a>
+  {% endfor %}
+  {% endif %}
+</nav>

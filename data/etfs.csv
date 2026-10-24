@@ -1,12 +1,29 @@
-ticker,name,role,risk_level,expense_ratio,theme
-AOK,iShares Core Conservative Allocation,core,1,0.15,
-AOM,iShares Core Moderate Allocation,core,2,0.15,
-AOR,iShares Core Growth Allocation,core,3,0.15,
-AOA,iShares Core Aggressive Allocation,core,4,0.15,
-VTI,Vanguard Total Stock Market,block,,0.03,
-VXUS,Vanguard Total International Stock,block,,0.05,
-BND,Vanguard Total Bond Market,block,,0.03,
-QQQ,Invesco QQQ Trust,tilt,,0.20,tech
-XLK,Technology Select Sector SPDR,tilt,,0.08,tech
-XLV,Health Care Select Sector SPDR,tilt,,0.08,healthcare
-ICLN,iShares Global Clean Energy,tilt,,0.41,clean_energy
+ticker,name,role,theme,label,expense_ratio,beta,resid_vol,price,about
+VTI,Vanguard Total Stock Market,core,,US stocks,0.03,1.00,0.02,373.01,"About 3,600 US companies in one fund, big and small"
+VXUS,Vanguard Total International Stock,core,,International stocks,0.05,0.80,0.08,82.53,"About 8,000 companies outside the US"
+BND,Vanguard Total Bond Market,core,,Bonds,0.03,0.05,0.05,71.2,US government and company bonds; the steady part that cushions drops
+SPY,SPDR S&P 500,benchmark,,S&P 500,0.09,1.00,0.01,759.97,The 500 biggest US companies; used to measure the market
+QQQ,Invesco QQQ Trust,benchmark,,Nasdaq 100,0.20,1.15,0.06,704.4,"The 100 biggest companies on the Nasdaq; used to track tech-heavy markets"
+DIA,SPDR Dow Jones Industrial Average,benchmark,,Dow 30,0.16,0.9,0.04,521.37,"30 large, well-known US companies; the oldest market average"
+XLK,Technology Select Sector SPDR,tilt,tech,Technology,0.08,1.20,0.10,183.23,"Big US tech companies like Apple, Microsoft and NVIDIA"
+SMH,VanEck Semiconductor,tilt,ai_chips,AI & chips,0.35,1.50,0.20,527.2,"Companies that design and make computer chips, including AI chips"
+IGV,iShares Expanded Tech-Software,tilt,software,Software & cloud,0.39,1.20,0.15,110.59,Software and cloud companies
+CIBR,First Trust NASDAQ Cybersecurity,tilt,cyber,Cybersecurity,0.60,1.10,0.14,106.12,Companies that protect networks and data
+BOTZ,Global X Robotics & Artificial Intelligence,tilt,robotics,Robotics & automation,0.68,1.20,0.16,33.02,"Robot, automation and AI companies around the world"
+XLV,Health Care Select Sector SPDR,tilt,healthcare,Healthcare,0.08,0.70,0.10,179.28,"Drug makers, insurers and medical device companies"
+XBI,SPDR S&P Biotech,tilt,biotech,Biotech,0.35,1.10,0.25,149.54,Smaller biotech companies developing new medicines
+ICLN,iShares Global Clean Energy,tilt,clean_energy,Clean energy,0.41,1.10,0.25,16.02,"Solar, wind and other renewable energy companies"
+XLE,Energy Select Sector SPDR,tilt,oil_gas,Oil & gas,0.08,0.80,0.20,69.33,Oil and gas producers and refiners
+XLF,Financial Select Sector SPDR,tilt,financials,Banks & finance,0.08,1.05,0.10,55.9,"Banks, insurers and payment companies"
+VNQ,Vanguard Real Estate,tilt,real_estate,Real estate,0.13,0.90,0.13,92.69,"Companies that own apartments, warehouses, offices and cell towers"
+XLY,Consumer Discretionary Select Sector SPDR,tilt,consumer,Shopping & cars,0.08,1.15,0.11,113.1,"Retailers, carmakers, restaurants and travel"
+XLP,Consumer Staples Select Sector SPDR,tilt,staples,Everyday essentials,0.08,0.55,0.08,88.26,"Groceries, drinks and household goods people buy in any economy"
+XLI,Industrial Select Sector SPDR,tilt,industrials,Industrials,0.08,1.05,0.09,164.62,"Manufacturing, machinery, airlines and railroads"
+XLC,Communication Services Select Sector SPDR,tilt,communications,Media & social,0.08,1.10,0.12,105.51,"Social media, search, streaming and phone companies"
+XLU,Utilities Select Sector SPDR,tilt,utilities,Utilities,0.08,0.50,0.12,42.56,"Electric, gas and water companies"
+ITA,iShares US Aerospace & Defense,tilt,space_defense,Space & defense,0.38,0.95,0.14,202.23,"Aircraft, space and defense companies"
+ESPO,VanEck Video Gaming and eSports,tilt,gaming,Gaming,0.55,1.15,0.18,99.09,Video game makers and gaming platforms
+VWO,Vanguard FTSE Emerging Markets,tilt,emerging,Emerging markets,0.07,0.85,0.12,56.84,"Companies in fast-growing countries like India, Brazil and Taiwan"
+SCHD,Schwab US Dividend Equity,tilt,dividends,Dividends,0.06,0.80,0.08,35.27,Steady US companies that pay out part of their profits
+VB,Vanguard Small-Cap,tilt,small_caps,Small companies,0.05,1.15,0.10,287.22,Smaller US companies with room to grow
+GLD,SPDR Gold Shares,tilt,gold,Gold,0.40,0.10,0.15,366.61,Physical gold

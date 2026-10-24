@@ -1,10 +1,13 @@
 """All page + HTMX routes.  OWNER: Ethan.
 
-Full pages: /, /p/{cid}, /p/{cid}/report
-HTMX endpoints return partials; extra panels refresh with hx-swap-oob.
+Full pages: / and, per persona, the intake chat at /p/{cid} until the fund is built; after that, tabs:
+/p/{cid} (portfolio), /markets, /news, /chat, /report, /account.
+HTMX endpoints return partials; extra panels refresh with hx-swap-oob, and app events
+(a paycheck, a confirmed trade) also post a line into the chat. The ticker tape polls /tape.
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, Form, HTTPException, Request
@@ -12,54 +15,94 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from agent import claude_agent
+from agent.tools import INDEXES, news_tickers
 from app import state
-from core import nessie
+from core import feed, fund, intake, market, nessie
+from core.broker import get_broker, values
+from core.intake import QUESTIONS, AnswerError, parse
+from core.market import ETFS
 from core.models import to_dict
-from core.payday import run_payday
 from core.policy import tier_for
-from core.portfolio import build_portfolio
+from core.portfolio import THEME_LABELS
 from core.profile import get_profile
-from core.readiness import check_readiness
-from core.sim import crash_test, simulate
+from core.report import build_report
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 templates.env.filters["money"] = lambda v: f"${v:,.0f}"
+templates.env.filters["money2"] = lambda v: f"${v:,.2f}"
 templates.env.filters["pct"] = lambda v, d=0: f"{v * 100:.{d}f}%"
+templates.env.filters["signed"] = lambda v, d=1: f"{round(v, d) + 0.0:+.{d}f}%"
+templates.env.filters["day"] = lambda d: d.strftime("%b %-d, %Y")
+templates.env.filters["ago"] = lambda d: _ago(d)
+templates.env.globals["info"] = market.info
 
-# Personas that start with a fund so the demo can jump straight to them
-DEMO_DEFAULT_FUNDS = {"alex": (3, ["healthcare"])}
+MARKET_DROP_PCT = -10.0
+RAISE_PCT = 10.0
+RANGES = {"1W": 7, "1M": 30, "3M": 91, "6M": 182, "1Y": 365, "2Y": 730}
+EXAMPLE_BUY = 25.0   # "$25 buys 0.07 shares" on a stock's page
+
+# Personas that start with a fund already running, so the demo can jump straight to the report
+DEMO_PRESETS = {
+    "alex": {"answers": {"goal": "Retire early", "starting_amount": 52_000, "paycheck_pct": 20,
+                         "risk_priority": "growth", "risk_range": "wide", "max_drop": 25, "swing_comfort": 7,
+                         "interests": {"themes": ["healthcare", "tech"], "unmatched": []}},
+             "started_days_ago": 365, "auto_trade": True},
+}
 
 
-def _ctx(request: Request, cid: str, **extra) -> dict:
+def _session(cid: str) -> state.Session:
     try:
         profile = get_profile(cid)
     except KeyError:
         raise HTTPException(404, "Unknown persona")
     s = state.get(cid)
-    if s.portfolio is None and cid in DEMO_DEFAULT_FUNDS:
-        s.portfolio = build_portfolio(*DEMO_DEFAULT_FUNDS[cid])
-    readiness = check_readiness(profile)
-    sim = None
-    if s.portfolio:
-        sim = simulate(s.portfolio, profile.invested_balance, readiness.safe_monthly_amount)
+    if not s.transcript:
+        preset = DEMO_PRESETS.get(cid)
+        if preset:
+            s.fund.answers = dict(preset["answers"])
+            fund.start(s.fund, on=s.fund.today - timedelta(days=preset["started_days_ago"]))
+            s.fund.auto_trade = preset["auto_trade"]
+            s.step = len(QUESTIONS)
+            s.say(f"Welcome back, {profile.name}. Your fund has been running for a year. Open the report to see "
+                  f"how it's doing, or press “Paycheck arrives” to watch the next paycheck invest itself.")
+        else:
+            s.say(claude_agent.greeting(profile.name))
+            s.say(claude_agent.question_text(s))
+    return s
+
+
+def _ctx(request: Request, cid: str, **extra) -> dict:
+    s = _session(cid)
+    a = s.fund
+    value = fund.value(a) if a.portfolio else 0.0
     return {
-        "request": request, "cid": cid, "profile": profile, "readiness": readiness,
-        "tier": tier_for(profile.invested_balance), "s": s, "portfolio": s.portfolio, "sim": sim,
-        "pie_data": _pie(s.portfolio), "fan_data": to_dict(sim) if sim else None,
+        "request": request, "cid": cid, "profile": get_profile(cid), "s": s, "a": a, "portfolio": a.portfolio,
+        "value": value, "tier": tier_for(value), "questions": QUESTIONS,
+        "pie_data": _pie(a.portfolio), "broker_mode": get_broker().mode,
         "activity": nessie.recent_activity(cid), "nessie_mode": nessie.mode(), "nessie_offline": nessie.offline_reason(),
-        **extra,
+        "etfs": ETFS, "theme_labels": THEME_LABELS, "live_market": market.source("SPY") == "live",
+        "fast_forwarded": a.today > market.today(), "claude_on": claude_agent._get_client() is not None, **extra,
     }
 
 
 def _pie(p):
     if not p:
         return None
-    return {"labels": [h.ticker for h in p.holdings], "values": [round(h.weight * 100, 1) for h in p.holdings]}
+    return {"labels": [f"{h.ticker} · {market.info(h.ticker)['label']}" for h in p.holdings],
+            "values": [round(h.weight * 100, 1) for h in p.holdings]}
 
 
 def _render(name: str, ctx: dict) -> HTMLResponse:
     return templates.TemplateResponse(ctx["request"], name, ctx)
+
+
+def _panels(request: Request, cid: str, say: str | None = None, oob=("fund", "account", "tier", "today")) -> HTMLResponse:
+    """Re-render the side panels (and post `say` into the chat) after an action."""
+    s = _session(cid)
+    msg = s.say(say) if say else None
+    extra = _today(s.fund) if "today" in oob and s.fund.portfolio else {}
+    return _render("partials/panels.html", _ctx(request, cid, oob=set(oob), chat_note=msg, **extra))
 
 
 # ---------- Pages ----------
@@ -71,93 +114,373 @@ def index(request: Request):
 
 @router.get("/p/{cid}", response_class=HTMLResponse)
 def dashboard(request: Request, cid: str):
-    return _render("dashboard.html", _ctx(request, cid))
+    """The intake chat until the fund is built, then the Portfolio tab."""
+    s = _session(cid)
+    if not s.done:
+        return _render("dashboard.html", _ctx(request, cid))
+    return _render("portfolio.html", _ctx(request, cid, tab="portfolio", prompts=claude_agent.suggested_prompts(s)[:3],
+                                          **_today(s.fund)))
+
+
+def _today(a) -> dict:
+    """Each holding's value and move today, and the fund's dollar move (from each price's day change)."""
+    vals = values(a.customer_id, a.today)
+    q = market.quotes(list(vals), a.today)
+    rows = [{"ticker": t, "info": market.info(t), "value": v, "quote": q.get(t)}
+            for t, v in sorted(vals.items(), key=lambda kv: -kv[1])]
+    day = sum(r["value"] * r["quote"]["change_pct"] / (100 + r["quote"]["change_pct"]) for r in rows if r["quote"])
+    before = sum(vals.values()) - day
+    return {"rows": rows, "day_change": day, "day_pct": day / before * 100 if before else 0.0}
+
+
+@router.get("/p/{cid}/chat", response_class=HTMLResponse)
+def chat_page(request: Request, cid: str, ask: str = ""):
+    s = _session(cid)
+    if not s.done:
+        return RedirectResponse(f"/p/{cid}", status_code=303)
+    return _render("chat_page.html", _ctx(request, cid, tab="chat", prompts=claude_agent.suggested_prompts(s),
+                                          ask=ask.strip()[:300]))
 
 
 @router.get("/p/{cid}/report", response_class=HTMLResponse)
 def report(request: Request, cid: str):
     ctx = _ctx(request, cid)
-    p, r, t = ctx["profile"], ctx["readiness"], ctx["tier"]
-    facts = [
-        f"Invested balance: ${p.invested_balance:,.0f}. Tier {t.tier}, checked {t.check_frequency.lower()}.",
-        f"Readiness: {r.headline}.",
-        *r.reasons,
-        *([f"Fund: {ctx['portfolio'].risk_label}, yearly fee {ctx['portfolio'].annual_fee_pct:.2f}%."]
-          if ctx["portfolio"] else []),
-        *(ctx["s"].last_payday.reasons if ctx["s"].last_payday else []),
-    ]
-    ctx["report_text"] = claude_agent.explain(
-        facts, f"Write {p.name}'s monthly FirstFund report: a friendly 2-paragraph email, then 3 short recommendations.")
-    ctx["report_facts"] = facts
+    if not ctx["portfolio"]:
+        return RedirectResponse(f"/p/{cid}", status_code=303)
+    rep = build_report(ctx["a"])
+    s = rep["summary"]
+    ctx["rep"] = rep
+    ctx["narrative"] = claude_agent.explain(
+        rep["facts"], f"Write {ctx['profile'].name}'s fund report intro: 2 short paragraphs. First, how the fund did "
+                      "and why. Second, what the broad market did and what it means for this fund. No bullet points.",
+        fallback=" ".join(rep["facts"][:5]))
+    ctx["history"] = rep["history"]
+    ctx["fan_data"] = to_dict(rep["projection"])
+    ctx["gain_up"] = s["gain"] >= 0
+    ctx["tab"] = "report"
     return _render("report.html", ctx)
 
 
 @router.post("/p/{cid}/reset")
 def reset(cid: str):
     nessie.reset(cid)
+    get_broker().reset(cid)
+    market.clear_shocks()
     state.reset(cid)
     return RedirectResponse(f"/p/{cid}", status_code=303)
 
 
-# ---------- Chat ----------
+# ---------- Chat: intake answers, then free chat ----------
+
+@router.post("/p/{cid}/answer", response_class=HTMLResponse)
+def answer(request: Request, cid: str, value: str = Form(""), values: list[str] = Form(default=[]),
+           other: str = Form("")):
+    s = _session(cid)
+    q = s.question
+    if q is None:
+        raise HTTPException(400, "The intake is already done")
+    try:
+        stored, shown = parse(q, value, values, other)
+    except AnswerError as e:
+        return _render("partials/chat_turn.html", _ctx(request, cid, new_messages=[{"role": "assistant", "text": str(e)}]))
+    s.fund.answers[q.key] = stored
+    new = [s.say(shown, "user")]
+    s.step += 1
+    oob = {"composer"}
+    if s.done:
+        fund.start(s.fund)
+        new.append(s.say(claude_agent.fund_ready(s)))
+        oob |= {"fund", "account", "tier", "nav"}
+    else:
+        new.append(s.say(claude_agent.question_text(s)))
+        oob.add("fund")   # the progress line
+    return _render("partials/chat_turn.html", _ctx(request, cid, new_messages=new, oob=oob))
+
 
 @router.post("/p/{cid}/chat", response_class=HTMLResponse)
-def chat(request: Request, cid: str, message: str = Form("")):
-    s = state.get(cid)
-    text = message.strip() or "Hi! I just connected my bank."
-    if message.strip():
-        s.transcript.append({"role": "user", "text": text})
+def chat(request: Request, cid: str, message: str = Form(""), echo: str = Form("")):
+    s = _session(cid)
+    text = message.strip()
+    if not text or not s.done:
+        raise HTTPException(400)
+    # Typed messages appear as soon as they're sent (app.js), so only the reply goes back.
+    # Suggested-prompt buttons send echo=1 to get their message back too.
+    sent = s.say(text, "user")
     reply, events = claude_agent.chat_turn(s, text)
-    s.transcript.append({"role": "assistant", "text": reply})
-    ctx = _ctx(request, cid, new_messages=s.transcript[-2:] if message.strip() else s.transcript[-1:],
-               oob=events)
-    return _render("partials/chat_turn.html", ctx)
+    new = ([sent] if echo else []) + [s.say(reply)]
+    return _render("partials/chat_turn.html", _ctx(request, cid, new_messages=new, oob=events))
 
 
-# ---------- Crash test ----------
+# ---------- Paycheck autopilot and demo events ----------
 
-@router.post("/p/{cid}/crash/{choice}", response_class=HTMLResponse)
-def crash(request: Request, cid: str, choice: str):
-    if choice not in ("sell", "hold", "buy"):
-        raise HTTPException(400)
-    s = state.get(cid)
-    if not s.portfolio:
+def _need_fund(cid: str) -> state.Session:
+    s = _session(cid)
+    if not s.fund.portfolio:
         raise HTTPException(400, "Build a fund first")
-    balance = max(get_profile(cid).invested_balance, 1000.0)
-    s.crash = crash_test(s.portfolio, balance, choice, s.intake.get("interests"))
-    if s.crash.new_portfolio:
-        s.portfolio = s.crash.new_portfolio
-    explanation = claude_agent.explain(
-        s.crash.explanation_facts, "The user just took a crash test. Explain in 2 sentences what happens and why.")
-    return _render("partials/crash_result.html", _ctx(request, cid, explanation=explanation, oob={"fund"}))
+    return s
 
 
-# ---------- Life events (Evelyn's functions behind the buttons) ----------
+@router.post("/p/{cid}/paycheck", response_class=HTMLResponse)
+def paycheck(request: Request, cid: str):
+    s = _need_fund(cid)
+    pending_before = len(s.fund.pending)
+    d = fund.paycheck(s.fund)
+    buys = ", ".join(f"{t.symbol} ${t.notional:,.2f}" for t in d["trades"])
+    say = (f"Paycheck landed: ${d['paycheck']:,.0f}. Invested ${d['invested']:,.0f} ({d['pct']:g}%) right away"
+           + (f": {buys}." if buys else "."))
+    if len(s.fund.pending) and len(s.fund.pending) != pending_before:
+        say += f" Your scheduled review also lined up {len(s.fund.pending)} trades; they're waiting for your OK."
+    return _panels(request, cid, say)
 
-EVENTS = {
-    "payday": "Fast-forward to payday",
-    "car_repair": "Unexpected $600 car repair",
-    "raise": "Got a 10% raise",
-    "market_drop": "Market drops 30%",
-}
+
+@router.post("/p/{cid}/market_drop", response_class=HTMLResponse)
+def market_drop(request: Request, cid: str):
+    s = _need_fund(cid)
+    before = fund.value(s.fund)
+    fund.market_drop(s.fund, MARKET_DROP_PCT)
+    after = fund.value(s.fund)
+    return _panels(request, cid, f"The market just fell {abs(MARKET_DROP_PCT):g}%. Your fund went from "
+                                 f"${before:,.2f} to ${after:,.2f}. Your next report will say what, if anything, to do.")
 
 
-@router.post("/p/{cid}/event/{name}", response_class=HTMLResponse)
-def life_event(request: Request, cid: str, name: str):
-    if name not in EVENTS:
+@router.post("/p/{cid}/raise", response_class=HTMLResponse)
+def got_raise(request: Request, cid: str):
+    _need_fund(cid)
+    nessie.apply_raise(cid, RAISE_PCT)
+    return _panels(request, cid, f"Nice, a {RAISE_PCT:g}% raise! Your paychecks are now "
+                                 f"${get_profile(cid).paycheck_amount:,.0f}, so the same percent invests more.")
+
+
+@router.post("/p/{cid}/pct", response_class=HTMLResponse)
+def set_pct(request: Request, cid: str, pct: float = Form(...)):
+    s = _need_fund(cid)
+    fund.set_invest_pct(s.fund, pct)
+    return _panels(request, cid, oob=("account",))
+
+
+@router.post("/p/{cid}/auto", response_class=HTMLResponse)
+def set_auto(request: Request, cid: str, on: str = Form("")):
+    s = _need_fund(cid)
+    if not tier_for(fund.value(s.fund)).auto_trades:
+        raise HTTPException(400, "Automatic trade prep unlocks at a higher balance")
+    s.fund.auto_trade = on == "1"
+    return _panels(request, cid, oob=("account",))
+
+
+@router.post("/p/{cid}/trades/{what}", response_class=HTMLResponse)
+def trades(request: Request, cid: str, what: str):
+    s = _need_fund(cid)
+    if what == "confirm":
+        done = fund.confirm_pending(s.fund)
+        say = "Done: " + ", ".join(f"{t.side} {t.symbol} ${t.notional:,.2f}" for t in done) + "." if done else None
+    elif what == "dismiss":
+        s.fund.pending = []
+        say = "Okay, I dropped those trades. Nothing was bought or sold."
+    else:
         raise HTTPException(400)
-    s = state.get(cid)
-    if name == "payday":
-        days = get_profile(cid).days_to_payday
-        nessie.advance_days(cid, days)
-        s.last_payday = run_payday(cid, s.portfolio)
-        s.last_payday_explanation = claude_agent.explain(
-            s.last_payday.reasons, "Explain what FirstFund just did on payday in 2 short sentences.")
-    elif name == "car_repair":
-        nessie.record_purchase(cid, "Car repair", 600)
-    elif name == "raise":
-        nessie.apply_raise(cid, 10)
-    elif name == "market_drop":
-        nessie.apply_market_move(cid, -30)
-    s.events.insert(0, EVENTS[name])
-    return _render("partials/money.html", _ctx(request, cid, oob={"readiness", "fund", "tier"}))
+    return _panels(request, cid, say)
+
+
+@router.post("/p/{cid}/rec")
+def apply_recommendation(cid: str, action: str = Form(...), value: str = Form("")):
+    """Buttons on the report's recommendations. Trades go to the confirm panel; nothing trades here."""
+    s = _need_fund(cid)
+    a = s.fund
+    if action == "queue_trades":
+        rec = next((r for r in build_report(a)["recommendations"] if r["trades"]), None)
+        if rec:
+            fund.queue(a, rec["trades"], rec["title"])
+            s.say(f"I lined up {len(a.pending)} trades from your report. Review them in the trades panel and "
+                  "press Confirm when you're ready.")
+    elif action == "set_pct":
+        fund.set_invest_pct(a, float(value))
+        s.say(f"Your paycheck share is now {a.invest_pct:g}%.")
+    elif action in ("add_interest", "remove_interest"):
+        if value not in THEME_LABELS:
+            raise HTTPException(400)
+        themes = [t for t in a.answers.get("interests", {}).get("themes", []) if t != value]
+        fund.set_interests(a, themes + [value] if action == "add_interest" else themes)
+        verb = "Added" if action == "add_interest" else "Removed"
+        s.say(f"{verb} {THEME_LABELS[value]}. Your targets changed; new paychecks steer toward them, and the next "
+              "report can line up a rebalance.")
+    else:
+        raise HTTPException(400)
+    return RedirectResponse(f"/p/{cid}" if action == "queue_trades" else f"/p/{cid}/report", status_code=303)
+
+
+# ---------- Markets (watchlist and stock detail) ----------
+
+@router.get("/p/{cid}/markets", response_class=HTMLResponse)
+def markets(request: Request, cid: str, s: str = "", r: str = "3M"):
+    sess = _session(cid)
+    a = sess.fund
+    held = [h.ticker for h in a.portfolio.holdings] if a.portfolio else []
+    groups = [("Indexes", INDEXES), ("Your fund", held), ("Watchlist", sess.watchlist)]
+    q = market.quotes([t for _, ts in groups for t in ts], a.today)
+    sel = (s or (held[0] if held else "SPY")).upper()
+    if not market.known(sel):
+        raise HTTPException(404, f"No prices for {sel}")
+    r = r if r in RANGES else "3M"
+    end = a.today
+    pts = market.series(sel, end - timedelta(days=RANGES[r]), end)
+    year = [p for _, p in market.series(sel, end - timedelta(days=365), end)]
+    quote = q.get(sel) or market.quote(sel, end)
+    shares = get_broker().positions(cid).get(sel, 0.0)
+    cost = get_broker().cost_basis(cid).get(sel, 0.0)
+    detail = {
+        "symbol": sel, "info": market.info(sel), "quote": quote, "range": r, "source": market.source(sel),
+        "chart": {"labels": [d.isoformat() for d, _ in pts], "values": [round(p, 2) for _, p in pts]},
+        "range_pct": (pts[-1][1] / pts[0][1] - 1) * 100 if len(pts) > 1 else 0.0,
+        "high": max(year), "low": min(year),
+        "shares": shares, "value": shares * market.raw_price(sel, end), "cost": cost,
+        "example_shares": EXAMPLE_BUY / quote["price"],
+        "in_fund": sel in held, "is_stock": sel in intake.stocks(a.answers),
+        "can_add_stock": a.portfolio is not None and sel not in ETFS,
+        "theme": ETFS[sel]["theme"] if sel in ETFS and ETFS[sel]["role"] == "tilt" else "",
+        "watching": sel in sess.watchlist, "news": feed.news([sel], 6),
+    }
+    return _render("markets.html", _ctx(request, cid, tab="markets", groups=groups, quotes=q, d=detail,
+                                        ranges=list(RANGES)))
+
+
+@router.get("/p/{cid}/search", response_class=HTMLResponse)
+def search(request: Request, cid: str, q: str = ""):
+    text = q.strip()
+    results = feed.search(text) if len(text) >= 1 else []
+    if text and not results:   # offline: search the tickers we know
+        t = text.lower()
+        results = [{"symbol": k, "name": market.name(k), "asset": "etf" if k in ETFS else "stocks"}
+                   for k in list(ETFS) + list(market.COMPANIES) if t in k.lower() or t in market.name(k).lower()][:8]
+    return _render("partials/search_results.html", _ctx(request, cid, results=results[:8], q=text))
+
+
+@router.post("/p/{cid}/watch")
+def watch(cid: str, symbol: str = Form(...), op: str = Form("add")):
+    s = _session(cid)
+    symbol = symbol.upper().strip()
+    if op == "add" and symbol not in s.watchlist and market.known(symbol):
+        s.watchlist.append(symbol)
+    elif op == "remove" and symbol in s.watchlist:
+        s.watchlist.remove(symbol)
+    return RedirectResponse(f"/p/{cid}/markets?s={symbol}", status_code=303)
+
+
+@router.post("/p/{cid}/stocks")
+def stocks(cid: str, symbol: str = Form(...), op: str = Form("add")):
+    """Add or remove a single company. Targets change now; money follows on paydays or a rebalance."""
+    s = _need_fund(cid)
+    symbol = symbol.upper().strip()
+    current = intake.stocks(s.fund.answers)
+    if op == "add":
+        if symbol in ETFS or not market.known(symbol):
+            raise HTTPException(400, "Can't add that one")
+        fund.set_stocks(s.fund, current + [symbol])
+        h = next((h for h in s.fund.portfolio.holdings if h.ticker == symbol), None)
+        s.say(f"Added {market.name(symbol)} ({symbol}) to your fund at {h.weight:.0%}. Your next paychecks buy it, "
+              "including partial shares." if h else f"Your fund is full of single companies, so {symbol} wasn't added. "
+              "Remove one to make room.")
+    else:
+        fund.set_stocks(s.fund, [t for t in current if t != symbol])
+        s.say(f"Removed {symbol} from your targets. Shares you own stay until you confirm a rebalance.")
+    return RedirectResponse(f"/p/{cid}/markets?s={symbol}", status_code=303)
+
+
+# ---------- News and the AI rundown ----------
+
+@router.get("/p/{cid}/news", response_class=HTMLResponse)
+def news(request: Request, cid: str):
+    s = _session(cid)
+    if not s.done:
+        return RedirectResponse(f"/p/{cid}", status_code=303)
+    which = "market" if request.query_params.get("feed") == "market" else "fund"
+    items = feed.news(news_tickers(s) if which == "fund" else None, 30)
+    return _render("news.html", _ctx(request, cid, tab="news", items=items, which=which,
+                                     prompts=claude_agent.suggested_prompts(s)))
+
+
+@router.get("/p/{cid}/rundown", response_class=HTMLResponse)
+def rundown(request: Request, cid: str, refresh: int = 0):
+    s = _need_fund(cid)
+    if refresh or not s.rundown:
+        s.rundown = {"text": claude_agent.rundown(s), "at": datetime.now()}
+    return _render("partials/rundown.html", _ctx(request, cid))
+
+
+# ---------- Account, settings and security ----------
+
+@router.get("/p/{cid}/account", response_class=HTMLResponse)
+def account(request: Request, cid: str, saved: str = ""):
+    s = _session(cid)
+    if not s.done:
+        return RedirectResponse(f"/p/{cid}", status_code=303)
+    hook = (Path(__file__).resolve().parents[2] / "scripts" / "git-hooks" / "pre-commit").exists()
+    ids = nessie.load_ids().get(cid, {}) if nessie.mode() == nessie.LIVE else {}
+    options = sorted(THEME_LABELS.items(), key=lambda kv: kv[1])
+    return _render("account.html", _ctx(request, cid, tab="account", saved=saved, has_hook=hook,
+                                        accounts=ids.get("accounts", {}), interest_options=options,
+                                        picked=set(intake.interests(s.fund.answers))))
+
+
+@router.post("/p/{cid}/settings")
+async def settings(request: Request, cid: str):
+    s = _session(cid)
+    form = await request.form()
+    for key in ("weekly_report", "trade_confirmations", "big_moves"):
+        s.prefs[key] = form.get(key) == "on"
+    try:
+        s.prefs["big_move_pct"] = max(1, min(20, int(form.get("big_move_pct", s.prefs["big_move_pct"]))))
+    except ValueError:
+        pass
+    return RedirectResponse(f"/p/{cid}/account?saved=notifications#notifications", status_code=303)
+
+
+@router.post("/p/{cid}/interests")
+def interests(cid: str, values: list[str] = Form(default=[])):
+    s = _need_fund(cid)
+    fund.set_interests(s.fund, [v for v in values if v in THEME_LABELS])
+    s.say("Updated your industries. New paychecks steer toward the new targets.")
+    return RedirectResponse(f"/p/{cid}/account?saved=investing#investing", status_code=303)
+
+
+# ---------- Ticker tape ----------
+
+@router.get("/p/{cid}/tape", response_class=HTMLResponse)
+def tape(request: Request, cid: str):
+    s = _session(cid)
+    a = s.fund
+    held = [h.ticker for h in a.portfolio.holdings] if a.portfolio else []
+    symbols = list(dict.fromkeys(INDEXES + held + s.watchlist + ["BND", "GLD"]))
+    q = market.quotes(symbols, a.today)
+    items = [{**q[t], "label": _tape_label(t), "spark": _spark(t, a.today)} for t in symbols if t in q]
+    return _render("partials/tape.html", _ctx(request, cid, tape=items))
+
+
+SPARK_W, SPARK_H, SPARK_DAYS = 64, 28, 30
+
+
+def _tape_label(t: str) -> str:
+    return ETFS[t]["label"] if t in ETFS and ETFS[t]["role"] == "benchmark" else t
+
+
+def _spark(t: str, end) -> dict:
+    """A month of closes as SVG polyline points, plus the y of the first close (the dashed baseline)."""
+    pts = [p for _, p in market.series(t, end - timedelta(days=SPARK_DAYS), end)]
+    if len(pts) < 2:
+        return {"points": "", "base": SPARK_H / 2, "up": True}
+    lo, hi = min(pts), max(pts)
+    span = (hi - lo) or 1.0
+    y = lambda v: round(SPARK_H - 2 - (v - lo) / span * (SPARK_H - 4), 1)
+    step = SPARK_W / (len(pts) - 1)
+    return {"points": " ".join(f"{i * step:.1f},{y(v)}" for i, v in enumerate(pts)), "base": y(pts[0]),
+            "up": pts[-1] >= pts[0]}
+
+
+def _ago(d) -> str:
+    if not d:
+        return ""
+    secs = (datetime.now(d.tzinfo) - d).total_seconds()
+    if secs < 3600:
+        return f"{max(1, int(secs // 60))}m ago"
+    if secs < 86400:
+        return f"{int(secs // 3600)}h ago"
+    return d.strftime("%b %-d")

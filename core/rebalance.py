@@ -1,7 +1,9 @@
-"""Drift and rebalancing.  OWNER: Saahil.  STUB."""
+"""Drift and rebalancing.  OWNER: Saahil."""
 from __future__ import annotations
 
 from core.models import Portfolio
+
+MIN_TRADE = 1.0   # dollars; smaller trades aren't worth placing
 
 
 def allocate_new_money(p: Portfolio, current: dict[str, float], amount: float) -> dict[str, float]:
@@ -13,5 +15,15 @@ def allocate_new_money(p: Portfolio, current: dict[str, float], amount: float) -
 
 
 def drift(p: Portfolio, current: dict[str, float]) -> dict[str, float]:
+    """Actual weight minus target weight, per ticker. Holdings no longer in the fund have target 0."""
     total = sum(current.values()) or 1.0
-    return {h.ticker: round(current.get(h.ticker, 0.0) / total - h.weight, 4) for h in p.holdings}
+    targets = {h.ticker: h.weight for h in p.holdings}
+    return {t: round(current.get(t, 0.0) / total - targets.get(t, 0.0), 4) for t in {**targets, **current}}
+
+
+def rebalance_trades(p: Portfolio, current: dict[str, float]) -> dict[str, float]:
+    """Dollars to trade per ticker to get back to target: positive buys, negative sells."""
+    total = sum(current.values())
+    targets = {h.ticker: h.weight for h in p.holdings}
+    trades = {t: round(targets.get(t, 0.0) * total - current.get(t, 0.0), 2) for t in {**targets, **current}}
+    return {t: v for t, v in trades.items() if abs(v) >= MIN_TRADE}

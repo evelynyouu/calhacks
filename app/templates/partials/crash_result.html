@@ -1,6 +1,0 @@
-{% set c = s.crash %}
-<div class="rounded-xl {% if c.risk_adjusted %}bg-sun-100{% else %}bg-moss-50{% endif %} px-4 py-3 text-sm">
-  <p class="font-medium">{% if c.risk_adjusted %}Risk dialed down to {{ portfolio.risk_label }}.{% else %}No change needed.{% endif %}</p>
-  <p class="mt-1">{{ explanation }}</p>
-</div>
-{% with swap_oob=True %}{% include "partials/fund_card.html" %}{% endwith %}

@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}{{ d.symbol }} · Markets · FirstFund{% endblock %}
+{% block header_right %}{% include "partials/tier.html" %}{% endblock %}
+{% block content %}
+{% include "partials/nav.html" %}
+<div class="grid lg:grid-cols-12 gap-5">
+
+  <aside class="lg:col-span-4 card p-0 overflow-hidden self-start">
+    <div class="p-3 border-b border-ink/10">
+      <label class="composer-box py-1" for="mk-search">
+        <svg aria-hidden="true" class="h-4 w-4 text-ink/40 self-center" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="9" r="6"/><path d="m14 14 4 4"/></svg>
+        <input id="mk-search" name="q" placeholder="Search a company or ticker" autocomplete="off"
+               hx-get="/p/{{ cid }}/search" hx-trigger="input changed delay:300ms, search" hx-target="#search-results">
+      </label>
+      <div id="search-results"></div>
+    </div>
+    {% for title, symbols in groups if symbols %}
+    <p class="eyebrow px-4 pt-3 pb-1">{{ title }}</p>
+    <ul>
+      {% for t in symbols if t in quotes %}{% set q = quotes[t] %}{% set i = info(t) %}
+      <li>
+        <a href="?s={{ t }}&r={{ d.range }}" class="mk-row {% if t == d.symbol %}mk-row-active{% endif %}" {% if t == d.symbol %}aria-current="true"{% endif %}>
+          <span class="min-w-0">
+            <span class="block font-semibold">{{ i.label if i.role == 'benchmark' else t }}</span>
+            <span class="block truncate text-xs text-ink/55">{{ t if i.role == 'benchmark' else i.name }}</span>
+          </span>
+          <span class="text-right shrink-0">
+            <span class="block tabular-nums text-sm">{{ '%.2f' % q.price }}</span>
+            <span class="pill {{ 'pill-up' if q.change_pct >= 0 else 'pill-down' }}">{{ q.change_pct | signed(2) }}</span>
+          </span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endfor %}
+  </aside>
+
+  <section class="lg:col-span-8 space-y-5">
+    {% set q = d.quote %}{% set up = d.range_pct >= 0 %}
+    <div class="card">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p class="eyebrow">{{ d.info.kind == 'stock' and 'Single company' or (d.info.role == 'benchmark' and 'Market index' or 'Fund') }} · {{ d.symbol }}</p>
+          <h1 class="font-display text-3xl font-bold mt-1">{{ d.info.name }}</h1>
+          <p class="text-sm text-ink/60">{{ d.info.about }}</p>
+        </div>
+        <span class="rounded-full px-2 py-0.5 text-xs {{ 'bg-emerald-100 text-emerald-800' if d.source == 'live' and not fast_forwarded else 'bg-ink/5 text-ink/60' }}">
+          {% if fast_forwarded %}Demo date {{ a.today | day }}: simulated{% elif d.source == 'live' %}Nasdaq · delayed{% else %}Simulated{% endif %}
+        </span>
+      </div>
+      <p class="mt-4 font-display text-4xl font-bold tabular-nums">{{ q.price | money2 }}</p>
+      <p class="text-sm font-medium {{ 'text-moss-600' if q.change >= 0 else 'text-clay-500' }}">
+        {{ '+' if q.change >= 0 else '−' }}{{ '%.2f' % (q.change | abs) }} ({{ q.change_pct | signed(2) }}) today
+      </p>
+
+      <div class="mt-4 flex gap-1" role="tablist" aria-label="Chart range">
+        {% for r in ranges %}<a href="?s={{ d.symbol }}&r={{ r }}" role="tab" class="range-btn {% if r == d.range %}range-btn-active{% endif %}" {% if r == d.range %}aria-selected="true"{% endif %}>{{ r }}</a>{% endfor %}
+        <span class="ml-auto self-center text-sm font-medium {{ 'text-moss-600' if up else 'text-clay-500' }}">{{ d.range_pct | signed(2) }} over {{ d.range }}</span>
+      </div>
+      <div class="h-64 mt-2"><canvas data-chart="price" data-payload='{{ dict(d.chart, up=up) | tojson }}' aria-label="{{ d.symbol }} price, {{ d.range }}"></canvas></div>
+
+      <dl class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+        <div class="stat"><dt>Previous close</dt><dd>{{ q.prev_close | money2 if q.prev_close else '–' }}</dd></div>
+        <div class="stat"><dt>52-week high</dt><dd>{{ d.high | money2 }}</dd></div>
+        <div class="stat"><dt>52-week low</dt><dd>{{ d.low | money2 }}</dd></div>
+        <div class="stat"><dt>$25 buys</dt><dd>{{ '%.4f' % d.example_shares }} sh</dd></div>
+      </dl>
+
+      {% if d.shares %}
+      <div class="mt-4 rounded-xl bg-moss-50 px-4 py-3 text-sm">
+        <p class="font-medium">You own {{ '%.4f' % d.shares }} shares, worth {{ d.value | money2 }}</p>
+        <p class="text-ink/65">You paid {{ d.cost | money2 }}; {{ '+' if d.value >= d.cost else '−' }}{{ (d.value - d.cost) | abs | money2 }}{% if d.cost %} ({{ ((d.value / d.cost - 1) * 100) | signed(2) }}){% endif %} since.</p>
+      </div>
+      {% endif %}
+
+      <div class="mt-4 flex flex-wrap gap-2">
+        <form method="post" action="/p/{{ cid }}/watch"><input type="hidden" name="symbol" value="{{ d.symbol }}"><input type="hidden" name="op" value="{{ 'remove' if d.watching else 'add' }}">
+          <button class="btn-ghost">{{ 'Remove from watchlist' if d.watching else '☆ Add to watchlist' }}</button></form>
+        {% if d.is_stock %}
+        <form method="post" action="/p/{{ cid }}/stocks"><input type="hidden" name="symbol" value="{{ d.symbol }}"><input type="hidden" name="op" value="remove"><button class="btn-ghost">Remove from my fund</button></form>
+        {% elif d.can_add_stock and not d.in_fund %}
+        <form method="post" action="/p/{{ cid }}/stocks"><input type="hidden" name="symbol" value="{{ d.symbol }}"><input type="hidden" name="op" value="add"><button class="btn">Add to my fund</button></form>
+        {% elif d.theme and not d.in_fund %}
+        <form method="post" action="/p/{{ cid }}/rec"><input type="hidden" name="action" value="add_interest"><input type="hidden" name="value" value="{{ d.theme }}"><button class="btn">Add {{ d.info.label }} to my interests</button></form>
+        {% endif %}
+      </div>
+      {% if d.can_add_stock and not d.in_fund %}
+      <p class="mt-2 text-xs text-ink/55">Single companies get up to 5% of your fund each. Your paychecks buy partial shares, so any amount works.</p>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <p class="eyebrow">News about {{ d.symbol }}</p>
+      {% if d.news %}
+      <ul class="mt-2 divide-y divide-ink/10">
+        {% for n in d.news %}
+        <li class="py-2.5"><a href="{{ n.link }}" target="_blank" rel="noopener noreferrer" class="font-medium hover:underline">{{ n.title }} <span aria-hidden="true">↗</span></a>
+          <p class="text-xs text-ink/50">{{ n.source }} · {{ n.published | ago }}</p></li>
+        {% endfor %}
+      </ul>
+      {% else %}<p class="mt-2 text-sm text-ink/60">No headlines right now{% if not live_market %} (news needs a connection){% endif %}.</p>{% endif %}
+    </div>
+  </section>
+</div>
+{% endblock %}

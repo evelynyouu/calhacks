@@ -1,14 +1,18 @@
-"""Every test starts in fixture mode with its ids/state/cache files in a temp dir and real HTTP
+"""Every test starts in fixture mode (bank) and sim mode (market) with its ids/state/cache files in a temp dir and real HTTP
 blocked, so running pytest with NESSIE_MODE=live in the environment can never touch the shared
 Nessie key or the real data/ files. Tests that want live mode opt in (see tests/test_live.py)."""
 import pytest
 
-from core import nessie, profile, seed, state
+from app import state as app_state
+from core import feed, market, nessie, profile, seed, state
+from core.broker import get_broker
 
 
 @pytest.fixture(autouse=True)
 def sandbox(monkeypatch, tmp_path):
     monkeypatch.setenv("NESSIE_MODE", "fixture")
+    monkeypatch.setenv("MARKET_DATA", "sim")   # no real prices or news in tests: simulated, deterministic
+    monkeypatch.setattr(feed, "CACHE_DIR", tmp_path / "prices")
     monkeypatch.setattr(nessie, "IDS_PATH", tmp_path / "nessie_ids.json")
     monkeypatch.setattr(state, "STATE_PATH", tmp_path / "state.json")
     monkeypatch.setattr(profile, "CACHE_DIR", tmp_path / "cache")
@@ -20,6 +24,9 @@ def sandbox(monkeypatch, tmp_path):
     nessie.clear_cache()
     nessie.go_online()   # a test that simulated an outage must not leave the app "offline"
     nessie.reset()
+    app_state._SESSIONS.clear()   # chat sessions, simulated trades and market shocks are in memory too
+    get_broker().reset()
+    market.clear_shocks()
     yield
     seed.PAUSE_BACKGROUND = False
     seed.wait_for_background()   # a background rebuild must finish inside the test that started it

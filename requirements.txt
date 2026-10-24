@@ -11,4 +11,4 @@ pytest>=8
 # yfinance
 # pandas
 # numpy
-# alpaca-py
+# alpaca-py   # only for BROKER=alpaca

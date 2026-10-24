@@ -1,26 +1,161 @@
 {% extends "base.html" %}
-{% block title %}Monthly report · FirstFund{% endblock %}
-{% block header_right %}<a href="/p/{{ cid }}" class="btn-ghost">← Back</a>{% endblock %}
+{% block title %}Fund report · FirstFund{% endblock %}
+{% block header_right %}{% include "partials/tier.html" %}{% endblock %}
 {% block content %}
-<div class="max-w-2xl mx-auto">
-  <div class="card p-0 overflow-hidden">
-    <div class="bg-ink/5 px-5 py-3 text-sm space-y-0.5">
-      <p><span class="text-ink/50 w-14 inline-block">From</span> FirstFund &lt;reports@firstfund.app&gt;</p>
-      <p><span class="text-ink/50 w-14 inline-block">To</span> {{ profile.name }}</p>
-      <p><span class="text-ink/50 w-14 inline-block">Subject</span> Your monthly FirstFund report</p>
+{% include "partials/nav.html" %}
+{% set sm = rep.summary %}{% set mk = rep.market %}{% set rel = rep.relation %}
+<div class="max-w-4xl mx-auto space-y-5">
+
+  <section class="card">
+    <div class="flex flex-wrap items-baseline justify-between gap-2">
+      <p class="eyebrow">{{ profile.name }}'s fund report</p>
+      <p class="text-xs text-ink/50">As of {{ rep.as_of | day }} · {% if fast_forwarded %}demo date, prices simulated{% elif live_market %}Nasdaq prices{% else %}simulated prices{% endif %} · trades {{ rep.broker_mode }}</p>
     </div>
-    <div class="px-5 py-5">
-      <div class="prose-sm whitespace-pre-line leading-relaxed">{{ report_text }}</div>
-      <div class="mt-6 grid grid-cols-3 gap-2 text-center">
-        <div class="stat"><dt>Invested</dt><dd>{{ profile.invested_balance | money }}</dd></div>
-        <div class="stat"><dt>Tier</dt><dd>{{ tier.tier }}</dd></div>
-        <div class="stat"><dt>Next check</dt><dd>{{ tier.check_frequency }}</dd></div>
-      </div>
-      <details class="mt-5 text-xs text-ink/60">
-        <summary class="cursor-pointer">Numbers behind this report (computed in Python)</summary>
-        <ul class="mt-2 space-y-0.5">{% for f in report_facts %}<li>• {{ f }}</li>{% endfor %}</ul>
-      </details>
+    <h1 class="font-display text-3xl font-bold mt-1">{{ sm.value | money2 }}</h1>
+    <p class="text-sm {% if gain_up %}text-moss-600{% else %}text-clay-500{% endif %}">
+      {{ '+' if gain_up else '−' }}{{ sm.gain | abs | money2 }} ({{ sm.gain_pct | signed(2) }}) on {{ sm.contributed | money2 }} put in
+    </p>
+    <dl class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+      <div class="stat"><dt>Past {{ rep.period_days }} days</dt><dd>{{ sm.period_pct | signed(2) }}</dd></div>
+      <div class="stat"><dt>S&amp;P 500, same days</dt><dd>{{ sm.market_period_pct | signed(2) }}</dd></div>
+      <div class="stat"><dt>Each paycheck</dt><dd>{{ sm.invest_pct | int }}%</dd></div>
+      <div class="stat"><dt>Yearly fees</dt><dd>{{ sm.fee_dollars | money2 }}</dd></div>
+    </dl>
+    <div class="mt-4 text-[.95rem] leading-relaxed whitespace-pre-line">{{ narrative }}</div>
+    {% if history %}
+    <div class="h-56 mt-4"><canvas data-chart="history" data-payload='{{ history | tojson }}' aria-label="Fund value and money put in over time"></canvas></div>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <p class="eyebrow">What to do now</p>
+    <div class="mt-3 space-y-3">
+      {% for r in rep.recommendations %}
+      <article class="rounded-xl border border-ink/10 p-4">
+        <div class="flex items-start gap-3">
+          <span class="rec-tag rec-{{ r.action }}">{{ r.action | replace('_', ' ') }}</span>
+          <div class="flex-1">
+            <h3 class="font-semibold">{{ r.title }}</h3>
+            <ul class="mt-1 text-sm text-ink/70 space-y-0.5">{% for f in r.facts %}<li>{{ f }}</li>{% endfor %}</ul>
+            {% if r.trades %}
+            <table class="mt-2 w-full text-sm">
+              {% for t in r.trades %}
+              <tr class="border-t border-ink/10"><td class="py-1 uppercase text-xs font-semibold {% if t.side == 'sell' %}text-clay-500{% else %}text-moss-600{% endif %}">{{ t.side }}</td>
+                <td class="py-1">{{ t.symbol }} <span class="text-ink/50">{{ info(t.symbol).label }}</span></td><td class="py-1 text-right tabular-nums">{{ t.notional | money2 }}</td></tr>
+              {% endfor %}
+            </table>
+            {% endif %}
+            <div class="mt-3 flex flex-wrap gap-2">
+              {% if r.trades %}
+              <form method="post" action="/p/{{ cid }}/rec"><input type="hidden" name="action" value="queue_trades"><button class="btn">Line up these trades for my OK</button></form>
+              {% endif %}
+              {% if r.set_pct is not none %}
+              <form method="post" action="/p/{{ cid }}/rec"><input type="hidden" name="action" value="set_pct"><input type="hidden" name="value" value="{{ r.set_pct }}"><button class="btn-ghost">Change to {{ r.set_pct | int }}% of each paycheck</button></form>
+              {% endif %}
+              {% for th in r.add_interest %}
+              <form method="post" action="/p/{{ cid }}/rec"><input type="hidden" name="action" value="add_interest"><input type="hidden" name="value" value="{{ th }}"><button class="btn-ghost">Add {{ theme_labels[th] }}</button></form>
+              {% endfor %}
+              {% for t in r.remove_stock %}
+              <form method="post" action="/p/{{ cid }}/stocks"><input type="hidden" name="symbol" value="{{ t }}"><input type="hidden" name="op" value="remove"><button class="btn-ghost">Drop {{ t }}</button></form>
+              {% endfor %}
+              {% for th in r.remove_interest %}
+              <form method="post" action="/p/{{ cid }}/rec"><input type="hidden" name="action" value="remove_interest"><input type="hidden" name="value" value="{{ th }}"><button class="btn-ghost">Drop {{ theme_labels[th] }}</button></form>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </article>
+      {% endfor %}
     </div>
+    <p class="mt-3 text-xs text-ink/50">
+      {% if rep.schedule.auto_allowed %}Reviews every {{ rep.schedule.review_every_days }} days at your balance; next around {{ rep.schedule.next_review | day }}.
+        Automatic trade prep is {{ 'on' if rep.schedule.auto_on else 'off' }} (change it on the main page). Nothing trades until you confirm.
+      {% else %}Reviews monthly. Automatic trade prep unlocks at $5,000.{% endif %}
+      FirstFund is a guide, not a licensed advisor.
+    </p>
+  </section>
+
+  <section class="card overflow-x-auto">
+    <p class="eyebrow">Your holdings</p>
+    <table class="mt-2 w-full text-sm min-w-[40rem]">
+      <thead class="text-xs text-ink/50 text-left"><tr><th class="py-1.5 font-medium">Fund</th><th class="text-right font-medium">Value</th><th class="text-right font-medium">Now</th><th class="text-right font-medium">Target</th><th class="text-right font-medium">Today</th><th class="text-right font-medium">{{ rep.period_days }} days</th><th class="text-right font-medium">Since you bought</th></tr></thead>
+      <tbody>
+        {% for h in rep.holdings %}
+        <tr class="border-t border-ink/10" title="{{ h.about }}">
+          <td class="py-2"><a href="/p/{{ cid }}/markets?s={{ h.ticker }}" class="hover:underline"><strong>{{ h.ticker }}</strong> <span class="text-ink/60">{{ h.label }}</span></a></td>
+          <td class="text-right tabular-nums">{{ h.value | money2 }}</td>
+          <td class="text-right tabular-nums">{{ h.weight | pct(1) }}</td>
+          <td class="text-right tabular-nums text-ink/60">{{ h.target | pct(1) }}</td>
+          <td class="text-right tabular-nums {% if (h.day_pct or 0) >= 0 %}text-moss-600{% else %}text-clay-500{% endif %}">{{ h.day_pct | signed(2) if h.day_pct is not none else '–' }}</td>
+          <td class="text-right tabular-nums {% if h.period_pct >= 0 %}text-moss-600{% else %}text-clay-500{% endif %}">{{ h.period_pct | signed }}</td>
+          <td class="text-right tabular-nums">{% if h.gain_pct is not none %}{{ h.gain_pct | signed }}{% else %}–{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <div class="grid md:grid-cols-2 gap-5">
+    <section class="card">
+      <p class="eyebrow">Companies inside your fund</p>
+      <p class="text-xs text-ink/50 mt-0.5">Looking through each fund to its biggest holdings (approximate weights).</p>
+      <ul class="mt-2 text-sm divide-y divide-ink/10">
+        {% for c in rep.companies %}
+        <li class="py-1.5 flex items-center justify-between gap-3">
+          <span><strong>{{ c.name }}</strong> <span class="text-ink/50 text-xs">via {{ c.via | join(', ') }}</span></span>
+          <span class="tabular-nums text-right whitespace-nowrap">{{ c.share | pct(1) }} · <span class="{% if c.period_pct >= 0 %}text-moss-600{% else %}text-clay-500{% endif %}">{{ c.period_pct | signed }}</span></span>
+        </li>
+        {% endfor %}
+      </ul>
+      <p class="mt-1 text-xs text-ink/50">Share of your fund · change over {{ rep.period_days }} days</p>
+    </section>
+
+    <section class="card">
+      <p class="eyebrow">Your interests</p>
+      {% if rep.interests %}
+      <ul class="mt-2 text-sm divide-y divide-ink/10">
+        {% for i in rep.interests %}
+        <li class="py-2">
+          <div class="flex justify-between"><span><strong>{{ i.label }}</strong> <span class="text-ink/50">{{ i.ticker }} · {{ i.weight | pct(1) }} of fund</span></span></div>
+          <p class="text-xs text-ink/65 mt-0.5">{{ i.m1 | signed }} this month · {{ i.m3 | signed }} over 3 months ·
+            <span class="{% if i.vs_market_m3 >= 0 %}text-moss-600{% else %}text-clay-500{% endif %}">{{ '%.1f' % (i.vs_market_m3 | abs) }} points {{ 'ahead of' if i.vs_market_m3 >= 0 else 'behind' }} the market</span></p>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}<p class="mt-2 text-sm text-ink/60">You kept the fund broad, with no industry picks.</p>{% endif %}
+    </section>
   </div>
+
+  <section class="card">
+    <p class="eyebrow">The market, and what it means for you</p>
+    <dl class="mt-3 grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
+      <div class="stat"><dt>S&amp;P 500, 1 mo</dt><dd>{{ mk.m1 | signed }}</dd></div>
+      <div class="stat"><dt>3 months</dt><dd>{{ mk.m3 | signed }}</dd></div>
+      <div class="stat"><dt>This year</dt><dd>{{ mk.ytd | signed }}</dd></div>
+      <div class="stat"><dt>International, 1 mo</dt><dd>{{ mk.intl_m1 | signed }}</dd></div>
+      <div class="stat"><dt>Bonds, 1 mo</dt><dd>{{ mk.bonds_m1 | signed }}</dd></div>
+    </dl>
+    <ul class="mt-4 text-sm space-y-1.5">
+      <li>The market is <strong>{{ mk.direction }}</strong> and {{ mk.vol_word }}: its swings over the past month work out to {{ '%.1f' % mk.vol }}% a year, against a typical {{ '%.1f' % mk.vol_typical }}%.
+        {% if mk.below_high < 0 %}It sits {{ '%.1f' % (mk.below_high | abs) }}% below its high of the past year.{% else %}It's at its high for the past year.{% endif %}</li>
+      <li>Your fund typically moves about <strong>{{ '%g' % rel.move_on_10 }}%</strong> when the market moves 10%, because {{ rel.stock_share | pct }} of it is in stocks{% if rel.beta > 1 %} and your industry picks swing more than the market{% endif %}.</li>
+      <li>Over the past {{ rep.period_days }} days your fund moved {{ rel.fund_m1 | signed(2) }} while the S&amp;P 500 moved {{ rel.market_m1 | signed(2) }}.</li>
+    </ul>
+    <div class="mt-4 grid sm:grid-cols-2 gap-4 text-sm">
+      <div><p class="font-medium">Leading sectors this month</p>
+        <ul class="mt-1 space-y-0.5">{% for x in mk.leaders %}<li class="flex justify-between"><span>{{ x.label }} <span class="text-ink/50">{{ x.ticker }}</span></span><span class="tabular-nums text-moss-600">{{ x.m1 | signed }}</span></li>{% endfor %}</ul></div>
+      <div><p class="font-medium">Lagging sectors this month</p>
+        <ul class="mt-1 space-y-0.5">{% for x in mk.laggards %}<li class="flex justify-between"><span>{{ x.label }} <span class="text-ink/50">{{ x.ticker }}</span></span><span class="tabular-nums {% if x.m1 >= 0 %}text-moss-600{% else %}text-clay-500{% endif %}">{{ x.m1 | signed }}</span></li>{% endfor %}</ul></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="flex items-baseline justify-between">
+      <p class="eyebrow">Where this could go: 10 years at {{ rep.projection.monthly_contribution | money }}/month</p>
+      <p class="text-sm text-ink/60">You'd put in {{ rep.projection.total_contributed | money }}</p>
+    </div>
+    <p class="mt-1 text-sm">Typical <strong>{{ rep.projection.p50[-1] | money }}</strong> · range {{ rep.projection.p10[-1] | money }} to {{ rep.projection.p90[-1] | money }}. A range, not a promise.</p>
+    <div class="h-56 mt-2"><canvas data-chart="fan" data-payload='{{ fan_data | tojson }}' aria-label="10-year outcome range"></canvas></div>
+  </section>
 </div>
 {% endblock %}

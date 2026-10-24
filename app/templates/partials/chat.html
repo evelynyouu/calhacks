@@ -1,14 +1,12 @@
-<section class="card flex flex-col h-[28rem]">
-  <p class="eyebrow">Build your fund</p>
-  <div id="chat-messages" class="flex-1 overflow-y-auto space-y-3 py-3 pr-1"
-       {% if not s.transcript %}hx-post="/p/{{ cid }}/chat" hx-trigger="load" hx-swap="beforeend"{% endif %}>
+<section class="card p-0 flex flex-col h-[calc(100vh-8.5rem)] min-h-[34rem]">
+  <div class="flex items-center justify-between px-5 pt-4 pb-2">
+    <p class="eyebrow">Chat</p>
+    <span class="rounded-full bg-ink/5 px-2 py-0.5 text-xs text-ink/60">{% if claude_on %}Claude{% else %}Offline replies{% endif %} · {{ 'live prices' if live_market and not fast_forwarded else 'simulated prices' }}</span>
+  </div>
+  <div id="chat-messages" class="flex-1 overflow-y-auto space-y-5 px-5 py-3" aria-live="polite">
     {% for m in s.transcript %}{% include "partials/chat_bubble.html" %}{% endfor %}
   </div>
-  <div id="typing" class="htmx-indicator text-sm text-ink/50 pb-2">FirstFund is thinking…</div>
-  <form hx-post="/p/{{ cid }}/chat" hx-target="#chat-messages" hx-swap="beforeend" hx-indicator="#typing"
-        hx-on::after-request="this.reset(); this.querySelector('input').focus()" class="flex gap-2">
-    <input name="message" autocomplete="off" required placeholder="Type your answer…"
-           class="flex-1 rounded-xl border border-ink/15 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-moss-500">
-    <button class="btn">Send</button>
-  </form>
+  <div id="typing" class="htmx-indicator px-5 pb-2 text-sm text-ink/50">FirstFund is thinking…</div>
+  {% if s.done and prompts %}{% include "partials/prompts.html" %}{% endif %}
+  {% include "partials/composer.html" %}
 </section>

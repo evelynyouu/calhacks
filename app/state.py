@@ -3,21 +3,40 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from core.models import CrashTestResult, PaydayResult, Portfolio
+from core.fund import FundAccount
+from core.intake import QUESTIONS, Question
+
+DEFAULT_WATCHLIST = ["AAPL", "NVDA", "MSFT", "AMZN"]
+DEFAULT_PREFS = {"weekly_report": True, "trade_confirmations": True, "big_moves": True, "big_move_pct": 3}
 
 
 @dataclass
 class Session:
     customer_id: str
-    messages: list[dict] = field(default_factory=list)     # Claude API message history
+    fund: FundAccount = None                                # set in __post_init__
+    step: int = 0                                           # index into QUESTIONS; len(QUESTIONS) = intake done
+    messages: list[dict] = field(default_factory=list)     # Claude API message history (chat after intake)
     transcript: list[dict] = field(default_factory=list)   # [{"role": "user"/"assistant", "text": ...}] for UI
-    intake: dict = field(default_factory=dict)
-    portfolio: Portfolio | None = None
-    crash: CrashTestResult | None = None
-    last_payday: PaydayResult | None = None
-    last_payday_explanation: str = ""
-    events: list[str] = field(default_factory=list)        # life-event log for the UI
-    scripted_step: int = 0                                  # offline fallback progress
+    watchlist: list[str] = field(default_factory=lambda: list(DEFAULT_WATCHLIST))
+    prefs: dict = field(default_factory=lambda: dict(DEFAULT_PREFS))   # notification settings
+    rundown: dict | None = None                                        # {"text", "at"}: the News tab's AI rundown
+
+    def __post_init__(self):
+        if self.fund is None:
+            self.fund = FundAccount(self.customer_id)
+
+    @property
+    def question(self) -> Question | None:
+        return QUESTIONS[self.step] if self.step < len(QUESTIONS) else None
+
+    @property
+    def done(self) -> bool:
+        return self.step >= len(QUESTIONS)
+
+    def say(self, text: str, role: str = "assistant") -> dict:
+        m = {"role": role, "text": text}
+        self.transcript.append(m)
+        return m
 
 
 _SESSIONS: dict[str, Session] = {}

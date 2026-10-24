@@ -107,11 +107,13 @@ def test_raise_first_does_not_rewrite_past_paychecks():
 def test_dashboard_shows_badge_and_bank_activity():
     from fastapi.testclient import TestClient
     from app.main import app
+    from tests.fund_helpers import make_fund
     c = TestClient(app)
+    make_fund("sam")
     page = c.get("/p/sam").text
-    assert "Demo data" in page and "Bank activity" in page and "[payroll]" in page
-    r = c.post("/p/sam/event/car_repair")
-    assert "[event]</code> Car repair" in r.text and "−$600" in r.text
+    assert "Bank: demo data" in page and "Bank activity" in page and "[payroll]" in page
+    r = c.post("/p/sam/paycheck")
+    assert "[firstfund]</code> payday auto-invest" in r.text
 
 
 def test_newest_action_is_on_top_of_the_feed():
@@ -120,9 +122,12 @@ def test_newest_action_is_on_top_of_the_feed():
     assert [i["tag"] for i in nessie.recent_activity("sam", limit=4)] == ["event", "event", "payroll", "spend"]
 
 
-def test_payday_shows_breakdown_bar():
+def test_paycheck_moves_the_chosen_percent_to_investing():
     from fastapi.testclient import TestClient
     from app.main import app
-    r = TestClient(app).post("/p/sam/event/payday")
-    assert "Bills due before the next paycheck: $1,850" in r.text   # segment tooltip
-    assert "width: 71.43%" in r.text    # $1,850 of $2,590
+    from tests.fund_helpers import make_fund
+    make_fund("sam", paycheck_pct=20)
+    before = nessie.get_customer_raw("sam")["invested_balance"]
+    r = TestClient(app).post("/p/sam/paycheck")
+    assert "Invested $410 (20%)" in r.text           # 20% of the $2,050 paycheck
+    assert nessie.get_customer_raw("sam")["invested_balance"] == before + 410

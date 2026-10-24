@@ -1,7 +1,7 @@
 {
   "maria": {
     "name": "Maria",
-    "blurb": "First job, carrying a credit card balance",
+    "blurb": "First job, paid every two weeks",
     "monthly_income": 3200,
     "monthly_bills": 1450,
     "monthly_spending": 1150,
@@ -28,7 +28,7 @@
   },
   "jordan": {
     "name": "Jordan",
-    "blurb": "Steady paycheck, thin cash cushion",
+    "blurb": "Just started, wants to begin small",
     "monthly_income": 2800,
     "monthly_bills": 1300,
     "monthly_spending": 1100,
@@ -50,7 +50,7 @@
   },
   "sam": {
     "name": "Sam",
-    "blurb": "Stable paycheck, $3K invested",
+    "blurb": "Steady paycheck, $3K saved to invest",
     "monthly_income": 4100,
     "monthly_bills": 1850,
     "monthly_spending": 1050,
@@ -77,7 +77,7 @@
   },
   "alex": {
     "name": "Alex",
-    "blurb": "A few years in, $65K invested",
+    "blurb": "Fund running for a year, ready for its report",
     "monthly_income": 9000,
     "monthly_bills": 2500,
     "monthly_spending": 2500,

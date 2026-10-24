@@ -1,0 +1,6 @@
+{% if cid is defined %}
+{# Placeholder that loads the ticker tape after the page, so quotes never slow the page down. #}
+<div id="tape" class="tape" hx-get="/p/{{ cid }}/tape" hx-trigger="load" hx-swap="outerHTML" aria-label="Market prices">
+  <div class="px-4 py-4 text-xs text-ink/40">Loading prices…</div>
+</div>
+{% endif %}

@@ -1,0 +1,87 @@
+{# The input under the chat. During the intake it matches the question: text, dollars, slider, scale,
+   multiple choice or chips. After the intake it's a free-text box for Claude. #}
+<div id="composer" {% if swap_oob %}hx-swap-oob="true"{% endif %} class="border-t border-ink/10 px-5 pt-3 pb-4">
+  {% set q = s.question %}
+  {% if q %}
+  <div class="mb-2 flex items-center justify-between gap-3">
+    <div class="flex gap-1" aria-hidden="true">
+      {% for _ in questions %}<span class="h-1 w-5 rounded-full {% if loop.index0 < s.step %}bg-moss-500{% elif loop.index0 == s.step %}bg-moss-500/50{% else %}bg-ink/10{% endif %}"></span>{% endfor %}
+    </div>
+    <span class="text-xs text-ink/50">Question {{ s.step + 1 }} of {{ questions | length }}</span>
+  </div>
+  {% if q.help %}<p class="mb-2 text-sm text-ink/60">{{ q.help }}</p>{% endif %}
+  <form hx-post="/p/{{ cid }}/answer" hx-target="#chat-messages" hx-swap="beforeend" hx-indicator="#typing"
+        hx-disabled-elt="find button" class="space-y-3">
+
+    {% if q.kind == 'text' %}
+    <div class="composer-box">
+      <textarea name="value" rows="1" required autofocus data-autogrow placeholder="Type your answer…" aria-label="{{ q.prompt }}"></textarea>
+      <button class="btn">Send</button>
+    </div>
+
+    {% elif q.kind == 'money' %}
+    <div class="composer-box">
+      <span class="pl-1 text-lg text-ink/50">$</span>
+      <input name="value" inputmode="decimal" required autofocus placeholder="0" aria-label="{{ q.prompt }} (US dollars)"
+             {% if profile.invested_balance %}value="{{ '%d' % profile.invested_balance }}"{% endif %}>
+      <span class="text-xs text-ink/40">USD</span>
+      <button class="btn">Send</button>
+    </div>
+
+    {% elif q.kind == 'slider' %}
+    <div class="flex items-center gap-3" data-slider>
+      <input type="range" min="{{ q.min }}" max="{{ q.max }}" step="{{ q.step }}" value="{{ q.default }}"
+             class="flex-1 accent-moss-600" aria-label="{{ q.prompt }}" data-range>
+      <label class="num-box">
+        <input type="number" name="value" min="{{ q.min }}" max="{{ q.max }}" step="{{ q.step }}" value="{{ q.default }}" required data-number aria-label="Exact value">
+        <span class="text-ink/50">{{ q.unit }}</span>
+      </label>
+      <button class="btn">Send</button>
+    </div>
+    {% if q.key == 'paycheck_pct' %}
+    <p class="text-sm text-ink/60" data-paycheck="{{ profile.paycheck_amount }}">
+      That's <strong data-paycheck-out></strong> of your {{ profile.paycheck_amount | money }} paycheck, every payday.
+    </p>
+    {% endif %}
+
+    {% elif q.kind == 'scale' %}
+    <div class="grid grid-cols-10 gap-1.5" role="group" aria-label="{{ q.prompt }}">
+      {% for n in range(q.min | int, q.max | int + 1) %}
+      <button name="value" value="{{ n }}" class="scale-btn">{{ n }}</button>
+      {% endfor %}
+    </div>
+    <div class="flex justify-between text-xs text-ink/50"><span>{{ q.ends[0] }}</span><span>{{ q.ends[1] }}</span></div>
+
+    {% elif q.kind == 'choice' %}
+    <div class="grid sm:grid-cols-2 gap-2" role="group" aria-label="{{ q.prompt }}">
+      {% for v, label in q.options %}
+      <button name="value" value="{{ v }}" class="choice-btn"><span class="choice-key">{{ 'ABCD'[loop.index0] }}</span>{{ label }}</button>
+      {% endfor %}
+    </div>
+
+    {% elif q.kind == 'chips' %}
+    <div class="flex flex-wrap gap-2 max-h-60 overflow-y-auto pr-1" role="group" aria-label="{{ q.prompt }}">
+      {% for v, label in q.options %}
+      <label class="cursor-pointer">
+        <input type="checkbox" name="values" value="{{ v }}" class="peer sr-only">
+        <span class="chip peer-checked:bg-moss-600 peer-checked:text-white peer-checked:border-moss-600 peer-focus-visible:ring-2 peer-focus-visible:ring-moss-500">{{ label }}</span>
+      </label>
+      {% endfor %}
+    </div>
+    <div class="composer-box">
+      <input name="other" placeholder="Other: type anything, like “pet care” or “coffee”" aria-label="Other interests">
+      <button class="btn whitespace-nowrap">Build my fund</button>
+    </div>
+    {% endif %}
+  </form>
+
+  {% else %}
+  <form hx-post="/p/{{ cid }}/chat" hx-target="#chat-messages" hx-swap="beforeend" hx-indicator="#typing"
+        hx-disabled-elt="find button" data-optimistic>
+    <div class="composer-box">
+      <textarea name="message" rows="1" required data-autogrow placeholder="Ask about your fund, the market, or what to do next…" aria-label="Message"></textarea>
+      <button class="btn">Send</button>
+    </div>
+  </form>
+  {% endif %}
+</div>

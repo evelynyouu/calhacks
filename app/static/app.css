@@ -7,7 +7,49 @@
 .btn:hover { background:#1c4c31; }
 .btn-ghost { background:#fff; border:1px solid rgba(27,36,32,.15); font-weight:500; font-size:.875rem; border-radius:.75rem; padding:.45rem .85rem; transition:border-color .15s; }
 .btn-ghost:hover { border-color:#2f7a4f; }
-.bubble { max-width:85%; padding:.55rem .85rem; border-radius:1rem; font-size:.9rem; line-height:1.4; }
+.btn:disabled, .btn-ghost:disabled { opacity:.6; cursor:progress; }
 .htmx-indicator { display:none; }
 .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { display:block; }
-.htmx-request.btn, .htmx-request.btn-ghost { opacity:.6; }
+
+/* Composer */
+.composer-box { display:flex; align-items:flex-end; gap:.5rem; border:1px solid rgba(27,36,32,.15); border-radius:1rem; background:#fff; padding:.4rem .4rem .4rem .75rem; transition:border-color .15s, box-shadow .15s; }
+.composer-box:focus-within { border-color:#2f7a4f; box-shadow:0 0 0 3px rgba(47,122,79,.15); }
+.composer-box input, .composer-box textarea { flex:1; min-width:0; border:0; outline:0; background:transparent; padding:.4rem 0; font-size:.95rem; resize:none; align-self:center; }
+.num-box { display:flex; align-items:center; gap:.15rem; border:1px solid rgba(27,36,32,.15); border-radius:.65rem; padding:.3rem .5rem; background:#fff; }
+.num-box:focus-within { border-color:#2f7a4f; }
+.num-box input { width:3.25rem; text-align:right; border:0; outline:0; font-variant-numeric:tabular-nums; font-weight:600; }
+.choice-btn { display:flex; align-items:center; gap:.6rem; text-align:left; border:1px solid rgba(27,36,32,.15); border-radius:.85rem; padding:.65rem .8rem; font-size:.9rem; background:#fff; transition:border-color .15s, background .15s; }
+.choice-btn:hover, .choice-btn:focus-visible { border-color:#2f7a4f; background:#eef5ef; outline:0; }
+.choice-key { flex-shrink:0; display:grid; place-items:center; width:1.5rem; height:1.5rem; border-radius:.45rem; background:#f6f3ec; font-size:.75rem; font-weight:600; color:rgba(27,36,32,.6); }
+.scale-btn { border:1px solid rgba(27,36,32,.15); border-radius:.65rem; padding:.55rem 0; font-weight:600; font-variant-numeric:tabular-nums; background:#fff; transition:border-color .15s, background .15s; }
+.scale-btn:hover, .scale-btn:focus-visible { border-color:#2f7a4f; background:#25633f; color:#fff; outline:0; }
+.chip { display:inline-block; border:1px solid rgba(27,36,32,.15); border-radius:999px; padding:.35rem .8rem; font-size:.85rem; background:#fff; transition:background .15s, border-color .15s; user-select:none; }
+.chip:hover { border-color:#2f7a4f; }
+
+/* Report recommendation tags */
+.rec-tag { flex-shrink:0; border-radius:.5rem; padding:.15rem .5rem; font-size:.7rem; font-weight:600; text-transform:uppercase; letter-spacing:.04em; background:#eef5ef; color:#1c4c31; }
+.rec-rebalance, .rec-steer { background:#e3ebf5; color:#2c4a6e; }
+.rec-invest_more { background:#d8e8db; color:#1c4c31; }
+.rec-invest_less, .rec-diversify { background:#f7e3d6; color:#8a3f22; }
+.rec-explore { background:#fbf0cc; color:#6e5410; }
+
+/* Tabs */
+.tab { padding:.6rem .9rem; font-size:.9rem; font-weight:500; color:rgba(27,36,32,.6); border-bottom:2px solid transparent; margin-bottom:-1px; white-space:nowrap; }
+.tab:hover { color:#1b2420; }
+.tab-active { color:#1c4c31; border-bottom-color:#25633f; }
+
+/* Day-change pills */
+.pill { display:inline-block; min-width:4.25rem; text-align:right; border-radius:.45rem; padding:.1rem .4rem; font-size:.78rem; font-weight:600; font-variant-numeric:tabular-nums; color:#fff; }
+.pill-up { background:#2f7a4f; }
+.pill-down { background:#c2603a; }
+
+/* Markets list and chart ranges */
+.mk-row { display:flex; align-items:center; justify-content:space-between; gap:.75rem; padding:.55rem 1rem; border-left:3px solid transparent; }
+.mk-row:hover { background:#f6f3ec; }
+.mk-row-active { background:#eef5ef; border-left-color:#25633f; }
+.range-btn { border-radius:.55rem; padding:.25rem .6rem; font-size:.8rem; font-weight:600; color:rgba(27,36,32,.6); }
+.range-btn:hover { background:#f6f3ec; }
+.range-btn-active { background:#1b2420; color:#fff; }
+.range-btn-active:hover { background:#1b2420; }
+.prompt-chip { border:1px solid rgba(27,36,32,.15); border-radius:999px; padding:.3rem .75rem; font-size:.8rem; background:#fff; transition:border-color .15s, background .15s; }
+.prompt-chip:hover { border-color:#2f7a4f; background:#eef5ef; }

@@ -1,5 +1,8 @@
 {% for m in new_messages %}{% include "partials/chat_bubble.html" %}{% endfor %}
 {% with swap_oob=True %}
-  {% if 'readiness' in (oob or []) %}{% include "partials/readiness.html" %}{% endif %}
-  {% if 'fund' in (oob or []) %}{% include "partials/fund_card.html" %}{% include "partials/crash.html" %}{% endif %}
+  {% if 'composer' in (oob or []) %}{% include "partials/composer.html" %}{% endif %}
+  {% if 'fund' in (oob or []) %}{% include "partials/fund_card.html" %}{% endif %}
+  {% if 'account' in (oob or []) %}{% include "partials/account.html" %}{% endif %}
+  {% if 'tier' in (oob or []) %}{% include "partials/tier.html" %}{% endif %}
+  {% if 'nav' in (oob or []) %}{% include "partials/nav.html" %}{% endif %}
 {% endwith %}

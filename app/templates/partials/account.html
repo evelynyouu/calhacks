@@ -1,0 +1,83 @@
+<section id="account" {% if swap_oob %}hx-swap-oob="true"{% endif %} class="card {% if not portfolio %}hidden{% endif %}">
+  {% if portfolio %}
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <p class="eyebrow">Paycheck autopilot</p>
+    <div class="flex flex-wrap gap-1.5 text-xs">
+      <span class="rounded-full bg-ink/5 px-2 py-0.5 text-ink/60">Trades: {{ broker_mode }}</span>
+      {% if nessie_offline %}<span class="rounded-full bg-sun-100 px-2 py-0.5" title="{{ nessie_offline }}">Nessie offline: demo data</span>
+      {% elif nessie_mode == 'live' %}<span class="rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-800">Live: Capital One Nessie</span>
+      {% else %}<span class="rounded-full bg-ink/5 px-2 py-0.5 text-ink/60">Bank: demo data</span>{% endif %}
+    </div>
+  </div>
+
+  <dl class="mt-3 grid grid-cols-3 gap-2 text-center">
+    <div class="stat"><dt>Fund value</dt><dd>{{ value | money }}</dd></div>
+    <div class="stat"><dt>You put in</dt><dd>{{ a.contributed | money }}</dd></div>
+    {% set gain = value - a.contributed %}
+    <div class="stat"><dt>Gain</dt><dd class="{% if gain >= 0 %}text-moss-600{% else %}text-clay-500{% endif %}">{{ '+' if gain >= 0 else '−' }}{{ gain | abs | money }}</dd></div>
+  </dl>
+
+  <form hx-post="/p/{{ cid }}/pct" hx-trigger="change" hx-swap="none" class="mt-4">
+    <label class="text-sm font-medium" for="pct-range">Invest of each paycheck</label>
+    <div class="mt-1 flex items-center gap-3" data-slider>
+      <input id="pct-range" type="range" min="0" max="100" step="1" value="{{ a.invest_pct | int }}" class="flex-1 accent-moss-600" data-range>
+      <label class="num-box"><input type="number" name="pct" min="0" max="100" step="1" value="{{ a.invest_pct | int }}" data-number aria-label="Percent of each paycheck"><span class="text-ink/50">%</span></label>
+    </div>
+    <p class="mt-1 text-sm text-ink/60" data-paycheck="{{ profile.paycheck_amount }}">
+      <strong data-paycheck-out></strong> of each {{ profile.paycheck_amount | money }} paycheck · next payday in {{ profile.days_to_payday }} day{{ 's' if profile.days_to_payday != 1 }}
+    </p>
+  </form>
+
+  <div class="mt-4 flex flex-wrap gap-2">
+    <button class="btn" hx-post="/p/{{ cid }}/paycheck" hx-swap="none" hx-disabled-elt="this">Paycheck arrives</button>
+    <button class="btn-ghost" hx-post="/p/{{ cid }}/market_drop" hx-swap="none" hx-disabled-elt="this">Market drops 10%</button>
+    <button class="btn-ghost" hx-post="/p/{{ cid }}/raise" hx-swap="none" hx-disabled-elt="this">Got a raise</button>
+  </div>
+
+  {% if a.pending %}
+  <div class="mt-4 rounded-xl border border-sun-500/40 bg-sun-100/60 p-3">
+    <p class="text-sm font-medium">{{ a.pending | length }} trade{{ 's' if a.pending | length != 1 }} waiting for your OK</p>
+    <p class="text-xs text-ink/60">{{ a.pending[0].why }}</p>
+    <ul class="mt-2 text-sm divide-y divide-ink/10">
+      {% for t in a.pending %}
+      <li class="py-1 flex justify-between"><span><span class="uppercase text-xs font-semibold {% if t.side == 'sell' %}text-clay-500{% else %}text-moss-600{% endif %}">{{ t.side }}</span> {{ t.symbol }}</span><span class="tabular-nums">{{ t.notional | money2 }}</span></li>
+      {% endfor %}
+    </ul>
+    <div class="mt-2 flex gap-2">
+      <button class="btn" hx-post="/p/{{ cid }}/trades/confirm" hx-swap="none" hx-disabled-elt="this">Confirm trades</button>
+      <button class="btn-ghost" hx-post="/p/{{ cid }}/trades/dismiss" hx-swap="none">Not now</button>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="mt-4 rounded-xl bg-paper px-3 py-2.5 text-sm">
+    {% if tier.auto_trades %}
+    <label class="flex items-start gap-2 cursor-pointer">
+      <input type="checkbox" class="mt-1 accent-moss-600" {% if a.auto_trade %}checked{% endif %}
+             hx-post="/p/{{ cid }}/auto" hx-vals='js:{on: event.target.checked ? "1" : ""}' hx-swap="none">
+      <span>Prepare trades automatically every {{ tier.review_every_days }} days.<br><span class="text-xs text-ink/55">Your {{ tier.check_frequency | lower }} report lines up rebalancing trades. Nothing trades until you confirm.</span></span>
+    </label>
+    {% else %}
+    <p class="text-ink/60">Automatic trade prep unlocks once your fund reaches $5,000. Until then, new money goes to the funds furthest below target, and nothing is sold.</p>
+    {% endif %}
+  </div>
+
+  {% if a.log %}
+  <p class="mt-4 text-sm font-medium">Recent</p>
+  <ul class="mt-1 text-xs text-ink/65 space-y-0.5">{% for e in a.log[:5] %}<li>{{ e }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if activity %}
+  <details class="mt-3 text-xs">
+    <summary class="cursor-pointer text-sm font-medium">Bank activity</summary>
+    <ul class="mt-1 space-y-0.5">
+      {% for x in activity[:6] %}
+      <li class="flex justify-between gap-2">
+        <span class="text-ink/60">{{ x.on[5:] }} · <code>[{{ x.tag }}]</code> {{ x.text }}{% if x.to %} ({{ x.account }} → {{ x.to }}){% endif %}</span>
+        <span class="tabular-nums">{% if x.flow == 'in' %}+{% elif x.flow == 'out' %}−{% endif %}{{ x.amount | money }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+  {% endif %}
+</section>

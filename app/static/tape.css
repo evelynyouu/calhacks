@@ -1,0 +1,25 @@
+/* Ticker strip. Owned by the tape partials (app/templates/partials/tape*.html). */
+.tape-dock { position:sticky; top:0; z-index:40; }
+.tape { background:#fff; border-bottom:1px solid rgba(27,36,32,.1); overflow:hidden; }
+.tape-track { display:flex; width:max-content; animation:tape-scroll 90s linear infinite; }
+.tape:hover .tape-track, .tape:focus-within .tape-track { animation-play-state:paused; }
+.tape-group { display:flex; }
+.tape-card { display:flex; align-items:center; gap:.75rem; padding:.55rem 1.1rem; border-right:1px solid rgba(27,36,32,.08); white-space:nowrap; }
+a.tape-card:hover { background:#f6f3ec; }
+.tape-text { display:flex; flex-direction:column; line-height:1.2; }
+.tape-sym { font-size:.75rem; font-weight:700; color:#1b2420; }
+.tape-price { font-size:.85rem; font-weight:600; font-variant-numeric:tabular-nums; color:#1b2420; }
+.tape-chg { font-size:.72rem; font-weight:600; font-variant-numeric:tabular-nums; }
+.tape-up { color:#1f7a45; }
+.tape-down { color:#c0392b; }
+.tape-spark { flex-shrink:0; }
+.tape-base { stroke:rgba(27,36,32,.3); stroke-width:1; stroke-dasharray:2 2; }
+.tape-line-up { stroke:#1f9d55; }
+.tape-line-down { stroke:#d64535; }
+.tape-note { font-size:.72rem; color:rgba(27,36,32,.45); }
+@keyframes tape-scroll { from { transform:translateX(0); } to { transform:translateX(-50%); } }
+@media (prefers-reduced-motion: reduce) {
+  .tape { overflow-x:auto; }
+  .tape-track { animation:none; }
+  .tape-group[aria-hidden="true"] { display:none; }
+}

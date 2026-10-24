@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Chat · FirstFund{% endblock %}
+{% block header_right %}{% include "partials/tier.html" %}{% endblock %}
+{% block content %}
+{% include "partials/nav.html" %}
+<div class="max-w-3xl mx-auto">{% include "partials/chat.html" %}</div>
+{% if ask %}
+{# A suggested prompt tapped on another tab: send it once, then drop ?ask= so a reload doesn't resend. #}
+<div hx-post="/p/{{ cid }}/chat" hx-vals='{{ {"message": ask, "echo": "1"} | tojson }}' hx-trigger="load"
+     hx-target="#chat-messages" hx-swap="beforeend" hx-indicator="#typing"
+     hx-on::before-request="history.replaceState(null, '', location.pathname)"></div>
+{% endif %}
+{% endblock %}

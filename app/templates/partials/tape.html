@@ -1,0 +1,29 @@
+{# Market strip in the style of Yahoo Finance's: name, price, day change, and a month's sparkline.
+   Two copies of the list scroll left so it loops without a gap; pauses on hover; refreshes every 60s. #}
+<div id="tape" class="tape" hx-get="/p/{{ cid }}/tape" hx-trigger="every 60s" hx-swap="outerHTML" aria-label="Market prices">
+  <div class="tape-track">
+    {% for copy in range(2) %}
+    <div class="tape-group" {% if copy %}aria-hidden="true"{% endif %}>
+      {% for q in tape %}
+      {% set up = q.change >= 0 %}
+      <a href="/p/{{ cid }}/markets?s={{ q.symbol }}" class="tape-card" {% if copy %}tabindex="-1"{% endif %}
+         title="{{ q.name }}: past month">
+        <span class="tape-text">
+          <span class="tape-sym">{{ q.label }}</span>
+          <span class="tape-price">{{ '{:,.2f}'.format(q.price) }}</span>
+          <span class="tape-chg {{ 'tape-up' if up else 'tape-down' }}">{{ '{:+,.2f}'.format(q.change) }} ({{ q.change_pct | signed(2) }})</span>
+        </span>
+        {% if q.spark.points %}
+        <svg class="tape-spark" viewBox="0 0 64 28" width="64" height="28" aria-hidden="true">
+          <line x1="0" x2="64" y1="{{ q.spark.base }}" y2="{{ q.spark.base }}" class="tape-base"/>
+          <polyline points="{{ q.spark.points }}" fill="none" stroke-width="1.5" stroke-linejoin="round"
+                    class="{{ 'tape-line-up' if q.spark.up else 'tape-line-down' }}"/>
+        </svg>
+        {% endif %}
+      </a>
+      {% endfor %}
+      <span class="tape-card tape-note">{{ 'Nasdaq · delayed' if live_market else 'Simulated prices' }}{% if fast_forwarded %} · demo date {{ a.today | day }}{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
