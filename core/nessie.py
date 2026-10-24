@@ -22,6 +22,7 @@ from datetime import date, timedelta
 from typing import Any
 
 import requests
+from urllib3.exceptions import MaxRetryError, NewConnectionError
 from dotenv import load_dotenv
 
 from core import state
@@ -29,7 +30,7 @@ from core import state
 load_dotenv()
 
 BASE = "https://api.nessieisreal.com"   # HTTPS only: plain HTTP (port 80) is refused
-TIMEOUT = 10
+TIMEOUT = (3, 6)   # (connect, read) seconds: a hanging Nessie should hit the fallback in seconds
 RETRIES = 3   # extra attempts after the first (backoff 0.5 + 1 + 2 s); real Nessie sometimes refuses connections briefly
 # Description prefixes for every transaction we write (see docs/EVELYN_API.md):
 # [payroll] paycheck, [payroll-adj] raise, [event] life event, [firstfund] auto-invest,
@@ -132,21 +133,38 @@ def _http(method: str, url: str, **kwargs) -> requests.Response:
     return _session().request(method, url, **kwargs)
 
 
+def _never_sent(e: requests.ConnectionError) -> bool:
+    """True when the connection was refused before the request went out (safe to send again).
+    A connection that dropped after sending looks like a ConnectionError too, but Nessie may
+    already have applied that write."""
+    reason = e.args[0] if e.args else None
+    if isinstance(reason, MaxRetryError):
+        reason = reason.reason
+    return isinstance(reason, NewConnectionError)
+
+
 def _send(method: str, path: str, body: dict | None, params: dict | None) -> Any:
-    """Retries connection errors and 5xx. A POST/DELETE is retried only if it never reached
-    Nessie (connection failed), since a 5xx or read timeout may already have been applied."""
+    """Retries refused connections (any method), and dropped connections and 5xx for GETs only:
+    a write that may have reached Nessie is never sent twice. Timeouts aren't retried, so a
+    hanging Nessie falls back to demo data quickly. Raised errors never contain the API key."""
     query = {"key": _key(), **(params or {})}
+    error = None
     for attempt in range(RETRIES + 1):
         try:
             r = _http(method, f"{BASE}{path}", params=query, json=body, timeout=TIMEOUT)
-        except (requests.ConnectionError, requests.Timeout) as e:
-            safe = method == "GET" or isinstance(e, requests.ConnectionError)
-            if attempt == RETRIES or not safe:
-                raise _redacted(e) from None
+        except requests.Timeout as e:
+            error = e
+            break
+        except requests.ConnectionError as e:
+            if attempt == RETRIES or not (method == "GET" or _never_sent(e)):
+                error = e
+                break
         else:
             if r.status_code < 500 or method != "GET" or attempt == RETRIES:
                 break
         time.sleep(0.5 * 2 ** attempt)
+    if error is not None:
+        raise _redacted(error)   # raised outside the except block, so no context chain holds the key
     if r.status_code >= 400:
         try:
             detail = r.json()
