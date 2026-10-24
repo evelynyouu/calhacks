@@ -550,3 +550,14 @@ def test_a_read_from_another_request_mid_click_does_not_double_count(fake, monke
     nessie.record_purchase("alex", "Car repair", 600)
     truth = profile.derive_live("alex", nessie.load_ids()["alex"])
     assert nessie._SHADOW["alex"]["cash_cushion"] == truth.cash_cushion
+
+
+def test_offline_feed_for_a_persona_not_opened_this_run_keeps_its_clicks(fake):
+    """Fresh server run, Nessie down before Sam's page was opened: the cached live feed is used."""
+    get_profile("sam")
+    apply_life_event("sam", "car_repair")
+    get_profile("sam")                                   # the cache now holds the post-click numbers and feed
+    nessie._SHADOW.pop("sam")                            # as if this server run never opened Sam
+    nessie.go_offline("test")
+    assert get_profile("sam").cash_cushion == 8400
+    assert any(i["text"] == "Car repair" for i in nessie.recent_activity("sam", None))

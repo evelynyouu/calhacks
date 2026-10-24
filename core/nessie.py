@@ -406,6 +406,9 @@ def go_offline(reason: str) -> None:
                 try:
                     snap = profile.cached_snapshot(cid)
                     _SHADOW[cid] = _state_from_snapshot(cid, *snap) if snap else copy.deepcopy(_SEED[cid])
+                    feed = profile.cached_activity(cid) if snap else None
+                    if feed is not None:
+                        _SHADOW[cid]["activity"] = feed   # the feed matches the cached balances
                 except Exception:   # a bad cache must never stop the fallback
                     _SHADOW[cid] = copy.deepcopy(_SEED[cid])
         _offline = reason
