@@ -1,22 +1,48 @@
-"""Readiness check.  RULES: Lance (v1 from the plan).
+"""Readiness check.  RULES: Lance.
 
-Close to the v1 rules already so the demo personas land correctly.
-Lance: refine thresholds and the safe-amount share.
+Order matters: no surplus -> high-interest debt -> cushion size.
+Every "not yet" or "start small" ends with what gets the user to ready, and roughly when.
 """
 from __future__ import annotations
 
 from core.models import FinancialProfile, Readiness
 
 HIGH_INTEREST_APR = 10.0
-SAFE_SHARE_OF_SURPLUS = 0.25   # GUESS: Lance to finalize
+# Share of what's left after bills and spending that goes to investing once ready.
+# A quarter keeps most of the surplus free for months where spending runs over the
+# estimate; the team settled on this so Sam's payday reads "$50 of $150".
+SAFE_SHARE_OF_SURPLUS = 0.25
+# High-interest debt is a guaranteed return, so paying it off gets a bigger share.
+DEBT_SHARE_OF_SURPLUS = 0.5
 HABIT_AMOUNT = 25.0
+MIN_CUSHION_MONTHS = 1.0
+TARGET_CUSHION_MONTHS = 3.0
+_MAX_PLAN_MONTHS = 600   # stop projecting after 50 years
 
 
 def check_readiness(p: FinancialProfile) -> Readiness:
     months = p.cushion_months
     surplus = max(0.0, p.monthly_surplus)
+    full = round(surplus * SAFE_SHARE_OF_SURPLUS, 0)
+
+    if surplus <= 0:
+        gap = p.monthly_expenses - p.monthly_income
+        next_step = (f"Freeing up ${gap:,.0f}/month just breaks even; anything past that can start working for you."
+                     if gap > 0 else "Even a small cut in spending gives you room to start.")
+        return Readiness(
+            status="not_yet",
+            safe_monthly_amount=0.0,
+            headline="Not yet: your spending covers your whole paycheck",
+            reasons=[
+                f"You bring in ${p.monthly_income:,.0f} a month and spend about ${p.monthly_expenses:,.0f}.",
+                "Investing only makes sense with money left over after bills and spending.",
+                next_step,
+            ],
+        )
 
     if p.card_debt > 0 and p.card_apr >= HIGH_INTEREST_APR:
+        payment = round(surplus * DEBT_SHARE_OF_SURPLUS, 0)
+        payoff = _months_to_pay_off(p.card_debt, p.card_apr, payment)
         return Readiness(
             status="not_yet",
             safe_monthly_amount=0.0,
@@ -24,34 +50,26 @@ def check_readiness(p: FinancialProfile) -> Readiness:
             reasons=[
                 f"Your card charges about {p.card_apr:.0f}% a year.",
                 f"Paying it off is a guaranteed {p.card_apr:.0f}% return; no fund reliably beats that.",
-                f"At ${surplus * 0.5:,.0f}/month it's gone in about {p.card_debt / max(surplus * 0.5, 1):.0f} months.",
+                f"At ${payment:,.0f}/month it's gone in about {_duration(payoff)}, interest included. "
+                "Then you can start investing.",
             ],
         )
 
-    if months < 1:
-        return Readiness(
-            status="start_small",
-            safe_monthly_amount=HABIT_AMOUNT,
-            headline=f"Start with ${HABIT_AMOUNT:.0f}/month while you build a cushion",
-            reasons=[
-                f"Your cushion covers {months:.1f} months of expenses; aim for at least 1.",
-                f"${HABIT_AMOUNT:.0f}/month builds the habit without touching your safety net.",
-            ],
-        )
+    amount = safe_amount(full, months)
+    if months < TARGET_CUSHION_MONTHS:
+        reasons = [f"Your cushion covers {months:.1f} months of expenses; {TARGET_CUSHION_MONTHS:.0f} is the target."]
+        if months < MIN_CUSHION_MONTHS:
+            headline = f"Start with ${amount:,.0f}/month while you build a cushion"
+            reasons.append(f"${amount:,.0f}/month builds the habit without touching your safety net.")
+        else:
+            headline = f"Start small: ${amount:,.0f}/month, the rest to your cushion"
+            reasons.append("Your monthly amount grows as your cushion does.")
+        to_target = _months_to_target(p, surplus, full)
+        if to_target is not None:
+            reasons.append(f"Save the rest of your ${surplus:,.0f} monthly surplus and you'll be fully ready "
+                           f"in about {_duration(to_target)}, investing ${full:,.0f}/month.")
+        return Readiness(status="start_small", safe_monthly_amount=amount, headline=headline, reasons=reasons)
 
-    if months < 3:
-        amount = round(surplus * SAFE_SHARE_OF_SURPLUS / 2, 0)
-        return Readiness(
-            status="start_small",
-            safe_monthly_amount=amount,
-            headline=f"Start small: ${amount:,.0f}/month, the rest to your cushion",
-            reasons=[
-                f"Your cushion covers {months:.1f} months; 3 is the target.",
-                "New money is split between your cushion and investing until then.",
-            ],
-        )
-
-    amount = round(surplus * SAFE_SHARE_OF_SURPLUS, 0)
     return Readiness(
         status="ready",
         safe_monthly_amount=amount,
@@ -62,3 +80,42 @@ def check_readiness(p: FinancialProfile) -> Readiness:
             f"That's {SAFE_SHARE_OF_SURPLUS:.0%} of your ${surplus:,.0f} monthly surplus.",
         ],
     )
+
+
+def safe_amount(full: float, cushion_months: float) -> float:
+    """Monthly investing amount: the habit amount under 1 month of cushion, ramping
+    smoothly up to the full share at 3 months, so there's no cliff at either line.
+    Never more than the full share."""
+    if cushion_months >= TARGET_CUSHION_MONTHS:
+        return full
+    progress = max(0.0, (cushion_months - MIN_CUSHION_MONTHS) / (TARGET_CUSHION_MONTHS - MIN_CUSHION_MONTHS))
+    return round(min(full, max(HABIT_AMOUNT, full * progress)), 0)
+
+
+def _months_to_pay_off(debt: float, apr: float, payment: float) -> int | None:
+    rate = apr / 100 / 12
+    for month in range(1, _MAX_PLAN_MONTHS + 1):
+        debt = debt * (1 + rate) - payment
+        if debt <= 0:
+            return month
+    return None
+
+
+def _months_to_target(p: FinancialProfile, surplus: float, full: float) -> int | None:
+    """Months until the cushion reaches the target if everything not invested is saved."""
+    if p.monthly_expenses <= 0:
+        return None
+    cushion, target = p.cash_cushion, TARGET_CUSHION_MONTHS * p.monthly_expenses
+    for month in range(1, _MAX_PLAN_MONTHS + 1):
+        cushion += surplus - safe_amount(full, cushion / p.monthly_expenses)
+        if cushion >= target:
+            return month
+    return None
+
+
+def _duration(months: int | None) -> str:
+    if months is None:
+        return "a very long time at this pace"
+    if months <= 18:
+        return f"{months} month{'s' if months != 1 else ''}"
+    return f"{months / 12:.1f} years"
