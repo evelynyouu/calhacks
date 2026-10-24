@@ -561,3 +561,22 @@ def test_offline_feed_for_a_persona_not_opened_this_run_keeps_its_clicks(fake):
     nessie.go_offline("test")
     assert get_profile("sam").cash_cushion == 8400
     assert any(i["text"] == "Car repair" for i in nessie.recent_activity("sam", None))
+
+
+def test_concurrent_cache_writes_for_one_persona_never_fail(fake):
+    import threading
+    p = get_profile("sam")
+    errors = []
+
+    def write():
+        for _ in range(300):
+            try:
+                profile._save_cache(p, state.SIM_START)
+            except Exception as e:   # noqa: BLE001
+                errors.append(e)
+    threads = [threading.Thread(target=write) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == [] and profile.cached_snapshot("sam") is not None
