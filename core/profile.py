@@ -56,8 +56,18 @@ def _live_profile(customer_id: str) -> FinancialProfile:
     if ids is None:
         raise KeyError(customer_id)   # not seeded (the app shows 404)
     try:
-        p = derive_live(customer_id, ids)
-        as_of, _ = live_clock(customer_id, ids)
+        try:
+            p = derive_live(customer_id, ids)
+            as_of, _ = live_clock(customer_id, ids)
+        except (nessie.NessieError, nessie.StaleIds) as e:
+            # A reset may have swapped this persona's accounts while we were reading the old ones:
+            # re-read the ids once before deciding the ids are stale.
+            fresh = nessie.load_ids().get(customer_id)
+            if not nessie.needs_fallback(e) or fresh is None or fresh == ids:
+                raise
+            ids = fresh
+            p = derive_live(customer_id, ids)
+            as_of, _ = live_clock(customer_id, ids)
     except (nessie.NessieError, nessie.StaleIds, requests.RequestException) as e:
         if not nessie.needs_fallback(e):
             raise

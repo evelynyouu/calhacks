@@ -3,8 +3,19 @@ import json
 
 import pytest
 import requests
+from urllib3.exceptions import MaxRetryError, NewConnectionError, ProtocolError
 
 from core import nessie
+
+
+def refused():
+    """What requests raises when the connection is refused: nothing reached Nessie."""
+    return requests.ConnectionError(MaxRetryError(None, "/x", NewConnectionError(None, "[Errno 61] Connection refused")))
+
+
+def dropped():
+    """What requests raises when the connection drops after the request went out: it may have been applied."""
+    return requests.ConnectionError(ProtocolError("Connection aborted.", ConnectionResetError(54, "Connection reset by peer")))
 
 
 def _response(status, body):
@@ -43,7 +54,7 @@ def test_get_sends_key_and_timeout(fake):
     assert calls[0]["method"] == "GET"
     assert calls[0]["url"] == "https://api.nessieisreal.com/accounts/a1"
     assert calls[0]["params"] == {"key": "test-key"}
-    assert calls[0]["timeout"] == 10
+    assert calls[0]["timeout"] == (3, 6)   # short, so a hanging Nessie falls back in seconds
 
 
 def test_get_retries_5xx_then_succeeds(fake):
@@ -64,14 +75,14 @@ def test_get_gives_up_after_three_retries(fake):
 
 def test_get_retries_connection_errors(fake):
     calls, queue = fake
-    queue += [requests.ConnectionError("down"), requests.ReadTimeout("slow"), (200, {"_id": "c1"})]
+    queue += [dropped(), refused(), (200, {"_id": "c1"})]
     assert nessie.get_customer("c1") == {"_id": "c1"}
     assert len(calls) == 3
 
 
 def test_post_retried_when_connection_failed(fake):
     calls, queue = fake
-    queue += [requests.ConnectionError("down"), (201, {"objectCreated": {"_id": "d1"}})]
+    queue += [refused(), (201, {"objectCreated": {"_id": "d1"}})]
     assert nessie.create_deposit("a1", 100, "2026-10-30", "[payroll]")["_id"] == "d1"
     assert len(calls) == 2
 
@@ -284,8 +295,7 @@ def test_a_write_only_evicts_the_account_it_touched(monkeypatch):
 def test_refused_connections_are_retried_for_a_few_seconds(fake):
     """Real Nessie sometimes refuses connections for a moment (seen 2026-10-24)."""
     calls, queue = fake
-    refused = requests.ConnectionError("Failed to establish a new connection: [Errno 61] Connection refused")
-    queue += [refused, refused, refused, (201, {"objectCreated": {"_id": "d1"}})]
+    queue += [refused(), refused(), refused(), (201, {"objectCreated": {"_id": "d1"}})]
     assert nessie.create_deposit("a1", 100, "2026-10-30", "[payroll]")["_id"] == "d1"   # safe: it never reached Nessie
     assert len(calls) == 4
 
@@ -298,3 +308,37 @@ def test_connections_are_pooled_per_thread():
     t.start()
     t.join()
     assert a is b and other[0] is not a
+
+
+
+def test_post_not_retried_when_the_connection_dropped_after_sending(fake):
+    """Nessie may already have applied it; retrying would deposit the paycheck twice."""
+    calls, queue = fake
+    queue += [dropped(), (201, {"objectCreated": {"_id": "d1"}})]
+    with pytest.raises(requests.ConnectionError):
+        nessie.create_deposit("a1", 2050, "2026-10-30", "[payroll] paycheck")
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("hang", [requests.ReadTimeout("read timed out"), requests.ConnectTimeout("connect timed out")])
+def test_a_hanging_nessie_is_not_retried(fake, hang):
+    """With (3, 6)s timeouts and no retry, a hanging Nessie costs seconds before the fallback, not minutes."""
+    calls, queue = fake
+    queue += [hang, (200, {})]
+    with pytest.raises(requests.Timeout):
+        nessie.get_account("a1")
+    assert len(calls) == 1
+
+
+def test_the_key_is_nowhere_in_a_raised_error(fake, monkeypatch):
+    calls, queue = fake
+    monkeypatch.setenv("NESSIE_API_KEY", "SECRETKEY123")
+    leaky = requests.ConnectionError("Max retries exceeded with url: /accounts/a1?key=SECRETKEY123")
+    queue += [leaky] * 4
+    with pytest.raises(requests.ConnectionError) as info:
+        nessie.get_account("a1")
+    e, seen = info.value, []
+    while e is not None:   # str, repr, the cause and the (suppressed) context chain
+        seen += [str(e), repr(e)]
+        e = e.__cause__ or e.__context__
+    assert not any("SECRETKEY123" in x for x in seen)
