@@ -151,8 +151,20 @@ def delete_account(account_id: str) -> None:
 
 # ---------- transactions ----------
 
+def whole(amount: float) -> float:
+    """Nessie's transaction amounts are integers (whole dollars), so every amount we write is one.
+    Both modes round with this, so fixture and live stay identical."""
+    return float(round(amount))
+
+
+def txn_date(txn: dict) -> str:
+    """Nessie's docs date every transaction with transaction_date; older data used purchase_date."""
+    return str(txn.get("transaction_date") or txn.get("purchase_date"))[:10]
+
+
 def _txn(amount: float, on: str, description: str, **extra) -> dict:
-    return {"medium": "balance", "transaction_date": on, "amount": round(amount, 2), "description": description, **extra}
+    return {"medium": "balance", "transaction_date": on, "amount": int(whole(amount)), "description": description,
+            **extra}
 
 
 def get_deposits(account_id: str) -> list[dict]:
@@ -176,14 +188,17 @@ def get_purchases(account_id: str) -> list[dict]:
 
 
 def create_purchase(account_id: str, merchant_id: str, amount: float, on: str, description: str) -> dict:
-    body = _txn(amount, on, description, merchant_id=merchant_id)
-    body["purchase_date"] = body.pop("transaction_date")
-    return _post(f"/accounts/{account_id}/purchases", body)
+    return _post(f"/accounts/{account_id}/purchases", _txn(amount, on, description, merchant_id=merchant_id))
 
 
 def get_transfers(account_id: str, role: str | None = None) -> list[dict]:
-    """role: "payer" (money out), "payee" (money in), or None for Nessie's default."""
-    return request("GET", f"/accounts/{account_id}/transfers", params={"type": role} if role else None)
+    """role: "payer" (money out), "payee" (money in), or None for Nessie's default.
+    The ?type= filter isn't in Nessie's docs, so the direction is also checked here."""
+    items = request("GET", f"/accounts/{account_id}/transfers", params={"type": role} if role else None)
+    key = {"payer": "payer_id", "payee": "payee_id"}.get(role)
+    if key and items and all(key in t for t in items):
+        items = [t for t in items if t[key] == account_id]
+    return items
 
 
 def create_transfer(from_id: str, to_id: str, amount: float, on: str, description: str) -> dict:
@@ -336,7 +351,8 @@ def advance_days(customer_id: str, days: int) -> None:
     end = start + timedelta(days=days)
     c["as_of"] = end.isoformat()
     c["days_to_payday"] = max(0, c["days_to_payday"] - days)
-    c["checking_balance"] = round(c["checking_balance"] - c["monthly_spending"] * days / 30, 2)
+    spend = whole(c["monthly_spending"] * days / 30)
+    c["checking_balance"] = round(c["checking_balance"] - spend, 2)
     for b in c["upcoming_bills"]:
         day = c["bill_days"][b["name"]]
         for _ in state.occurrences(day, start, end):   # each due date we passed is paid
@@ -350,13 +366,15 @@ def record_purchase(customer_id: str, name: str, amount: float) -> None:
     if mode() == LIVE:
         return _live().record_purchase(customer_id, name, amount)
     c = _STATE[customer_id]
-    from_savings = min(amount, max(0.0, c["cash_cushion"]))
+    amount = whole(amount)
+    from_savings = whole(min(amount, max(0.0, c["cash_cushion"])))
     c["cash_cushion"] = round(c["cash_cushion"] - from_savings, 2)
     c["card_debt"] = round(c["card_debt"] + amount - from_savings, 2)
 
 
 def raise_paycheck(customer_id: str, amount: float) -> None:
     """Paychecks go up by `amount` from now on, and the first raise lands in checking now."""
+    amount = whole(amount)
     if mode() == LIVE:
         return _live().raise_paycheck(customer_id, amount)
     c = _STATE[customer_id]
@@ -374,4 +392,5 @@ def apply_market_move(customer_id: str, pct: float) -> None:
     if mode() == LIVE:
         return _live().apply_market_move(customer_id, pct)
     c = _STATE[customer_id]
-    c["invested_balance"] = round(c["invested_balance"] * (1 + pct / 100), 2)
+    change = whole(c["invested_balance"] * pct / 100)
+    c["invested_balance"] = round(c["invested_balance"] + change, 2)

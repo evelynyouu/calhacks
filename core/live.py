@@ -36,7 +36,7 @@ def advance_days(cid: str, days: int) -> None:
     acct, merchants = _accounts(cid), nessie.load_ids()["_merchants"]
     start = state.as_of(cid)
     end = start + timedelta(days=days)
-    spend = round(get_profile(cid).monthly_spending * days / 30, 2)
+    spend = nessie.whole(get_profile(cid).monthly_spending * days / 30)
     if spend:
         nessie.create_purchase(acct["checking"], merchants["groceries"], spend, end.isoformat(),
                                "[spend] day-to-day spending")
@@ -55,7 +55,8 @@ def transfer_to_investing(cid: str, amount: float) -> str:
 def record_purchase(cid: str, name: str, amount: float) -> None:
     """Savings covers the cost (moved to checking, then paid); anything left goes on the card."""
     acct, merchants = _accounts(cid), nessie.load_ids()["_merchants"]
-    from_savings = round(min(amount, max(0.0, get_profile(cid).cash_cushion)), 2)
+    amount = nessie.whole(amount)
+    from_savings = nessie.whole(min(amount, max(0.0, get_profile(cid).cash_cushion)))
     if from_savings > 0:
         nessie.create_transfer(acct["savings"], acct["checking"], from_savings, _today(cid), f"[event] cover {name}")
         nessie.create_purchase(acct["checking"], merchants["auto"], from_savings, _today(cid), f"[event] {name}")
@@ -71,7 +72,7 @@ def raise_paycheck(cid: str, amount: float) -> None:
 
 def apply_market_move(cid: str, pct: float) -> None:
     acct = _accounts(cid)["investing"]
-    change = round(get_profile(cid).invested_balance * pct / 100, 2)
+    change = nessie.whole(get_profile(cid).invested_balance * pct / 100)
     if change < 0:
         nessie.create_withdrawal(acct, -change, _today(cid), f"[event] market move {pct:+g}%")
     elif change > 0:
