@@ -1,3 +1,6 @@
+<<<<<<< HEAD
+# calhacks
+=======
 # FirstFund
 
 Every paycheck invests itself, but never before rent is paid.
@@ -76,3 +79,4 @@ Claude never generates numbers. Every number on screen is rendered by Jinja from
 - Session state is in memory: one demo user at a time, resets on server restart.
 - Alpaca paper orders placed on a weekend stay "accepted" (markets closed); the UI shows `est_fill_price` from the cached last close.
 - Tailwind runs from its CDN script; fine for a hackathon, needs internet (as does Claude).
+>>>>>>> c36300f5c9cdb87c7c04e0049f4ddfffe624f6ca
