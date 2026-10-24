@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-# calhacks
-=======
 # FirstFund
 
 Every paycheck invests itself, but never before rent is paid.
@@ -22,7 +19,7 @@ Open http://localhost:8000. With no API key, chat runs a scripted intake so the 
 | Path | Owner | Status |
 |---|---|---|
 | `core/models.py` | **Everyone**: change only after telling the team | Shared contract |
-| `core/nessie.py`, `core/profile.py`, `scripts/seed_nessie.py`, `core/payday.py` (flow) | Evelyn | Stub: in-memory personas |
+| `core/nessie.py`, `core/profile.py`, `scripts/seed_nessie.py`, `core/payday.py` (flow) | Evelyn | Fixture + live Nessie mode; see `docs/EVELYN_API.md` |
 | `core/portfolio.py`, `core/sim.py`, `core/rebalance.py`, `core/broker.py`, `scripts/cache_prices.py` | Saahil | Stub: placeholder numbers |
 | `core/readiness.py`, `core/policy.py`, `agent/prompts.py`, `data/personas.json`, `data/etfs.csv`, `tests/` | Lance | v1 rules from the plan |
 | `app/`, `agent/claude_agent.py`, `agent/tools.py` | Ethan | Working |
@@ -79,4 +76,3 @@ Claude never generates numbers. Every number on screen is rendered by Jinja from
 - Session state is in memory: one demo user at a time, resets on server restart.
 - Alpaca paper orders placed on a weekend stay "accepted" (markets closed); the UI shows `est_fill_price` from the cached last close.
 - Tailwind runs from its CDN script; fine for a hackathon, needs internet (as does Claude).
->>>>>>> c36300f5c9cdb87c7c04e0049f4ddfffe624f6ca
