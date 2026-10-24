@@ -22,7 +22,7 @@ from datetime import date, timedelta
 from typing import Any
 
 import requests
-from urllib3.exceptions import MaxRetryError, NewConnectionError, SSLError as _TLSError
+from urllib3.exceptions import MaxRetryError, NewConnectionError
 from dotenv import load_dotenv
 
 from core import state
@@ -140,7 +140,9 @@ def _never_sent(e: requests.ConnectionError) -> bool:
     reason = e.args[0] if e.args else None
     if isinstance(reason, MaxRetryError):
         reason = reason.reason
-    return isinstance(reason, (NewConnectionError, _TLSError))   # refused, or the TLS handshake failed
+    # Only a refused connection. A TLS error is not enough: one after the request went out has the
+    # same shape as a failed handshake, and re-sending that write could duplicate it in Nessie.
+    return isinstance(reason, NewConnectionError)
 
 
 def _send(method: str, path: str, body: dict | None, params: dict | None) -> Any:
@@ -475,10 +477,14 @@ def _demo(name: str, fx, customer_id, *args):
     if not _offline:
         # The shadow must start from the numbers before this click, so if this run hasn't read the
         # persona yet (e.g. right after a restart), read it now, before the click counts as in flight.
+        # Reset doesn't need it (it overwrites the shadow from the starting numbers) and must still
+        # work when the stored ids are stale; unseeded personas have nothing to read yet.
         from core import profile   # lazily: core.profile imports this module
-        for cid in targets:
-            if cid not in _SHADOW:
-                profile.get_profile(cid)
+        if name != "reset":
+            seeded = load_ids()
+            for cid in targets:
+                if cid not in _SHADOW and cid in seeded:
+                    profile.get_profile(cid)
     if not _offline:
         with _clicks_lock:
             for cid in targets:
@@ -487,7 +493,7 @@ def _demo(name: str, fx, customer_id, *args):
             done, value = _try_live(name, customer_id, *args)
             if done:
                 for cid in targets:
-                    if cid in _SHADOW:
+                    if cid in _SHADOW or name == "reset":   # reset needs no prior copy: it writes the start
                         fx(_SHADOW, cid, *args)   # keep the fallback copy in step
                 return value
         finally:

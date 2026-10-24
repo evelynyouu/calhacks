@@ -3,6 +3,7 @@
 The key check: after seeding, and after every button, the live profile matches the fixture
 profile for the same steps (money within $1, everything else exactly).
 """
+import json
 from datetime import timedelta
 
 import pytest
@@ -640,3 +641,30 @@ def test_reset_as_first_click_then_outage_shows_the_reset_numbers(fake, monkeypa
     feed = nessie.recent_activity("sam", None)
     _ = ("after reset+outage: cash_cushion", p.cash_cushion, "car repair in feed:", any(i["text"] == "Car repair" for i in feed))
     assert p.cash_cushion == 9000
+
+
+
+# ---------- fixes from the fourth review ----------
+
+def test_reset_as_first_click_after_a_restart_fixes_stale_ids(fake):
+    """Render restored an old ids file (accounts deleted, spare available): reset must still swap
+    in the spare and stay live, not go offline on the pre-click read."""
+    committed = nessie.IDS_PATH.read_text()
+    reset_persona("sam")
+    seed.wait_for_background()
+    ids = json.loads(committed)
+    ids["_spares"] = nessie.load_ids()["_spares"]       # the current spare survives in Nessie
+    nessie.IDS_PATH.write_text(json.dumps(ids))
+    nessie._SHADOW.clear()                              # restart; page already open
+    nessie.clear_cache()
+    assert reset_persona("sam").checking_balance == 575
+    assert not nessie.offline_reason()
+
+
+def test_reset_seeds_a_persona_missing_from_the_ids_file(fake):
+    ids = nessie.load_ids()
+    del ids["jordan"]
+    nessie.save_ids(ids)
+    nessie._SHADOW.clear()
+    nessie.reset("jordan")                              # used to reseed; must not KeyError
+    assert "jordan" in nessie.load_ids() and get_profile("jordan").checking_balance == 600
