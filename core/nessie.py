@@ -109,6 +109,13 @@ def request(method: str, path: str, body: dict | None = None, params: dict | Non
     return result
 
 
+def _redacted(e: requests.RequestException) -> requests.RequestException:
+    """The same error with the API key taken out: requests puts the full URL (?key=...) in its
+    messages, and those reach logs and tracebacks."""
+    key = os.environ.get("NESSIE_API_KEY") or "\x00"
+    return type(e)(str(e).replace(key, "***"))
+
+
 def _send(method: str, path: str, body: dict | None, params: dict | None) -> Any:
     """Retries connection errors and 5xx. A POST/DELETE is retried only if it never reached
     Nessie (connection failed), since a 5xx or read timeout may already have been applied."""
@@ -119,7 +126,7 @@ def _send(method: str, path: str, body: dict | None, params: dict | None) -> Any
         except (requests.ConnectionError, requests.Timeout) as e:
             safe = method == "GET" or isinstance(e, requests.ConnectionError)
             if attempt == RETRIES or not safe:
-                raise
+                raise _redacted(e) from None
         else:
             if r.status_code < 500 or method != "GET" or attempt == RETRIES:
                 break
@@ -290,7 +297,10 @@ def load_ids() -> dict:
 
 
 def save_ids(ids: dict) -> None:
-    IDS_PATH.write_text(json.dumps(ids, indent=2, sort_keys=True) + "\n")
+    """Atomic: background rebuilds save while pages read, so a reader must never see half a file."""
+    tmp = IDS_PATH.with_name(f"{IDS_PATH.name}.{threading.get_ident()}.tmp")
+    tmp.write_text(json.dumps(ids, indent=2, sort_keys=True) + "\n")
+    os.replace(tmp, IDS_PATH)
 
 
 def mode() -> str:
@@ -306,6 +316,11 @@ def mode() -> str:
 
 _offline: str | None = None
 _offline_lock = threading.Lock()
+# While live, _SHADOW holds a demo-data copy of each persona kept in step with Nessie: refreshed
+# from every successful live read (core.profile calls sync_shadow) and with every successful live
+# click applied to it too. If Nessie drops out, the app switches to it, so the screen continues
+# from exactly what it last showed (including the click that hit the outage) with no jump.
+_SHADOW: dict = {}
 
 
 def offline_reason() -> str | None:
@@ -313,8 +328,32 @@ def offline_reason() -> str | None:
     return _offline
 
 
+class StaleIds(Exception):
+    """data/nessie_ids.json points at accounts that no longer exist (e.g. Render restored an old
+    copy after a reset deleted them). Falls back to demo data instead of a 500."""
+
+
 def is_outage(e: BaseException) -> bool:
     return isinstance(e, requests.RequestException) or (isinstance(e, NessieError) and e.status >= 500)
+
+
+def needs_fallback(e: BaseException) -> bool:
+    """Outages, and ids that point at accounts Nessie no longer has. Other 4xx are our bugs: raise."""
+    return is_outage(e) or isinstance(e, StaleIds) or (isinstance(e, NessieError) and e.status == 404)
+
+
+def describe_failure(e: BaseException) -> str:
+    """A short, safe reason for the badge and logs. Never str(e): requests errors carry the URL,
+    and the URL carries the API key."""
+    if isinstance(e, StaleIds) or (isinstance(e, NessieError) and e.status == 404):
+        return "Nessie ids are out of date (accounts not found); re-seed or reset this persona"
+    if isinstance(e, NessieError):
+        return f"Nessie answered {e.status}"
+    if isinstance(e, requests.Timeout):
+        return "Nessie timed out"
+    if isinstance(e, requests.ConnectionError):
+        return "couldn't reach Nessie"
+    return f"Nessie request failed ({type(e).__name__})"
 
 
 def go_offline(reason: str) -> None:
@@ -324,14 +363,29 @@ def go_offline(reason: str) -> None:
             return
         from core import profile   # lazily: core.profile imports this module
         for cid in _SEED:
-            snap = profile.cached_snapshot(cid)
-            _STATE[cid] = _state_from_snapshot(cid, *snap) if snap else copy.deepcopy(_SEED[cid])
+            if cid not in _SHADOW:   # never read live in this run: last cached live numbers, else the start
+                try:
+                    snap = profile.cached_snapshot(cid)
+                    _SHADOW[cid] = _state_from_snapshot(cid, *snap) if snap else copy.deepcopy(_SEED[cid])
+                except Exception:   # a bad cache must never stop the fallback
+                    _SHADOW[cid] = copy.deepcopy(_SEED[cid])
         _offline = reason
 
 
 def go_online() -> None:
+    """Back to live (tests; the app itself goes back to live on restart)."""
     global _offline
     _offline = None
+    _SHADOW.clear()
+
+
+def sync_shadow(cid: str, p, as_of) -> None:
+    """Called after each successful live read: the fallback copy becomes exactly what's on screen."""
+    if not _offline:
+        old = _SHADOW.get(cid, {})
+        _SHADOW[cid] = _state_from_snapshot(cid, p, as_of)
+        if "activity" in old:
+            _SHADOW[cid]["activity"] = old["activity"]
 
 
 def _state_from_snapshot(cid: str, p, as_of) -> dict:
@@ -347,15 +401,38 @@ def _state_from_snapshot(cid: str, p, as_of) -> dict:
 
 
 def _try_live(name: str, *args):
-    """(True, result) from the live implementation, or (False, None) after an outage so the
-    caller runs the fixture path instead."""
+    """(True, result) from the live implementation, or (False, None) after a failure that needs
+    the fallback, so the caller runs the demo-data path instead."""
     try:
         return True, getattr(_live(), name)(*args)
     except Exception as e:
-        if not is_outage(e):
+        if not needs_fallback(e):
             raise
-        go_offline(f"{type(e).__name__}: {e}")
+        go_offline(describe_failure(e))
         return False, None
+
+
+def _configured_live() -> bool:
+    return os.environ.get("NESSIE_MODE", "fixture") == LIVE
+
+
+def _demo(name: str, fx, customer_id, *args):
+    """Run a demo button. Fixture mode: on _STATE. Live: on Nessie, with the same effect applied to
+    the shadow copy; if Nessie fails (now or earlier in this run), on the shadow copy instead."""
+    if not _configured_live():
+        return fx(_STATE, customer_id, *args)
+    if not _offline:
+        done, value = _try_live(name, customer_id, *args)
+        if done:
+            for cid in ([customer_id] if customer_id else list(_SHADOW)):
+                if cid in _SHADOW:
+                    fx(_SHADOW, cid, *args)   # keep the fallback copy in step
+            return value
+    return fx(_SHADOW, customer_id, *args)
+
+
+def _store() -> dict:
+    return _SHADOW if _offline else _STATE
 
 
 # ---------- demo stub (in-memory; what the web layer calls today) ----------
@@ -397,42 +474,43 @@ def list_customers() -> list[dict]:
 
 
 def get_customer_raw(customer_id: str) -> dict:
-    if customer_id not in _STATE:
+    store = _store()
+    if customer_id not in store:
         raise KeyError(customer_id)
-    return _STATE[customer_id]
+    return store[customer_id]
 
+
+# Each demo button: a public function (what the routes call) and its demo-data effect (_fx_*),
+# which _demo runs on _STATE, or on the shadow copy alongside or instead of live Nessie.
 
 def reset(customer_id: str | None = None) -> None:
-    """Back to the starting numbers. Live mode re-seeds the persona's Nessie accounts."""
-    if mode() == LIVE:
-        done, value = _try_live("reset", customer_id)
-        if done:
-            return value
-    if customer_id is None:
-        _STATE.clear()
-        _STATE.update(copy.deepcopy(_SEED))
-    else:
-        _STATE[customer_id] = copy.deepcopy(_SEED[customer_id])
+    """Back to the starting numbers. Live mode swaps in the persona's spare Nessie copy."""
+    return _demo("reset", _fx_reset, customer_id)
+
+
+def _fx_reset(store: dict, customer_id: str | None) -> None:
+    for cid in [customer_id] if customer_id else list(_SEED):
+        store[cid] = copy.deepcopy(_SEED[cid])
 
 
 def transfer_to_investing(customer_id: str, amount: float) -> str:
     """Checking -> Investing account. Returns a transfer id."""
-    if mode() == LIVE:
-        done, value = _try_live("transfer_to_investing", customer_id, amount)
-        if done:
-            return value
-    c = _STATE[customer_id]
+    return _demo("transfer_to_investing", _fx_transfer_to_investing, customer_id, amount)
+
+
+def _fx_transfer_to_investing(store: dict, customer_id: str, amount: float) -> str:
+    c = store[customer_id]
     c["checking_balance"] = round(c["checking_balance"] - amount, 2)
     c["invested_balance"] = round(c["invested_balance"] + amount, 2)
     return f"stub-xfer-{uuid.uuid4().hex[:8]}"
 
 
 def deposit_paycheck(customer_id: str) -> float:
-    if mode() == LIVE:
-        done, value = _try_live("deposit_paycheck", customer_id)
-        if done:
-            return value
-    c = _STATE[customer_id]
+    return _demo("deposit_paycheck", _fx_deposit_paycheck, customer_id)
+
+
+def _fx_deposit_paycheck(store: dict, customer_id: str) -> float:
+    c = store[customer_id]
     c["checking_balance"] = round(c["checking_balance"] + c["paycheck_amount"], 2)
     c["days_to_payday"] = 14
     return c["paycheck_amount"]
@@ -440,11 +518,11 @@ def deposit_paycheck(customer_id: str) -> float:
 
 def advance_days(customer_id: str, days: int) -> None:
     """Move the demo clock forward: day-to-day spending and bills that come due leave checking."""
-    if mode() == LIVE:
-        done, value = _try_live("advance_days", customer_id, days)
-        if done:
-            return value
-    c = _STATE[customer_id]
+    return _demo("advance_days", _fx_advance_days, customer_id, days)
+
+
+def _fx_advance_days(store: dict, customer_id: str, days: int) -> None:
+    c = store[customer_id]
     start = date.fromisoformat(c["as_of"])
     end = start + timedelta(days=days)
     c["as_of"] = end.isoformat()
@@ -461,11 +539,11 @@ def advance_days(customer_id: str, days: int) -> None:
 def record_purchase(customer_id: str, name: str, amount: float) -> None:
     """Life event, e.g. 'Unexpected $600 car repair'. Savings covers it; anything savings
     can't cover goes on the credit card. Checking (earmarked for bills) is left alone."""
-    if mode() == LIVE:
-        done, value = _try_live("record_purchase", customer_id, name, amount)
-        if done:
-            return value
-    c = _STATE[customer_id]
+    return _demo("record_purchase", _fx_record_purchase, customer_id, name, amount)
+
+
+def _fx_record_purchase(store: dict, customer_id: str, name: str, amount: float) -> None:
+    c = store[customer_id]
     amount = whole(amount)
     from_savings = whole(min(amount, max(0.0, c["cash_cushion"])))
     c["cash_cushion"] = round(c["cash_cushion"] - from_savings, 2)
@@ -474,12 +552,11 @@ def record_purchase(customer_id: str, name: str, amount: float) -> None:
 
 def raise_paycheck(customer_id: str, amount: float) -> None:
     """Paychecks go up by `amount` from now on, and the first raise lands in checking now."""
-    amount = whole(amount)
-    if mode() == LIVE:
-        done, value = _try_live("raise_paycheck", customer_id, amount)
-        if done:
-            return value
-    c = _STATE[customer_id]
+    return _demo("raise_paycheck", _fx_raise_paycheck, customer_id, whole(amount))
+
+
+def _fx_raise_paycheck(store: dict, customer_id: str, amount: float) -> None:
+    c = store[customer_id]
     c["paycheck_amount"] = round(c["paycheck_amount"] + amount, 2)
     c["monthly_income"] = round(c["monthly_income"] + 2 * amount, 2)   # two paychecks a month
     c["checking_balance"] = round(c["checking_balance"] + amount, 2)
@@ -488,15 +565,15 @@ def raise_paycheck(customer_id: str, amount: float) -> None:
 def apply_raise(customer_id: str, pct: float) -> None:
     done, paycheck = _try_live("current_paycheck", customer_id) if mode() == LIVE else (False, None)
     if not done:
-        paycheck = _STATE[customer_id]["paycheck_amount"]
+        paycheck = _store()[customer_id]["paycheck_amount"]
     raise_paycheck(customer_id, round(paycheck * pct / 100, 2))
 
 
 def apply_market_move(customer_id: str, pct: float) -> None:
-    if mode() == LIVE:
-        done, value = _try_live("apply_market_move", customer_id, pct)
-        if done:
-            return value
-    c = _STATE[customer_id]
+    return _demo("apply_market_move", _fx_apply_market_move, customer_id, pct)
+
+
+def _fx_apply_market_move(store: dict, customer_id: str, pct: float) -> None:
+    c = store[customer_id]
     change = whole(c["invested_balance"] * pct / 100)
     c["invested_balance"] = round(c["invested_balance"] + change, 2)

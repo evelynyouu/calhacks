@@ -38,12 +38,14 @@ def advance_days(cid: str, days: int) -> None:
     start = live_clock(cid)[0]
     end = start + timedelta(days=days)
     spend = nessie.whole(get_profile(cid).monthly_spending * days / 30)
-    if spend:
-        nessie.create_purchase(acct["checking"], merchants["groceries"], spend, end.isoformat(),
-                               "[spend] day-to-day spending")
+    # Bills first: the [spend] entry dated `end` is what moves the live clock (live_clock reads the
+    # newest date), so it goes last; if a bill write fails, the clock hasn't moved and nothing is skipped.
     for b in nessie.get_bills(acct["checking"]):
         for d in state.occurrences(b["recurring_date"], start, end):
             nessie.create_withdrawal(acct["checking"], b["payment_amount"], d.isoformat(), f"[bill] {b['nickname']}")
+    if spend:
+        nessie.create_purchase(acct["checking"], merchants["groceries"], spend, end.isoformat(),
+                               "[spend] day-to-day spending")
 
 
 def transfer_to_investing(cid: str, amount: float) -> str:

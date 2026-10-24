@@ -361,3 +361,125 @@ def test_reset_without_a_spare_rebuilds(fake):
     assert reset_persona("sam") == start
     seed.wait_for_background()
     assert "sam" in nessie.load_ids()["_spares"]        # and a spare is ready for next time
+
+
+# ---------- fixes from the 2026-10-24 review ----------
+
+def test_offline_reason_never_contains_the_api_key(fake, monkeypatch):
+    """requests puts the URL (with ?key=) in its error messages; that text reaches the page badge."""
+    monkeypatch.setenv("NESSIE_API_KEY", "SECRETKEY123")
+
+    def down(*a, **k):
+        raise requests.ConnectionError("HTTPSConnectionPool: Max retries exceeded with url: "
+                                       "/accounts/a1/deposits?key=SECRETKEY123")
+    monkeypatch.setattr(nessie, "_send", down)
+    nessie.clear_cache()
+    get_profile("sam")
+    assert nessie.offline_reason() and "SECRETKEY123" not in nessie.offline_reason()
+
+
+def test_two_raises_in_one_day_match_fixture(fake, monkeypatch):
+    for _ in range(2):
+        apply_life_event("sam", "raise")
+        in_mode(monkeypatch, "fixture", apply_life_event, "sam", "raise")
+    assert_same(monkeypatch, "sam")
+    live = fast_forward_to_payday("sam")
+    fixture = in_mode(monkeypatch, "fixture", fast_forward_to_payday, "sam")
+    assert live.paycheck_detected == fixture.paycheck_detected == 2450
+
+
+def test_outage_right_after_the_paycheck_lands_still_completes_payday(fake, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    before = get_profile("sam")
+    st = {"down": False}
+
+    def flaky(method, path, body=None, params=None):
+        if st["down"]:
+            raise requests.ConnectionError("venue wifi died")
+        r = fake.request(method, path, body, params)
+        if method == "POST" and body and body.get("description") == "[payroll] paycheck":
+            st["down"] = True
+        return r
+    monkeypatch.setattr(nessie, "_send", flaky)
+    r = TestClient(app, raise_server_exceptions=False).post("/p/sam/event/payday")
+    assert r.status_code == 200 and "invested $50 of $150" in r.text
+    assert get_profile("sam").checking_balance == before.checking_balance - 35 + 2050
+
+
+def test_a_one_off_read_failure_does_not_drop_the_click(fake, monkeypatch):
+    before = get_profile("sam")
+    n = {"fail": 1}
+
+    def blip(method, path, body=None, params=None):
+        if method == "GET" and n["fail"]:
+            n["fail"] -= 1
+            raise nessie.NessieError(method, path, 503, "Service Unavailable")
+        return fake.request(method, path, body, params)
+    monkeypatch.setattr(nessie, "_send", blip)
+    nessie.clear_cache()
+    after = apply_life_event("sam", "car_repair")
+    assert after.cash_cushion == before.cash_cushion - 600       # the screen shows the click
+
+
+def test_stale_ids_after_a_restart_fall_back_instead_of_500(fake, monkeypatch):
+    """Render restores the committed nessie_ids.json on restart, which can point at deleted accounts."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    committed = nessie.IDS_PATH.read_text()
+    reset_persona("sam")
+    seed.wait_for_background()                                   # old accounts deleted
+    nessie.IDS_PATH.write_text(committed)                        # the restart
+    nessie.clear_cache()
+    r = TestClient(app, raise_server_exceptions=False).get("/p/sam")
+    assert r.status_code == 200
+    assert nessie.offline_reason() and "re-seed" in nessie.offline_reason()
+
+
+def test_ids_file_is_never_read_half_written(fake):
+    import threading
+    stop, errors = threading.Event(), []
+
+    def writer():
+        ids = nessie.load_ids()
+        while not stop.is_set():
+            nessie.save_ids(ids)
+    t = threading.Thread(target=writer)
+    t.start()
+    try:
+        for _ in range(3000):
+            try:
+                nessie.load_ids()["sam"]
+            except Exception as e:   # noqa: BLE001
+                errors.append(e)
+    finally:
+        stop.set()
+        t.join()
+    assert errors == []
+
+
+def test_a_corrupt_cache_file_is_ignored(fake):
+    profile.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    (profile.CACHE_DIR / "sam.json").write_text('{"customer_id": "sam", "not_a_field": 1}')
+    assert profile.cached_snapshot("sam") is None
+    nessie.go_offline("test")
+    assert get_profile("sam").name == "Sam"
+
+
+def test_two_quick_resets_leave_no_orphan_accounts(fake):
+    seed.PAUSE_BACKGROUND = True
+    reset_persona("sam")
+    reset_persona("sam")                                          # before the first rebuild ran
+    seed.PAUSE_BACKGROUND = False
+    seed.wait_for_background()
+    ids = nessie.load_ids()
+    referenced = {a for k, v in ids.items() if not k.startswith("_") for a in v["accounts"].values()}
+    referenced |= {a for v in ids["_spares"].values() for a in v["accounts"].values()}
+    assert set(fake.accounts) <= referenced
+
+
+def test_bills_are_written_before_the_spending_that_moves_the_clock(fake):
+    n = len(fake.calls)
+    nessie.advance_days("sam", 14)                               # rent and phone fall due
+    writes = [c[2]["description"] for c in fake.calls[n:] if c[0] == "POST"]
+    assert writes[-1] == "[spend] day-to-day spending" and any(w.startswith("[bill]") for w in writes[:-1])
