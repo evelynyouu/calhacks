@@ -41,7 +41,7 @@ def advance_days(cid: str, days: int) -> None:
         nessie.create_purchase(acct["checking"], merchants["groceries"], spend, end.isoformat(),
                                "[spend] day-to-day spending")
     for b in nessie.get_bills(acct["checking"]):
-        for d in seed.occurrences(b["recurring_date"], start, end):
+        for d in state.occurrences(b["recurring_date"], start, end):
             nessie.create_withdrawal(acct["checking"], b["payment_amount"], d.isoformat(), f"[bill] {b['nickname']}")
     state.update(cid, as_of=end.isoformat())
 

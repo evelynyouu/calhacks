@@ -190,3 +190,40 @@ def test_diff_tolerates_cents_but_not_days_or_apr():
     assert diff(dataclasses.replace(p, checking_balance=502), p) != []
     assert diff(dataclasses.replace(p, days_to_payday=8), p) != []
     assert diff(dataclasses.replace(p, card_apr=24.0), p) != []
+
+
+@pytest.mark.parametrize("cid", PERSONAS)
+def test_ten_paydays_match_fixture(fake, monkeypatch, cid):
+    """Crosses several month ends (Oct has 31 days, Nov 30), so bills must recur by the calendar in both modes."""
+    for n in range(10):
+        live = fast_forward_to_payday(cid)
+        fixture = in_mode(monkeypatch, "fixture", fast_forward_to_payday, cid)
+        assert live.reasons == fixture.reasons, (cid, n)
+        assert diff(get_profile(cid), in_mode(monkeypatch, "fixture", get_profile, cid)) == [], (cid, n)
+
+
+def test_reset_plus_other_personas_still_recreates_the_reset_one(fake):
+    from scripts.seed_nessie import main
+    main(["--reset", "sam", "alex"])
+    assert "sam" in nessie.load_ids()
+    assert get_profile("sam").checking_balance == 575
+
+
+def test_failed_reset_keeps_the_old_persona_and_cleans_up(fake, monkeypatch):
+    old = nessie.load_ids()["sam"]
+    before = get_profile("sam")
+    accounts_before = set(fake.accounts)
+    real = fake.request
+
+    def flaky(method, path, body=None, params=None):
+        if method == "POST" and path.endswith("/deposits"):
+            raise nessie.NessieError(method, path, 500, {"message": "boom"})
+        return real(method, path, body, params)
+
+    monkeypatch.setattr(nessie, "_send", flaky)
+    with pytest.raises(nessie.NessieError):
+        reset_persona("sam")
+    monkeypatch.setattr(nessie, "_send", real)
+    assert nessie.load_ids()["sam"] == old             # still points at the working accounts
+    assert set(fake.accounts) == accounts_before        # half-made accounts were deleted
+    assert get_profile("sam") == before

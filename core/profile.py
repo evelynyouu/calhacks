@@ -80,8 +80,6 @@ def _prefetch(acct: dict) -> None:
 
 
 def derive_live(customer_id: str, ids: dict) -> FinancialProfile:
-    from core.seed import next_due   # avoids an import cycle (seed imports nessie, state)
-
     persona = nessie.persona_seed(customer_id)
     acct, seed = ids["accounts"], ids["seed"]
     as_of = state.as_of(customer_id)
@@ -103,7 +101,7 @@ def derive_live(customer_id: str, ids: dict) -> FinancialProfile:
                 if nessie.is_ours(x) and not x["description"].startswith("[event")
                 and window_start < _date(x, "purchase_date") <= state.SIM_START)
 
-    bills = [Bill(b["nickname"], b["payment_amount"], (next_due(b["recurring_date"], as_of) - as_of).days)
+    bills = [Bill(b["nickname"], b["payment_amount"], (state.next_due(b["recurring_date"], as_of) - as_of).days)
              for b in nessie.get_bills(acct["checking"])]
 
     return FinancialProfile(

@@ -43,9 +43,9 @@ def test_sam_safety_check_math():
 def test_second_payday_pays_and_rolls_bills():
     fund = build_portfolio(2, [])
     payday("sam", fund)
-    second = payday("sam", fund)   # 14 days later: rent (day 4) and phone (day 6) were paid and moved to next month
+    second = payday("sam", fund)   # 14 days later: rent (Oct 28) and phone (Oct 30) were paid; next due by the calendar
     p = get_profile("sam")
-    assert {b.name: b.due_in_days for b in p.upcoming_bills} == {"Rent": 20, "Phone + utilities": 22}
+    assert {b.name: b.due_in_days for b in p.upcoming_bills} == {"Rent": 21, "Phone + utilities": 23}   # Nov 7: rent on the 28th, phone on the 30th
     assert not any("is due in" in s for s in second.reasons)
     # 2,540 after payday 1, minus 14 days of spending (490) and both bills (1,850), plus paycheck 2
     assert p.checking_balance == 2540 - 490 - 1850 + 2050 - second.invested_amount

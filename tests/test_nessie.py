@@ -220,3 +220,24 @@ def test_cache_expires(fake, monkeypatch):
     clock[0] += 31
     nessie.get_bills("a1")
     assert len(calls) == 2
+
+
+def test_get_in_flight_during_a_write_is_not_cached(monkeypatch):
+    """A GET that started before a write may hold pre-write data; it must not be cached after the write."""
+    monkeypatch.setenv("NESSIE_API_KEY", "test-key")
+    monkeypatch.setattr(nessie, "CACHE_SECONDS", 30)
+    nessie.clear_cache()
+    server = {"deposits": [1]}
+
+    def send(method, path, body=None, params=None):
+        if method == "GET":
+            snapshot = list(server["deposits"])
+            nessie.request("POST", "/accounts/a1/deposits", {"amount": 2})   # another thread writes meanwhile
+            return snapshot
+        server["deposits"].append(2)
+        return {"objectCreated": {}}
+
+    monkeypatch.setattr(nessie, "_send", send)
+    assert nessie.get_deposits("a1") == [1]          # this caller saw the old list; fine
+    monkeypatch.setattr(nessie, "_send", lambda m, p, b=None, q=None: list(server["deposits"]))
+    assert nessie.get_deposits("a1") == [1, 2]       # the next read must not get the stale [1]

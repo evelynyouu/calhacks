@@ -13,13 +13,17 @@ from __future__ import annotations
 import copy
 import json
 import os
+import threading
 import time
 import uuid
 from pathlib import Path
+from datetime import date, timedelta
 from typing import Any
 
 import requests
 from dotenv import load_dotenv
+
+from core import state
 
 load_dotenv()
 
@@ -50,10 +54,15 @@ def _key() -> str:
 
 CACHE_SECONDS = 15   # GETs are reused this long; any write we make clears the cache
 _cache: dict = {}
+_writes = 0          # bumped on every write; a GET is cached only if no write happened while it ran
+_lock = threading.Lock()
 
 
 def clear_cache() -> None:
-    _cache.clear()
+    global _writes
+    with _lock:
+        _cache.clear()
+        _writes += 1
 
 
 def request(method: str, path: str, body: dict | None = None, params: dict | None = None) -> Any:
@@ -63,14 +72,21 @@ def request(method: str, path: str, body: dict | None = None, params: dict | Non
     if path.split("?")[0].rstrip("/") == "/data":
         raise ValueError("refusing to touch /data")
     if method != "GET":
-        _cache.clear()
-        return _send(method, path, body, params)
+        clear_cache()
+        try:
+            return _send(method, path, body, params)
+        finally:
+            clear_cache()   # again after: a GET that ran during the write may have cached old data
     key = (path, tuple(sorted((params or {}).items())))
-    hit = _cache.get(key)
+    with _lock:
+        hit = _cache.get(key)
+        started = _writes
     if hit and time.monotonic() - hit[0] < CACHE_SECONDS:
         return copy.deepcopy(hit[1])
     result = _send(method, path, body, params)
-    _cache[key] = (time.monotonic(), copy.deepcopy(result))
+    with _lock:
+        if _writes == started:
+            _cache[key] = (time.monotonic(), copy.deepcopy(result))
     return result
 
 
@@ -250,6 +266,10 @@ def _with_other_bills(p: dict) -> dict:
     rest = round(p["monthly_bills"] - sum(b["amount"] for b in p["upcoming_bills"]), 2)
     if rest > 0:
         p["upcoming_bills"].append({"name": OTHER_BILLS, "amount": rest, "due_in_days": OTHER_BILLS_DUE_IN})
+    # The stub keeps its own sim clock, and each bill's day of the month, so bills recur by the
+    # calendar exactly as they do in live mode (Nessie bills have a recurring_date, not an interval).
+    p["as_of"] = state.SIM_START.isoformat()
+    p["bill_days"] = {b["name"]: (state.SIM_START + timedelta(days=b["due_in_days"])).day for b in p["upcoming_bills"]}
     return p
 
 
@@ -312,13 +332,16 @@ def advance_days(customer_id: str, days: int) -> None:
     if mode() == LIVE:
         return _live().advance_days(customer_id, days)
     c = _STATE[customer_id]
+    start = date.fromisoformat(c["as_of"])
+    end = start + timedelta(days=days)
+    c["as_of"] = end.isoformat()
     c["days_to_payday"] = max(0, c["days_to_payday"] - days)
     c["checking_balance"] = round(c["checking_balance"] - c["monthly_spending"] * days / 30, 2)
     for b in c["upcoming_bills"]:
-        b["due_in_days"] -= days
-        while b["due_in_days"] < 0:   # paid; recurs monthly
+        day = c["bill_days"][b["name"]]
+        for _ in state.occurrences(day, start, end):   # each due date we passed is paid
             c["checking_balance"] = round(c["checking_balance"] - b["amount"], 2)
-            b["due_in_days"] += 30
+        b["due_in_days"] = (state.next_due(day, end) - end).days
 
 
 def record_purchase(customer_id: str, name: str, amount: float) -> None:

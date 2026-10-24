@@ -11,14 +11,13 @@ reset_persona deletes only that persona's accounts (by stored id), never anythin
 """
 from __future__ import annotations
 
-import calendar
 import contextlib
 import itertools
 import json
 from datetime import date, timedelta
 
 from core import nessie, state
-from core.state import SIM_START
+from core.state import SIM_START, next_due, occurrences   # noqa: F401  (re-exported for callers)
 
 PAY_PERIOD_DAYS = 14
 PAYCHECKS = 4
@@ -30,27 +29,6 @@ MERCHANTS = {   # key -> (name, category); created once, shared by every persona
     "transit": ("Bay Area Transit", "Transportation"),
     "auto": ("Mike's Auto", "Auto Repair"),
 }
-
-
-# ---------- dates ----------
-
-def next_due(day: int, on_or_after: date) -> date:
-    """Next date on/after `on_or_after` falling on day-of-month `day` (clamped to the month's length)."""
-    year, month = on_or_after.year, on_or_after.month
-    while True:
-        candidate = date(year, month, min(day, calendar.monthrange(year, month)[1]))
-        if candidate >= on_or_after:
-            return candidate
-        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
-
-
-def occurrences(day: int, start: date, end: date) -> list[date]:
-    """Every due date for day-of-month `day` in [start, end)."""
-    out, d = [], next_due(day, start)
-    while d < end:
-        out.append(d)
-        d = next_due(day, d + timedelta(days=1))
-    return out
 
 
 # ---------- the pure plan ----------
@@ -101,15 +79,27 @@ def ensure_merchants(ids: dict) -> dict:
 
 
 def seed_persona(cid: str, merchants: dict) -> dict:
+    """Creates the persona's accounts and history. If anything fails partway, the accounts made
+    so far are deleted (the customer can't be) and the error is re-raised."""
     plan = plan_persona(cid)
     p, o = plan["persona"], plan["opening"]
-    cust = nessie.create_customer(p["name"], "Demo")["_id"]
-    acct = {
-        "checking": nessie.create_account(cust, "Checking", f"{p['name']} Checking", o["checking"])["_id"],
-        "savings": nessie.create_account(cust, "Savings", f"{p['name']} Savings", o["savings"])["_id"],
-        "investing": nessie.create_account(cust, "Savings", "FirstFund Investing", o["investing"])["_id"],
-        "card": nessie.create_account(cust, "Credit Card", f"{p['name']} Card", o["card"])["_id"],
-    }
+    acct: dict = {}
+    try:
+        cust = nessie.create_customer(p["name"], "Demo")["_id"]
+        for key, type_, nickname in (("checking", "Checking", f"{p['name']} Checking"),
+                                     ("savings", "Savings", f"{p['name']} Savings"),
+                                     ("investing", "Savings", "FirstFund Investing"),
+                                     ("card", "Credit Card", f"{p['name']} Card")):
+            acct[key] = nessie.create_account(cust, type_, nickname, o[key])["_id"]
+        _write_history(plan, acct, merchants)
+    except Exception:
+        _delete_accounts(acct.values())
+        raise
+    return {"customer_id": cust, "accounts": acct, "seed": o}
+
+
+def _write_history(plan: dict, acct: dict, merchants: dict) -> None:
+    p = plan["persona"]
     chk = acct["checking"]
     for b in plan["bills"]:
         nessie.create_bill(chk, b["name"], b["name"], b["amount"], b["recurring_date"])
@@ -124,38 +114,43 @@ def seed_persona(cid: str, merchants: dict) -> dict:
     if t:
         src, dst = (chk, acct["savings"]) if t > 0 else (acct["savings"], chk)
         nessie.create_transfer(src, dst, abs(t), plan["paydays"][-1].isoformat(), "[seed] move leftover to savings")
-    return {"customer_id": cust, "accounts": acct, "seed": o}
 
 
-def delete_persona(cid: str, ids: dict) -> None:
-    """Deletes only the accounts we stored for this persona. Customers can't be deleted in Nessie."""
-    for account_id in ids.get(cid, {}).get("accounts", {}).values():
+def _delete_accounts(account_ids) -> None:
+    """Deletes exactly these accounts (ids we created). Already gone is fine."""
+    for account_id in list(account_ids):
         try:
             nessie.delete_account(account_id)
         except nessie.NessieError as e:
-            if e.status != 404:   # already gone is fine
+            if e.status != 404:
                 raise
-    ids.pop(cid, None)
 
 
 def seed(personas: list[str] | None = None, reset: str | None = None, save: bool = True) -> dict:
+    """Seeds every persona in `personas` (default: all) that isn't in the ids file yet.
+    `reset` is always (re)created: its new accounts are built first, and only once that succeeds
+    are its old accounts deleted, so a failed reset leaves the old persona working."""
     ids = nessie.load_ids()
-    if reset:
-        delete_persona(reset, ids)
-        if save:
-            nessie.save_ids(ids)
-            state.clear(reset)
     merchants = ensure_merchants(ids)
     if save:
         nessie.save_ids(ids)
-    for cid in personas or list(nessie._SEED):
-        if cid in ids:
+    todo = list(personas or nessie._SEED)
+    if reset and reset not in todo:
+        todo.append(reset)
+    for cid in todo:
+        if cid in ids and cid != reset:
             print(f"{cid}: already seeded, skipping (use --reset {cid} to recreate)")
             continue
-        ids[cid] = seed_persona(cid, merchants)
+        entry = seed_persona(cid, merchants)
+        old = ids.get(cid)
+        ids[cid] = entry
         if save:
             nessie.save_ids(ids)   # after each persona, so a failure midway keeps what was made
-        print(f"{cid}: seeded customer {ids[cid]['customer_id']}")
+        if old:
+            _delete_accounts(old["accounts"].values())
+            if save:
+                state.clear(cid)
+        print(f"{cid}: {'re-seeded' if old else 'seeded'} customer {entry['customer_id']}")
     return ids
 
 
