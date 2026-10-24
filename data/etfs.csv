@@ -1,0 +1,12 @@
+ticker,name,role,risk_level,expense_ratio,theme
+AOK,iShares Core Conservative Allocation,core,1,0.15,
+AOM,iShares Core Moderate Allocation,core,2,0.15,
+AOR,iShares Core Growth Allocation,core,3,0.15,
+AOA,iShares Core Aggressive Allocation,core,4,0.15,
+VTI,Vanguard Total Stock Market,block,,0.03,
+VXUS,Vanguard Total International Stock,block,,0.05,
+BND,Vanguard Total Bond Market,block,,0.03,
+QQQ,Invesco QQQ Trust,tilt,,0.20,tech
+XLK,Technology Select Sector SPDR,tilt,,0.08,tech
+XLV,Health Care Select Sector SPDR,tilt,,0.08,healthcare
+ICLN,iShares Global Clean Energy,tilt,,0.41,clean_energy

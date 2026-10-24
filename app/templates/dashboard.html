@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ profile.name }} · FirstFund{% endblock %}
+{% block header_right %}
+<div class="flex items-center gap-3">
+  {% include "partials/tier.html" %}
+  <a href="/p/{{ cid }}/report" class="btn-ghost">Monthly report</a>
+  <form method="post" action="/p/{{ cid }}/reset"><button class="btn-ghost">Reset</button></form>
+</div>
+{% endblock %}
+{% block content %}
+<h1 class="font-display text-3xl font-bold mb-5">Hi {{ profile.name }}</h1>
+<div class="grid lg:grid-cols-5 gap-5">
+  <div class="lg:col-span-2 space-y-5">
+    {% include "partials/readiness.html" %}
+    {% include "partials/chat.html" %}
+  </div>
+  <div class="lg:col-span-3 space-y-5">
+    {% include "partials/fund_card.html" %}
+    {% include "partials/crash.html" %}
+  </div>
+</div>
+<div class="mt-5">{% include "partials/money.html" %}</div>
+{% endblock %}

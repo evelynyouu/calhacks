@@ -1,0 +1,13 @@
+.card { background:#fff; border:1px solid rgba(27,36,32,.08); border-radius:1.25rem; padding:1.25rem; box-shadow:0 1px 2px rgba(27,36,32,.04); }
+.eyebrow { font-size:.72rem; letter-spacing:.08em; text-transform:uppercase; font-weight:600; color:rgba(27,36,32,.5); }
+.stat { background:#f6f3ec; border-radius:.85rem; padding:.55rem .5rem; }
+.stat dt { font-size:.7rem; color:rgba(27,36,32,.55); }
+.stat dd { font-weight:600; font-variant-numeric:tabular-nums; }
+.btn { background:#25633f; color:#fff; font-weight:500; font-size:.875rem; border-radius:.75rem; padding:.5rem .9rem; transition:background .15s; }
+.btn:hover { background:#1c4c31; }
+.btn-ghost { background:#fff; border:1px solid rgba(27,36,32,.15); font-weight:500; font-size:.875rem; border-radius:.75rem; padding:.45rem .85rem; transition:border-color .15s; }
+.btn-ghost:hover { border-color:#2f7a4f; }
+.bubble { max-width:85%; padding:.55rem .85rem; border-radius:1rem; font-size:.9rem; line-height:1.4; }
+.htmx-indicator { display:none; }
+.htmx-request .htmx-indicator, .htmx-request.htmx-indicator { display:block; }
+.htmx-request.btn, .htmx-request.btn-ghost { opacity:.6; }

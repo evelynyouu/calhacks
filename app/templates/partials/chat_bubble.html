@@ -1,0 +1,5 @@
+{% if m.role == 'user' %}
+<div class="flex justify-end"><p class="bubble bg-moss-600 text-white rounded-br-sm">{{ m.text }}</p></div>
+{% else %}
+<div class="flex"><p class="bubble bg-moss-50 rounded-bl-sm">{{ m.text }}</p></div>
+{% endif %}
