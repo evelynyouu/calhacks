@@ -13,6 +13,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import re
 import threading
 import time
 import uuid
@@ -52,40 +53,58 @@ def _key() -> str:
     return key
 
 
-CACHE_SECONDS = 15   # GETs are reused this long; any write we make clears the cache
+CACHE_SECONDS = 15   # GETs are reused this long; a write clears what it could have changed
 _cache: dict = {}
-_writes = 0          # bumped on every write; a GET is cached only if no write happened while it ran
+_writes: dict = {}   # scope -> write count; a GET is cached only if its scope saw no write while it ran
+_ALL = "*"           # the scope clear_cache() bumps
 _lock = threading.Lock()
+_SCOPE = re.compile(r"^/(accounts|customers)/([^/?]+)")
+
+
+def _scope(path: str) -> str | None:
+    """The cached lists a request to `path` reads or changes: one account's (or customer's)."""
+    m = _SCOPE.match(path)
+    return f"/{m.group(1)}/{m.group(2)}" if m else None
 
 
 def clear_cache() -> None:
-    global _writes
     with _lock:
         _cache.clear()
-        _writes += 1
+        _writes[_ALL] = _writes.get(_ALL, 0) + 1
+
+
+def _evict(scope: str) -> None:
+    with _lock:
+        for key in [k for k in _cache if k[0] == scope or k[0].startswith(scope + "/")]:
+            del _cache[key]
+        _writes[scope] = _writes.get(scope, 0) + 1
 
 
 def request(method: str, path: str, body: dict | None = None, params: dict | None = None) -> Any:
-    """One Nessie call. A live profile reads ~24 lists, and one button click rebuilds the profile
-    several times, so GETs are cached briefly. Only this app writes these accounts, so clearing
-    on every write keeps the cache exact; the expiry covers other processes."""
+    """One Nessie call. A live profile reads ~21 lists, and one button click rebuilds the profile
+    several times, so GETs are cached briefly. Only this app writes these accounts, so evicting
+    what a write touches keeps the cache exact. Writes are scoped to one account: a background
+    rebuild writing to a spare persona doesn't evict the live persona's lists."""
     if path.split("?")[0].rstrip("/") == "/data":
         raise ValueError("refusing to touch /data")
+    scope = _scope(path)
     if method != "GET":
-        clear_cache()
+        if scope:
+            _evict(scope)
         try:
             return _send(method, path, body, params)
         finally:
-            clear_cache()   # again after: a GET that ran during the write may have cached old data
+            if scope:
+                _evict(scope)   # again after: a GET that ran during the write may have read old data
     key = (path, tuple(sorted((params or {}).items())))
     with _lock:
         hit = _cache.get(key)
-        started = _writes
+        started = (_writes.get(scope, 0), _writes.get(_ALL, 0))
     if hit and time.monotonic() - hit[0] < CACHE_SECONDS:
         return copy.deepcopy(hit[1])
     result = _send(method, path, body, params)
     with _lock:
-        if _writes == started:
+        if (_writes.get(scope, 0), _writes.get(_ALL, 0)) == started:
             _cache[key] = (time.monotonic(), copy.deepcopy(result))
     return result
 

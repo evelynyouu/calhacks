@@ -252,3 +252,29 @@ def test_empty_transfer_list_404_means_no_transfers(fake):
     assert nessie.get_transfers("a1") == []
     with pytest.raises(nessie.NessieError):
         nessie.get_transfers("a1")   # other errors still raise
+
+
+def test_a_write_only_evicts_the_account_it_touched(monkeypatch):
+    """Background rebuilds write to the spare's accounts; that must not evict the live persona's lists."""
+    monkeypatch.setenv("NESSIE_API_KEY", "test-key")
+    monkeypatch.setattr(nessie, "CACHE_SECONDS", 30)
+    nessie.clear_cache()
+    gets = []
+
+    def send(method, path, body=None, params=None):
+        if method == "GET":
+            gets.append(path)
+            if path == "/accounts/a1/deposits" and len(gets) == 1:
+                nessie.request("POST", "/accounts/b9/deposits", {"amount": 1})   # someone else's account, mid-read
+            return [path]
+        return {"objectCreated": {}}
+
+    monkeypatch.setattr(nessie, "_send", send)
+    nessie.get_deposits("a1")
+    nessie.request("POST", "/customers", {"first_name": "x"})   # creating customers touches no account lists
+    nessie.request("POST", "/accounts/b9/withdrawals", {"amount": 1})
+    nessie.get_deposits("a1")
+    assert gets == ["/accounts/a1/deposits"]                       # still cached
+    nessie.request("POST", "/accounts/a1/deposits", {"amount": 1})
+    nessie.get_deposits("a1")
+    assert gets == ["/accounts/a1/deposits"] * 2                   # a write to a1 does evict a1
