@@ -51,15 +51,15 @@
   "sam": {
     "name": "Sam",
     "blurb": "Stable paycheck, $3K invested",
-    "monthly_income": 4000,
-    "monthly_bills": 1500,
-    "monthly_spending": 1300,
-    "checking_balance": 400,
+    "monthly_income": 4100,
+    "monthly_bills": 1850,
+    "monthly_spending": 1050,
+    "checking_balance": 575,
     "cash_cushion": 9000,
     "card_debt": 0,
     "card_apr": 0,
     "invested_balance": 3000,
-    "paycheck_amount": 2000,
+    "paycheck_amount": 2050,
     "days_to_payday": 1,
     "upcoming_bills": [
       {

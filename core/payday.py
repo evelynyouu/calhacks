@@ -1,43 +1,94 @@
 """Payday auto-invest.  OWNER: Evelyn (flow) + Saahil (allocation, broker).
 
-STUB logic is close to the plan: never invest before upcoming bills are covered.
+Rule: invest only what's left after every bill due before the next paycheck, spending until
+then, and a checking buffer. Round down to $5 and cap at the planned amount. Savings is never
+touched. safety_check is pure; run_payday does the deposits, transfers and trades.
 """
 from __future__ import annotations
 
+import math
+from dataclasses import dataclass
+from typing import Iterable, Literal
+
 from core import broker, nessie, rebalance
-from core.models import PaydayResult, Portfolio
+from core.models import Bill, PaydayResult, Portfolio
 from core.profile import get_profile
 from core.readiness import check_readiness
 
-CHECKING_BUFFER = 500.0   # GUESS: Lance to finalize
-BILL_WINDOW_DAYS = 7
+CHECKING_BUFFER = 200.0   # checking we never invest
+DAYS_PER_MONTH = 30       # prorating convention for spending
+STEP = 5.0                # invest in $5 steps
+
+PaydayReason = Literal["full", "reduced_for_bills", "skipped"]
+
+
+@dataclass
+class PaydayDecision:
+    invest: float
+    planned: float
+    held_back: float
+    bills_due: list[Bill]
+    spend_reserved: float
+    buffer: float
+    available: float          # checking left after bills, spending and buffer (may be negative)
+    reason: PaydayReason
+
+
+def safety_check(checking_after_deposit: float, planned: float, days_to_payday: int,
+                 upcoming_bills: Iterable[Bill], monthly_spending: float) -> PaydayDecision:
+    """How much of `planned` is safe to invest now. Bills due today or on the next payday count."""
+    if days_to_payday <= 0:
+        raise ValueError(f"days_to_payday must be positive, got {days_to_payday}")
+
+    due = sorted((b for b in upcoming_bills if 0 <= b.due_in_days <= days_to_payday), key=lambda b: b.due_in_days)
+    spend = round(monthly_spending * days_to_payday / DAYS_PER_MONTH, 2)
+    available = round(checking_after_deposit - sum(b.amount for b in due) - spend - CHECKING_BUFFER, 2)
+
+    planned = max(0.0, planned)
+    invest = min(planned, math.floor(max(0.0, available) / STEP) * STEP)
+    if invest <= 0:
+        reason = "skipped"
+    elif invest >= planned:
+        reason = "full"
+    else:
+        reason = "reduced_for_bills"
+    return PaydayDecision(round(invest, 2), round(planned, 2), round(planned - invest, 2), due,
+                          spend, CHECKING_BUFFER, available, reason)
 
 
 def run_payday(customer_id: str, portfolio: Portfolio | None) -> PaydayResult:
     paycheck = nessie.deposit_paycheck(customer_id)
     p = get_profile(customer_id)
     r = check_readiness(p)
-    planned = round(r.safe_monthly_amount / 2, 2)   # two paychecks a month
+    planned = 0.0 if r.status == "not_yet" else round(r.safe_monthly_amount / 2, 2)   # two paychecks a month
 
-    due = [b for b in p.upcoming_bills if b.due_in_days <= BILL_WINDOW_DAYS]
-    due_total = sum(b.amount for b in due)
-    free = p.checking_balance - due_total - CHECKING_BUFFER
-    invest = round(max(0.0, min(planned, free)), 2)
-
-    reasons = [f"Paycheck of ${paycheck:,.0f} detected."]
-    for b in due:
-        reasons.append(f"{b.name} (${b.amount:,.0f}) is due in {b.due_in_days} days, so it's set aside first.")
+    d = safety_check(p.checking_balance, planned, p.days_to_payday, p.upcoming_bills, p.monthly_spending)
+    reasons = [f"Paycheck of {_money(paycheck)} detected."]
     if r.status == "not_yet":
-        invest = 0.0
         reasons.append("Investing is paused until the card is paid off.")
-    elif invest < planned:
-        reasons.append(f"Invested ${invest:,.0f} instead of the usual ${planned:,.0f} to keep a ${CHECKING_BUFFER:,.0f} buffer.")
+    elif planned <= 0:
+        reasons.append("Nothing is planned for investing this paycheck.")
     else:
-        reasons.append(f"Bills are covered, so the full ${planned:,.0f} was invested.")
+        for b in d.bills_due:
+            reasons.append(f"{b.name} ({_money(b.amount)}) is due in {b.due_in_days} days, so it's set aside first.")
+        reasons.append(f"{_money(d.spend_reserved)} is set aside for spending over the {p.days_to_payday} days "
+                       f"until the next paycheck, and {_money(d.buffer)} stays in checking as a buffer.")
+        if d.reason == "full":
+            reasons.append(f"Bills are covered, so the full {_money(planned)} was invested.")
+        elif d.reason == "reduced_for_bills":
+            reasons.append(f"Invested {_money(d.invest)} instead of the usual {_money(planned)}; "
+                           f"the other {_money(d.held_back)} stays in checking.")
+        else:
+            reasons.append(f"Skipped investing this paycheck: nothing is left after bills, spending and the buffer. "
+                           f"Investing picks up again next paycheck.")
 
     trades, xfer = [], None
-    if invest > 0 and portfolio:
-        xfer = nessie.transfer_to_investing(customer_id, invest)
-        for t, d in rebalance.allocate_new_money(portfolio, broker.get_positions(customer_id), invest).items():
-            trades.append(broker.buy_notional(t, d))
-    return PaydayResult(paycheck, planned, invest, xfer, trades, reasons)
+    if d.invest > 0 and portfolio:
+        xfer = nessie.transfer_to_investing(customer_id, d.invest)
+        for t, amt in rebalance.allocate_new_money(portfolio, broker.get_positions(customer_id), d.invest).items():
+            trades.append(broker.buy_notional(t, amt))
+    return PaydayResult(paycheck, planned, d.invest, xfer, trades, reasons)
+
+
+def _money(v: float) -> str:
+    return f"${v:,.0f}" if v == int(v) else f"${v:,.2f}"

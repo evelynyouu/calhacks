@@ -50,10 +50,15 @@ def deposit_paycheck(customer_id: str) -> float:
 
 
 def advance_days(customer_id: str, days: int) -> None:
+    """Move the demo clock forward: day-to-day spending and bills that come due leave checking."""
     c = _STATE[customer_id]
     c["days_to_payday"] = max(0, c["days_to_payday"] - days)
+    c["checking_balance"] = round(c["checking_balance"] - c["monthly_spending"] * days / 30, 2)
     for b in c["upcoming_bills"]:
-        b["due_in_days"] = max(0, b["due_in_days"] - days)
+        b["due_in_days"] -= days
+        while b["due_in_days"] < 0:   # paid; recurs monthly
+            c["checking_balance"] = round(c["checking_balance"] - b["amount"], 2)
+            b["due_in_days"] += 30
 
 
 def record_purchase(customer_id: str, name: str, amount: float) -> None:
