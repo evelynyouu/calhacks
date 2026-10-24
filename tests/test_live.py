@@ -517,3 +517,22 @@ def test_a_read_from_another_request_mid_click_does_not_double_count(fake, monke
     nessie.record_purchase("alex", "Car repair", 600)
     truth = profile.derive_live("alex", nessie.load_ids()["alex"])
     assert nessie._SHADOW["alex"]["cash_cushion"] == truth.cash_cushion
+
+
+def test_concurrent_cache_writes_for_one_persona_never_fail(fake):
+    import threading
+    p = get_profile("sam")
+    errors = []
+
+    def write():
+        for _ in range(300):
+            try:
+                profile._save_cache(p, state.SIM_START)
+            except Exception as e:   # noqa: BLE001
+                errors.append(e)
+    threads = [threading.Thread(target=write) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == [] and profile.cached_snapshot("sam") is not None
