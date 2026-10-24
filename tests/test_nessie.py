@@ -1,4 +1,4 @@
-"""Nessie HTTP client, offline: requests.request is faked. No network, no key needed."""
+"""Nessie HTTP client, offline: nessie._http (the one place HTTP happens) is faked. No network, no key."""
 import json
 
 import pytest
@@ -27,7 +27,7 @@ def fake(monkeypatch):
         return _response(*item)
 
     monkeypatch.setenv("NESSIE_API_KEY", "test-key")
-    monkeypatch.setattr(nessie.requests, "request", request)
+    monkeypatch.setattr(nessie, "_http", request)
     monkeypatch.setattr(nessie.time, "sleep", lambda _: None)
     monkeypatch.setattr(nessie, "CACHE_SECONDS", 0)   # cache tests turn it on
     nessie.clear_cache()
@@ -46,20 +46,20 @@ def test_get_sends_key_and_timeout(fake):
     assert calls[0]["timeout"] == 10
 
 
-def test_get_retries_5xx_twice_then_succeeds(fake):
+def test_get_retries_5xx_then_succeeds(fake):
     calls, queue = fake
-    queue += [(503, {}), (502, {}), (200, [])]
+    queue += [(503, {}), (502, {}), (500, {}), (200, [])]
     assert nessie.get_accounts("c1") == []
-    assert len(calls) == 3
+    assert len(calls) == 4
 
 
-def test_get_gives_up_after_two_retries(fake):
+def test_get_gives_up_after_three_retries(fake):
     calls, queue = fake
-    queue += [(500, {"m": 1}), (500, {"m": 2}), (500, {"m": 3})]
+    queue += [(500, {"m": 1}), (500, {"m": 2}), (500, {"m": 3}), (500, {"m": 4})]
     with pytest.raises(nessie.NessieError) as e:
         nessie.get_customer("c1")
-    assert len(calls) == 3
-    assert e.value.status == 500 and e.value.body == {"m": 3}
+    assert len(calls) == 4
+    assert e.value.status == 500 and e.value.body == {"m": 4}
 
 
 def test_get_retries_connection_errors(fake):
@@ -248,7 +248,7 @@ def test_get_in_flight_during_a_write_is_not_cached(monkeypatch):
 
 def test_empty_transfer_list_404_means_no_transfers(fake):
     _, queue = fake
-    queue += [(404, "No transfers found for this account")] + [(500, {"message": "boom"})] * 3   # 5xx GETs retry twice
+    queue += [(404, "No transfers found for this account")] + [(500, {"message": "boom"})] * 4   # 5xx GETs retry 3 times
     assert nessie.get_transfers("a1") == []
     with pytest.raises(nessie.NessieError):
         nessie.get_transfers("a1")   # other errors still raise
@@ -278,3 +278,23 @@ def test_a_write_only_evicts_the_account_it_touched(monkeypatch):
     nessie.request("POST", "/accounts/a1/deposits", {"amount": 1})
     nessie.get_deposits("a1")
     assert gets == ["/accounts/a1/deposits"] * 2                   # a write to a1 does evict a1
+
+
+
+def test_refused_connections_are_retried_for_a_few_seconds(fake):
+    """Real Nessie sometimes refuses connections for a moment (seen 2026-10-24)."""
+    calls, queue = fake
+    refused = requests.ConnectionError("Failed to establish a new connection: [Errno 61] Connection refused")
+    queue += [refused, refused, refused, (201, {"objectCreated": {"_id": "d1"}})]
+    assert nessie.create_deposit("a1", 100, "2026-10-30", "[payroll]")["_id"] == "d1"   # safe: it never reached Nessie
+    assert len(calls) == 4
+
+
+def test_connections_are_pooled_per_thread():
+    import threading
+    a, b = nessie._session(), nessie._session()
+    other = []
+    t = threading.Thread(target=lambda: other.append(nessie._session()))
+    t.start()
+    t.join()
+    assert a is b and other[0] is not a

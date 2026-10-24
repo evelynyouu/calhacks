@@ -30,7 +30,7 @@ load_dotenv()
 
 BASE = "https://api.nessieisreal.com"   # HTTPS only: plain HTTP (port 80) is refused
 TIMEOUT = 10
-RETRIES = 2                                     # extra attempts after the first
+RETRIES = 3   # extra attempts after the first (backoff 0.5 + 1 + 2 s); real Nessie sometimes refuses connections briefly
 # Description prefixes for every transaction we write (see docs/EVELYN_API.md):
 # [payroll] paycheck, [payroll-adj] raise, [event] life event, [firstfund] auto-invest,
 # [spend] day-to-day spending, [bill] bill payment, [seed] history moves made by the seeder.
@@ -116,13 +116,29 @@ def _redacted(e: requests.RequestException) -> requests.RequestException:
     return type(e)(str(e).replace(key, "***"))
 
 
+_local = threading.local()
+
+
+def _session() -> requests.Session:
+    """One pooled connection per thread. Without it every call opened a new HTTPS connection (a TLS
+    handshake each, ~20 at once per page), and real Nessie sometimes refused those bursts."""
+    if not hasattr(_local, "session"):
+        _local.session = requests.Session()
+    return _local.session
+
+
+def _http(method: str, url: str, **kwargs) -> requests.Response:
+    """The one place HTTP happens (tests replace this)."""
+    return _session().request(method, url, **kwargs)
+
+
 def _send(method: str, path: str, body: dict | None, params: dict | None) -> Any:
     """Retries connection errors and 5xx. A POST/DELETE is retried only if it never reached
     Nessie (connection failed), since a 5xx or read timeout may already have been applied."""
     query = {"key": _key(), **(params or {})}
     for attempt in range(RETRIES + 1):
         try:
-            r = requests.request(method, f"{BASE}{path}", params=query, json=body, timeout=TIMEOUT)
+            r = _http(method, f"{BASE}{path}", params=query, json=body, timeout=TIMEOUT)
         except (requests.ConnectionError, requests.Timeout) as e:
             safe = method == "GET" or isinstance(e, requests.ConnectionError)
             if attempt == RETRIES or not safe:
