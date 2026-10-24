@@ -51,7 +51,9 @@ def _session_context(session: Session) -> str:
         lines.append("Last crash test: " + " ".join(session.crash.explanation_facts))
     if not lines:
         return ""
-    return "\n\nWhat already happened in the app this session (app-computed, safe to cite):\n- " + "\n- ".join(lines)
+    return ("\n\nWhat already happened in the app this session. These are app-computed results, "
+            "exactly like tool results: cite them, and when the user asks about something here, "
+            "answer from it instead of saying you can't see it:\n- " + "\n- ".join(lines))
 
 
 def _claude_turn(client, session: Session, user_text: str) -> tuple[str, set[str]]:
