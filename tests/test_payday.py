@@ -103,3 +103,25 @@ def test_rounds_down_to_five():
 def test_days_to_payday_must_be_positive():
     with pytest.raises(ValueError):
         safety_check(1000, 100, 0, [], 0)
+
+
+# ---------- breakdown bar ----------
+
+def test_sam_breakdown_adds_up():
+    from core.models import PaydayResult
+    r = payday("sam")
+    assert isinstance(r, PaydayResult)            # still the shared type the app expects
+    b = r.breakdown
+    assert b["cash"] == 2590
+    assert [(s["key"], s["amount"]) for s in b["segments"]] == \
+           [("bills", 1850), ("spending", 490), ("buffer", 200), ("invested", 50)]
+    assert b["left"] == 0 and b["short"] == 0
+    assert round(sum(s["pct"] for s in b["segments"]) + b["left_pct"], 6) == 100
+
+
+def test_breakdown_when_bills_exceed_cash():
+    b = safety_check(1500, 150, 14, [Bill("Rent", 1100, 4)], 900)
+    from core.payday import breakdown
+    bd = breakdown(1500, b)
+    assert bd["short"] == 220 and bd["left"] == 0   # needs 1,100 rent + 420 spending + 200 buffer = 1,720
+    assert round(sum(s["pct"] for s in bd["segments"]), 6) == 100   # scaled to what's needed, not to cash

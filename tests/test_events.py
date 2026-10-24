@@ -118,3 +118,11 @@ def test_newest_action_is_on_top_of_the_feed():
     fast_forward_to_payday("sam")
     apply_life_event("sam", "car_repair")
     assert [i["tag"] for i in nessie.recent_activity("sam", limit=4)] == ["event", "event", "payroll", "spend"]
+
+
+def test_payday_shows_breakdown_bar():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    r = TestClient(app).post("/p/sam/event/payday")
+    assert "Bills due before the next paycheck: $1,850" in r.text   # segment tooltip
+    assert "width: 71.43%" in r.text    # $1,850 of $2,590
