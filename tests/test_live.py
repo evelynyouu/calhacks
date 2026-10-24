@@ -668,3 +668,28 @@ def test_reset_seeds_a_persona_missing_from_the_ids_file(fake):
     nessie._SHADOW.clear()
     nessie.reset("jordan")                              # used to reseed; must not KeyError
     assert "jordan" in nessie.load_ids() and get_profile("jordan").checking_balance == 600
+
+
+# ---------- real Nessie doesn't return lists in creation order (seen 2026-10-24) ----------
+
+def test_two_raises_in_one_day_survive_nessie_reordering_its_lists(fake, monkeypatch):
+    real = fake.request
+
+    def reversed_lists(method, path, body=None, params=None):
+        out = real(method, path, body, params)
+        return list(reversed(out)) if isinstance(out, list) else out
+    monkeypatch.setattr(nessie, "_send", reversed_lists)
+    for _ in range(2):
+        apply_life_event("sam", "raise")
+        in_mode(monkeypatch, "fixture", apply_life_event, "sam", "raise")
+    nessie.clear_cache()
+    assert get_profile("sam").paycheck_amount == 2450
+
+
+def test_upcoming_bills_are_listed_by_due_date_in_both_modes(fake, monkeypatch):
+    real = fake.request
+    monkeypatch.setattr(nessie, "_send", lambda m, p, b=None, q=None: (lambda o: list(reversed(o)) if isinstance(o, list) else o)(real(m, p, b, q)))
+    nessie.clear_cache()
+    for mode in ("live", "fixture"):
+        bills = in_mode(monkeypatch, mode, get_profile, "sam").upcoming_bills
+        assert [b.due_in_days for b in bills] == sorted(b.due_in_days for b in bills), mode

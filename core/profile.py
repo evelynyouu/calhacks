@@ -46,8 +46,13 @@ def get_profile(customer_id: str) -> FinancialProfile:
         invested_balance=c["invested_balance"],
         paycheck_amount=c["paycheck_amount"],
         days_to_payday=c["days_to_payday"],
-        upcoming_bills=[Bill(**b) for b in c["upcoming_bills"]],
+        upcoming_bills=_by_due_date([Bill(**b) for b in c["upcoming_bills"]]),
     )
+
+
+def _by_due_date(bills: list[Bill]) -> list[Bill]:
+    """Soonest first, in both modes (Nessie doesn't return bills in a stable order)."""
+    return sorted(bills, key=lambda b: (b.due_in_days, b.name))
 
 
 # ---------- live ----------
@@ -115,10 +120,12 @@ def live_clock(customer_id: str, ids: dict | None = None) -> tuple[date, float]:
     latest = max(payroll, key=_date)
     paycheck = latest["amount"]
     raises = [(d, RAISED_TO.search(d["description"])) for d in deposits if d["description"].startswith("[payroll-adj]")]
-    raises = [(i, d, m) for i, (d, m) in enumerate(raises) if m and _date(d) >= _date(latest)]
-    if raises:   # newest date wins; on the same day, the one written last (Nessie lists in creation order)
-        _, _, m = max(raises, key=lambda idm: (_date(idm[1]), idm[0]))
-        paycheck = float(m.group(1).replace(",", ""))
+    raises = [(d, m) for d, m in raises if m and _date(d) >= _date(latest)]
+    if raises:
+        # Newest date wins. Nessie doesn't list in creation order, so on the same day take the highest
+        # "raise to N": raises only go up, so that's the latest one.
+        newest = max(_date(d) for d, _ in raises)
+        paycheck = max(float(m.group(1).replace(",", "")) for d, m in raises if _date(d) == newest)
     return today, paycheck
 
 
@@ -158,7 +165,7 @@ def derive_live(customer_id: str, ids: dict) -> FinancialProfile:
         invested_balance=nessie.account_balance(acct["investing"], seed["investing"]),
         paycheck_amount=paycheck,
         days_to_payday=max(0, (last_payday + timedelta(days=PAY_PERIOD_DAYS) - as_of).days),
-        upcoming_bills=bills,
+        upcoming_bills=_by_due_date(bills),
     )
 
 
