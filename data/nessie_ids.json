@@ -5,6 +5,68 @@
     "groceries": "8eac0d4a-1cf2-4768-97ec-e6c09151690a",
     "transit": "70b1363f-d337-4aeb-9381-0770e149dee0"
   },
+  "_spares": {
+    "alex": {
+      "accounts": {
+        "card": "f4c780df-82e2-4ad4-b41e-289781507066",
+        "checking": "96ebbe0c-5bbf-40bb-b945-c6ceb39631c3",
+        "investing": "6fe2a402-7fe7-4ca4-8afc-66b1622c3aa0",
+        "savings": "2f4f0f26-6d33-4241-a360-1bf366dc78c4"
+      },
+      "customer_id": "f2048000-24e8-477a-97ca-78aa8667cc50",
+      "seed": {
+        "card": 0,
+        "checking": 4000,
+        "investing": 65000,
+        "savings": 22000.0
+      }
+    },
+    "jordan": {
+      "accounts": {
+        "card": "ab5c4a38-78c0-4b9b-a0fd-31a35fecab8e",
+        "checking": "b3f2b820-5a4b-40a6-b912-66c7e0954dfe",
+        "investing": "68736371-5f2d-4cbd-a6fb-cd336183b1d7",
+        "savings": "5df4e49f-aed8-4ad1-a078-296cfda680ec"
+      },
+      "customer_id": "579a24a2-4528-42ec-9432-beaa20b9ceae",
+      "seed": {
+        "card": 0,
+        "checking": 600,
+        "investing": 0,
+        "savings": 700.0
+      }
+    },
+    "maria": {
+      "accounts": {
+        "card": "a2d1fe41-048c-4598-9629-618caf70df40",
+        "checking": "36a957c6-1d4d-4d9d-b761-f576e5f074d3",
+        "investing": "3c4ae759-d2e9-4166-9c21-0a914952e1ea",
+        "savings": "50e4792d-298b-4051-a031-f4f88734444a"
+      },
+      "customer_id": "a3561f7c-5102-48c7-bde8-cb302e26a385",
+      "seed": {
+        "card": 1200,
+        "checking": 900,
+        "investing": 0,
+        "savings": 600.0
+      }
+    },
+    "sam": {
+      "accounts": {
+        "card": "37d07e54-06ce-496c-a388-50960534e56b",
+        "checking": "4d7f8cb1-25d7-4851-8afd-c9e5eb5b6100",
+        "investing": "eed8d223-ddea-425e-92b1-b17b6e5dd43d",
+        "savings": "1672d0ce-e0bb-49c5-8eb4-950dc31bd4c7"
+      },
+      "customer_id": "06c2c663-4515-4f22-a89f-b4f1b3994278",
+      "seed": {
+        "card": 0,
+        "checking": 575,
+        "investing": 3000,
+        "savings": 6600.0
+      }
+    }
+  },
   "alex": {
     "accounts": {
       "card": "50ffb61c-b543-4c1e-ae91-50561c64d9f6",
@@ -52,12 +114,12 @@
   },
   "sam": {
     "accounts": {
-      "card": "d6559ae3-1ad0-476d-b783-70b2f25abdfb",
-      "checking": "d52b93e5-bab6-4248-acb6-2969963c647b",
-      "investing": "d07f4206-4f7f-4d72-ab40-4f7d9e8681f8",
-      "savings": "1e4d6ed8-69b0-45eb-b25b-693abea55178"
+      "card": "115a45f4-14d2-4f7f-87b6-c74fcd594c3c",
+      "checking": "31a6cd1c-e777-429d-a7b3-089ed89a8673",
+      "investing": "0bbb2679-4135-4e00-8613-5b95c57d53ab",
+      "savings": "59508edd-1d25-4da6-8b01-941f184c9355"
     },
-    "customer_id": "b61bcf39-01f7-4d11-b281-339708500051",
+    "customer_id": "1cdd9907-04b9-40f5-a4c5-883a773254b1",
     "seed": {
       "card": 0,
       "checking": 575,
