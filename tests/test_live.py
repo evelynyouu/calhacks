@@ -516,3 +516,21 @@ def test_bills_are_written_before_the_spending_that_moves_the_clock(fake):
     nessie.advance_days("sam", 14)                               # rent and phone fall due
     writes = [c[2]["description"] for c in fake.calls[n:] if c[0] == "POST"]
     assert writes[-1] == "[spend] day-to-day spending" and any(w.startswith("[bill]") for w in writes[:-1])
+
+
+
+def test_a_page_read_racing_a_reset_retries_with_the_new_ids(fake, monkeypatch):
+    """A request that loaded the ids just before a reset swapped them gets a 404 on the deleted
+    accounts; it should re-read the ids, not take the whole app offline."""
+    old = nessie.load_ids()
+    reset_persona("sam")
+    seed.wait_for_background()            # the old accounts are now deleted
+    real_load, calls = nessie.load_ids, {"n": 0}
+
+    def load_ids_once_stale():
+        calls["n"] += 1
+        return old if calls["n"] == 1 else real_load()
+    monkeypatch.setattr(nessie, "load_ids", load_ids_once_stale)
+    nessie.clear_cache()
+    assert get_profile("sam").checking_balance == 575
+    assert not nessie.offline_reason()
