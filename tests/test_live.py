@@ -215,6 +215,9 @@ def test_reset_plus_other_personas_still_recreates_the_reset_one(fake):
 
 
 def test_failed_reset_keeps_the_old_persona_and_cleans_up(fake, monkeypatch):
+    ids = nessie.load_ids()
+    ids["_spares"].pop("sam")            # no spare, so reset takes the slow rebuild path
+    nessie.save_ids(ids)
     old = nessie.load_ids()["sam"]
     before = get_profile("sam")
     accounts_before = set(fake.accounts)
@@ -317,3 +320,44 @@ def test_app_buttons_answer_200_when_nessie_is_down(fake, monkeypatch):
         assert c.post(f"/p/sam/event/{event}").status_code == 200, event
     assert c.get("/p/alex").status_code == 200        # other personas too
     nessie.go_online()
+
+
+# ---------- fast reset (pre-built spares) ----------
+
+def test_seed_builds_a_spare_for_each_persona(fake):
+    spares = nessie.load_ids()["_spares"]
+    assert sorted(spares) == sorted(PERSONAS)
+    assert all(spares[c]["accounts"]["checking"] != nessie.load_ids()[c]["accounts"]["checking"] for c in PERSONAS)
+
+
+def test_reset_swaps_in_the_spare_without_rebuilding(fake, monkeypatch):
+    start = get_profile("sam")
+    fast_forward_to_payday("sam")
+    apply_life_event("sam", "market_drop")
+    spare = nessie.load_ids()["_spares"]["sam"]
+    old = nessie.load_ids()["sam"]
+    seed.PAUSE_BACKGROUND = True                      # hold the rebuild so we can see the fast path alone
+    try:
+        n = len(fake.calls)
+        assert reset_persona("sam") == start
+        posts = [c for c in fake.calls[n:] if c[0] == "POST"]
+        assert posts == []                            # nothing rebuilt on the click itself
+        assert nessie.load_ids()["sam"] == spare
+    finally:
+        seed.PAUSE_BACKGROUND = False
+    seed.wait_for_background()                         # then: old accounts deleted, a new spare built
+    ids = nessie.load_ids()
+    assert set(old["accounts"].values()).isdisjoint(fake.accounts)
+    assert ids["_spares"]["sam"] not in (spare, old) and ids["_spares"]["sam"]["accounts"]["checking"] in fake.accounts
+    assert get_profile("sam") == start
+
+
+def test_reset_without_a_spare_rebuilds(fake):
+    ids = nessie.load_ids()
+    ids["_spares"].pop("sam")
+    nessie.save_ids(ids)
+    start = get_profile("sam")
+    fast_forward_to_payday("sam")
+    assert reset_persona("sam") == start
+    seed.wait_for_background()
+    assert "sam" in nessie.load_ids()["_spares"]        # and a spare is ready for next time
