@@ -78,6 +78,24 @@ def apply_market_move(cid: str, pct: float) -> None:
         nessie.create_deposit(acct, change, _today(cid), f"[event] market move {pct:+g}%")
 
 
+def activity(cid: str) -> list[dict]:
+    """Every tagged transaction on the persona's accounts (cached GETs, so this is cheap after a profile)."""
+    acct = _accounts(cid)
+    role = {account_id: r for r, account_id in acct.items()}
+    items = []
+    for r, aid in acct.items():
+        for t in filter(nessie.is_ours, nessie.get_deposits(aid)):
+            items.append(nessie.activity_item(t["transaction_date"], t["description"], t["amount"], "in", r))
+        for t in filter(nessie.is_ours, nessie.get_withdrawals(aid)):
+            items.append(nessie.activity_item(t["transaction_date"], t["description"], t["amount"], "out", r))
+        for t in filter(nessie.is_ours, nessie.get_purchases(aid)):
+            items.append(nessie.activity_item(t["purchase_date"], t["description"], t["amount"], "out", r))
+        for t in filter(nessie.is_ours, nessie.get_transfers(aid, role="payer")):
+            items.append(nessie.activity_item(t["transaction_date"], t["description"], t["amount"], "move", r,
+                                              role.get(t["payee_id"])))
+    return items
+
+
 def reset(cid: str | None = None) -> None:
     for persona in [cid] if cid else list(nessie._SEED):
         seed.reset_persona(persona)

@@ -72,3 +72,49 @@ def test_other_bills_fill_the_gap_to_monthly_bills():
         assert sum(b.amount for b in p.upcoming_bills) == p.monthly_bills
     assert [b.name for b in get_profile("sam").upcoming_bills] == ["Rent", "Phone + utilities"]
     assert next(b for b in get_profile("maria").upcoming_bills if b.name == "Other bills").amount == 310
+
+
+# ---------- bank activity feed ----------
+
+def test_activity_starts_with_seeded_history():
+    items = nessie.recent_activity("sam", limit=None)
+    assert {i["tag"] for i in items} >= {"payroll", "spend", "bill", "seed"}
+    assert items[0]["on"] <= "2026-10-23"
+    assert items == sorted(items, key=lambda i: i["on"], reverse=True)
+
+
+def test_activity_after_payday_and_events():
+    from core.portfolio import build_portfolio
+    fast_forward_to_payday("sam", build_portfolio(2, []))
+    apply_life_event("sam", "car_repair")
+    top = nessie.recent_activity("sam", limit=6)
+    assert len(top) == 6
+    summary = [(i["tag"], i["text"], i["amount"], i["flow"]) for i in top]
+    assert ("payroll", "paycheck", 2050, "in") in summary
+    assert ("firstfund", "payday auto-invest", 50, "move") in summary
+    assert ("event", "Car repair", 600, "out") in summary
+    assert ("event", "cover Car repair", 600, "move") in summary
+    move = next(i for i in top if i["tag"] == "firstfund")
+    assert (move["account"], move["to"]) == ("Checking", "Investing")
+
+
+def test_raise_first_does_not_rewrite_past_paychecks():
+    apply_life_event("sam", "raise")
+    paychecks = [i["amount"] for i in nessie.recent_activity("sam", limit=None) if i["tag"] == "payroll"]
+    assert paychecks == [2050] * 4   # the history is from before the raise
+
+
+def test_dashboard_shows_badge_and_bank_activity():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    c = TestClient(app)
+    page = c.get("/p/sam").text
+    assert "Demo data" in page and "Bank activity" in page and "[payroll]" in page
+    r = c.post("/p/sam/event/car_repair")
+    assert "[event]</code> Car repair" in r.text and "−$600" in r.text
+
+
+def test_newest_action_is_on_top_of_the_feed():
+    fast_forward_to_payday("sam")
+    apply_life_event("sam", "car_repair")
+    assert [i["tag"] for i in nessie.recent_activity("sam", limit=4)] == ["event", "event", "payroll", "spend"]

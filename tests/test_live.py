@@ -227,3 +227,26 @@ def test_failed_reset_keeps_the_old_persona_and_cleans_up(fake, monkeypatch):
     assert nessie.load_ids()["sam"] == old             # still points at the working accounts
     assert set(fake.accounts) == accounts_before        # half-made accounts were deleted
     assert get_profile("sam") == before
+
+
+@pytest.mark.parametrize("cid,steps", [
+    ("sam", ["payday_fund", "car_repair", "raise", "market_drop", "payday"]),
+    ("jordan", ["car_repair", "car_repair", "car_repair", "payday"]),   # card spill
+    ("alex", ["payday", "payday", "market_drop"]),
+])
+def test_activity_feed_matches_fixture(fake, monkeypatch, cid, steps):
+    from core.portfolio import build_portfolio
+    fund = build_portfolio(2, [])
+    for s in steps:
+        if s == "payday_fund":
+            step = lambda c: fast_forward_to_payday(c, fund)
+        elif s == "payday":
+            step = fast_forward_to_payday
+        else:
+            step = lambda c, s=s: apply_life_event(c, s)
+        step(cid)
+        in_mode(monkeypatch, "fixture", step, cid)
+    live = nessie.recent_activity(cid, limit=None)
+    fixture = in_mode(monkeypatch, "fixture", nessie.recent_activity, cid, None)
+    assert live == fixture
+    assert len(live) > 20
