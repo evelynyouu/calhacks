@@ -355,3 +355,11 @@ def test_a_tls_error_on_a_write_is_never_retried(fake):
     with pytest.raises(requests.exceptions.SSLError):
         nessie.create_deposit("a1", 100, "2026-10-30", "[payroll]")
     assert len(calls) == 1
+
+
+def test_raises_only_go_up():
+    # live_clock reads the highest same-day "raise to N", so a pay cut can't be represented
+    with pytest.raises(ValueError):
+        nessie.apply_raise("sam", -10)
+    with pytest.raises(ValueError):
+        nessie.raise_paycheck("sam", -200)

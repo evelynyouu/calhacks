@@ -699,6 +699,8 @@ def _fx_record_purchase(store: dict, customer_id: str, name: str, amount: float)
 
 def raise_paycheck(customer_id: str, amount: float) -> None:
     """Paychecks go up by `amount` from now on, and the first raise lands in checking now."""
+    if amount < 0:
+        raise ValueError("raises only go up; live mode can't show a pay cut")
     return _demo("raise_paycheck", _fx_raise_paycheck, customer_id, whole(amount))
 
 
@@ -711,6 +713,8 @@ def _fx_raise_paycheck(store: dict, customer_id: str, amount: float) -> None:
 
 
 def apply_raise(customer_id: str, pct: float) -> None:
+    if pct < 0:
+        raise ValueError("raises only go up; live mode can't show a pay cut")
     done, paycheck = _try_live("current_paycheck", customer_id) if mode() == LIVE else (False, None)
     if not done:
         paycheck = _store()[customer_id]["paycheck_amount"]
