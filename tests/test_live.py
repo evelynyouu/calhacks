@@ -3,6 +3,8 @@
 The key check: after seeding, and after every button, the live profile matches the fixture
 profile for the same steps (money within $1, everything else exactly).
 """
+from datetime import timedelta
+
 import pytest
 import requests
 
@@ -96,7 +98,7 @@ def test_fast_forward_matches_fixture(fake, monkeypatch):
 def test_sam_live_fast_forward_invests_50(fake):
     r = fast_forward_to_payday("sam")
     assert (r.planned_amount, r.invested_amount) == (150, 50)
-    assert state.as_of("sam").isoformat() == "2026-10-24"
+    assert profile.live_clock("sam")[0].isoformat() == "2026-10-24"   # read from Nessie, not a local file
 
 
 @pytest.mark.parametrize("cid,events", [
@@ -227,3 +229,27 @@ def test_failed_reset_keeps_the_old_persona_and_cleans_up(fake, monkeypatch):
     assert nessie.load_ids()["sam"] == old             # still points at the working accounts
     assert set(fake.accounts) == accounts_before        # half-made accounts were deleted
     assert get_profile("sam") == before
+
+
+def test_live_survives_a_restart_that_wipes_local_state(fake, monkeypatch):
+    """Render's free plan wipes local files on restart; the sim clock and raises must come from Nessie."""
+    fast_forward_to_payday("sam")
+    apply_life_event("sam", "raise")
+    before = get_profile("sam")
+    state.clear()                    # what a restart does to data/state.json
+    nessie.clear_cache()
+    assert get_profile("sam") == before
+    live = fast_forward_to_payday("sam")
+    in_mode(monkeypatch, "fixture", fast_forward_to_payday, "sam")
+    in_mode(monkeypatch, "fixture", apply_life_event, "sam", "raise")
+    fixture = in_mode(monkeypatch, "fixture", fast_forward_to_payday, "sam")
+    assert (live.paycheck_detected, live.invested_amount) == (fixture.paycheck_detected, fixture.invested_amount)
+    assert_same(monkeypatch, "sam")
+
+
+def test_clock_and_paycheck_are_read_from_nessie(fake):
+    from core.profile import live_clock
+    assert live_clock("sam") == (state.SIM_START, 2050)
+    fast_forward_to_payday("sam")
+    apply_life_event("sam", "raise")
+    assert live_clock("sam") == (state.SIM_START + timedelta(days=1), 2250)

@@ -10,6 +10,7 @@ good live profile is cached in data/cache/{persona}.json and served if Nessie er
 from __future__ import annotations
 
 import json
+import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
@@ -78,20 +79,47 @@ def _prefetch(acct: dict) -> None:
             future.result()   # re-raise the first error, so the cache fallback kicks in
 
 
+RAISED_TO = re.compile(r"to \$?([\d,]+(?:\.\d+)?)")
+
+
+def live_clock(customer_id: str, ids: dict | None = None) -> tuple[date, float]:
+    """(today, current paycheck) for a live persona, read from Nessie rather than a local file,
+    so a server restart (Render wipes local files) can't lose them.
+
+    Today is the date of the newest transaction we wrote (fast-forward always writes one dated
+    the new day), never earlier than SIM_START. The paycheck is the newest [payroll] deposit,
+    unless a raise ("[payroll-adj] raise to 2250") was recorded on or after it.
+    """
+    acct = (ids or nessie.load_ids()[customer_id])["accounts"]
+    dates = [nessie.txn_date(t) for a in acct.values()
+             for t in nessie.get_deposits(a) + nessie.get_withdrawals(a) + nessie.get_purchases(a) if nessie.is_ours(t)]
+    today = max([state.SIM_START] + [date.fromisoformat(d) for d in dates])
+
+    deposits = [d for d in nessie.get_deposits(acct["checking"]) if nessie.is_ours(d)]
+    payroll = [d for d in deposits if d["description"].startswith("[payroll]")]
+    if not payroll:
+        raise ValueError(f"{customer_id}: no [payroll] deposits in Nessie; re-seed this persona")
+    latest = max(payroll, key=_date)
+    paycheck = latest["amount"]
+    raises = [(d, RAISED_TO.search(d["description"])) for d in deposits if d["description"].startswith("[payroll-adj]")]
+    raises = [(d, m) for d, m in raises if m and _date(d) >= _date(latest)]
+    if raises:
+        paycheck = float(max(raises, key=lambda dm: _date(dm[0]))[1].group(1).replace(",", ""))
+    return today, paycheck
+
+
 def derive_live(customer_id: str, ids: dict) -> FinancialProfile:
     persona = nessie.persona_seed(customer_id)
     acct, seed = ids["accounts"], ids["seed"]
-    as_of = state.as_of(customer_id)
     if nessie.CACHE_SECONDS > 0:
         _prefetch(acct)
+    as_of, paycheck = live_clock(customer_id, ids)
 
     payroll = [d for d in nessie.get_deposits(acct["checking"])
                if nessie.is_ours(d) and d["description"].startswith("[payroll]")]
     if not payroll:
         raise ValueError(f"{customer_id}: no [payroll] deposits in Nessie; re-seed this persona")
-    latest = max(payroll, key=_date)
-    paycheck = state.paycheck_override(customer_id) or latest["amount"]
-    last_payday = _date(latest)
+    last_payday = _date(max(payroll, key=_date))
 
     # Spending average comes from the seeded history before the sim started, so it stays put
     # while the demo clock moves (the [spend] lumps fast-forward writes are later than SIM_START).
