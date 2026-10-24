@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Monthly report · FirstFund{% endblock %}
+{% block header_right %}<a href="/p/{{ cid }}" class="btn-ghost">← Back</a>{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto">
+  <div class="card p-0 overflow-hidden">
+    <div class="bg-ink/5 px-5 py-3 text-sm space-y-0.5">
+      <p><span class="text-ink/50 w-14 inline-block">From</span> FirstFund &lt;reports@firstfund.app&gt;</p>
+      <p><span class="text-ink/50 w-14 inline-block">To</span> {{ profile.name }}</p>
+      <p><span class="text-ink/50 w-14 inline-block">Subject</span> Your monthly FirstFund report</p>
+    </div>
+    <div class="px-5 py-5">
+      <div class="prose-sm whitespace-pre-line leading-relaxed">{{ report_text }}</div>
+      <div class="mt-6 grid grid-cols-3 gap-2 text-center">
+        <div class="stat"><dt>Invested</dt><dd>{{ profile.invested_balance | money }}</dd></div>
+        <div class="stat"><dt>Tier</dt><dd>{{ tier.tier }}</dd></div>
+        <div class="stat"><dt>Next check</dt><dd>{{ tier.check_frequency }}</dd></div>
+      </div>
+      <details class="mt-5 text-xs text-ink/60">
+        <summary class="cursor-pointer">Numbers behind this report (computed in Python)</summary>
+        <ul class="mt-2 space-y-0.5">{% for f in report_facts %}<li>• {{ f }}</li>{% endfor %}</ul>
+      </details>
+    </div>
+  </div>
+</div>
+{% endblock %}

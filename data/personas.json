@@ -1,0 +1,100 @@
+{
+  "maria": {
+    "name": "Maria",
+    "blurb": "First job, carrying a credit card balance",
+    "monthly_income": 3200,
+    "monthly_bills": 1450,
+    "monthly_spending": 1150,
+    "checking_balance": 900,
+    "cash_cushion": 1800,
+    "card_debt": 1200,
+    "card_apr": 25.0,
+    "invested_balance": 0,
+    "paycheck_amount": 1600,
+    "days_to_payday": 3,
+    "upcoming_bills": [
+      {
+        "name": "Rent",
+        "amount": 1100,
+        "due_in_days": 6
+      },
+      {
+        "name": "Card minimum",
+        "amount": 40,
+        "due_in_days": 9
+      }
+    ],
+    "expected_readiness": "not_yet"
+  },
+  "jordan": {
+    "name": "Jordan",
+    "blurb": "Steady paycheck, thin cash cushion",
+    "monthly_income": 2800,
+    "monthly_bills": 1300,
+    "monthly_spending": 1100,
+    "checking_balance": 600,
+    "cash_cushion": 1500,
+    "card_debt": 0,
+    "card_apr": 0,
+    "invested_balance": 0,
+    "paycheck_amount": 1400,
+    "days_to_payday": 2,
+    "upcoming_bills": [
+      {
+        "name": "Rent",
+        "amount": 1000,
+        "due_in_days": 5
+      }
+    ],
+    "expected_readiness": "start_small"
+  },
+  "sam": {
+    "name": "Sam",
+    "blurb": "Stable paycheck, $3K invested",
+    "monthly_income": 4000,
+    "monthly_bills": 1500,
+    "monthly_spending": 1300,
+    "checking_balance": 400,
+    "cash_cushion": 9000,
+    "card_debt": 0,
+    "card_apr": 0,
+    "invested_balance": 3000,
+    "paycheck_amount": 2000,
+    "days_to_payday": 1,
+    "upcoming_bills": [
+      {
+        "name": "Rent",
+        "amount": 1350,
+        "due_in_days": 5
+      },
+      {
+        "name": "Phone + utilities",
+        "amount": 500,
+        "due_in_days": 7
+      }
+    ],
+    "expected_readiness": "ready"
+  },
+  "alex": {
+    "name": "Alex",
+    "blurb": "A few years in, $65K invested",
+    "monthly_income": 9000,
+    "monthly_bills": 2500,
+    "monthly_spending": 2500,
+    "checking_balance": 4000,
+    "cash_cushion": 30000,
+    "card_debt": 0,
+    "card_apr": 0,
+    "invested_balance": 65000,
+    "paycheck_amount": 4500,
+    "days_to_payday": 5,
+    "upcoming_bills": [
+      {
+        "name": "Rent",
+        "amount": 2200,
+        "due_in_days": 10
+      }
+    ],
+    "expected_readiness": "ready"
+  }
+}

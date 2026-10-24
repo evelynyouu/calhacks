@@ -1,0 +1,14 @@
+<section class="card flex flex-col h-[28rem]">
+  <p class="eyebrow">Build your fund</p>
+  <div id="chat-messages" class="flex-1 overflow-y-auto space-y-3 py-3 pr-1"
+       {% if not s.transcript %}hx-post="/p/{{ cid }}/chat" hx-trigger="load" hx-swap="beforeend"{% endif %}>
+    {% for m in s.transcript %}{% include "partials/chat_bubble.html" %}{% endfor %}
+  </div>
+  <div id="typing" class="htmx-indicator text-sm text-ink/50 pb-2">FirstFund is thinking…</div>
+  <form hx-post="/p/{{ cid }}/chat" hx-target="#chat-messages" hx-swap="beforeend" hx-indicator="#typing"
+        hx-on::after-request="this.reset(); this.querySelector('input').focus()" class="flex gap-2">
+    <input name="message" autocomplete="off" required placeholder="Type your answer…"
+           class="flex-1 rounded-xl border border-ink/15 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-moss-500">
+    <button class="btn">Send</button>
+  </form>
+</section>

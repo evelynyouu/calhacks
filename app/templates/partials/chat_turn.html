@@ -1,0 +1,5 @@
+{% for m in new_messages %}{% include "partials/chat_bubble.html" %}{% endfor %}
+{% with swap_oob=True %}
+  {% if 'readiness' in (oob or []) %}{% include "partials/readiness.html" %}{% endif %}
+  {% if 'fund' in (oob or []) %}{% include "partials/fund_card.html" %}{% include "partials/crash.html" %}{% endif %}
+{% endwith %}

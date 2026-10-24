@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}FirstFund{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { theme: { extend: {
+      fontFamily: { display: ['Fraunces', 'serif'], sans: ['Inter', 'system-ui', 'sans-serif'] },
+      colors: { ink: '#1b2420', paper: '#f6f3ec', moss: { 50: '#eef5ef', 100: '#d8e8db', 500: '#2f7a4f', 600: '#25633f', 700: '#1c4c31' },
+                clay: { 100: '#f7e3d6', 500: '#c2603a' }, sun: { 100: '#fbf0cc', 500: '#c99a1a' } } } } }
+  </script>
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.js"></script>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="bg-paper text-ink font-sans antialiased min-h-screen">
+  <header class="max-w-6xl mx-auto px-4 sm:px-6 py-5 flex items-center justify-between">
+    <a href="/" class="font-display text-2xl font-bold tracking-tight">First<span class="text-moss-500">Fund</span></a>
+    {% block header_right %}{% endblock %}
+  </header>
+  <main class="max-w-6xl mx-auto px-4 sm:px-6 pb-16">{% block content %}{% endblock %}</main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
