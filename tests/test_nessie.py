@@ -342,3 +342,14 @@ def test_the_key_is_nowhere_in_a_raised_error(fake, monkeypatch):
         seen += [str(e), repr(e)]
         e = e.__cause__ or e.__context__
     assert not any("SECRETKEY123" in x for x in seen)
+
+
+
+def test_a_failed_tls_handshake_is_retried_even_for_writes(fake):
+    """The handshake failed, so the request never went out: safe to send again."""
+    from urllib3.exceptions import SSLError as Urllib3SSLError
+    calls, queue = fake
+    tls = requests.exceptions.SSLError(MaxRetryError(None, "/x", Urllib3SSLError("handshake failed")))
+    queue += [tls, (201, {"objectCreated": {"_id": "d1"}})]
+    assert nessie.create_deposit("a1", 100, "2026-10-30", "[payroll]")["_id"] == "d1"
+    assert len(calls) == 2

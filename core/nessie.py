@@ -22,7 +22,7 @@ from datetime import date, timedelta
 from typing import Any
 
 import requests
-from urllib3.exceptions import MaxRetryError, NewConnectionError
+from urllib3.exceptions import MaxRetryError, NewConnectionError, SSLError as _TLSError
 from dotenv import load_dotenv
 
 from core import state
@@ -140,7 +140,7 @@ def _never_sent(e: requests.ConnectionError) -> bool:
     reason = e.args[0] if e.args else None
     if isinstance(reason, MaxRetryError):
         reason = reason.reason
-    return isinstance(reason, NewConnectionError)
+    return isinstance(reason, (NewConnectionError, _TLSError))   # refused, or the TLS handshake failed
 
 
 def _send(method: str, path: str, body: dict | None, params: dict | None) -> Any:
@@ -421,18 +421,21 @@ def go_online() -> None:
     _SHADOW.clear()
 
 
-def sync_shadow(cid: str, p, as_of) -> None:
-    """Called after each successful live read: the fallback copy becomes exactly what's on screen."""
+def sync_shadow(cid: str, p, as_of) -> bool:
+    """Called after each successful live read: the fallback copy becomes exactly what's on screen.
+    Returns False when skipped (offline, or a click in flight for this persona)."""
     with _clicks_lock:
         busy = _clicks.get(cid, 0) > 0
-    if not _offline and not busy:
-        old = _SHADOW.get(cid, {})
-        _SHADOW[cid] = _state_from_snapshot(cid, p, as_of)
-        try:
-            _SHADOW[cid]["activity"] = _live().activity(cid)   # the lists were just read, so this is cached
-        except Exception:
-            if "activity" in old:
-                _SHADOW[cid]["activity"] = old["activity"]
+    if _offline or busy:
+        return False
+    old = _SHADOW.get(cid, {})
+    _SHADOW[cid] = _state_from_snapshot(cid, p, as_of)
+    try:
+        _SHADOW[cid]["activity"] = _live().activity(cid)   # the lists were just read, so this is cached
+    except Exception:
+        if "activity" in old:
+            _SHADOW[cid]["activity"] = old["activity"]
+    return True
 
 
 def _state_from_snapshot(cid: str, p, as_of) -> dict:
@@ -468,8 +471,15 @@ def _demo(name: str, fx, customer_id, *args):
     the shadow copy; if Nessie fails (now or earlier in this run), on the shadow copy instead."""
     if not _configured_live():
         return fx(_STATE, customer_id, *args)
+    targets = [customer_id] if customer_id else list(_SEED)
     if not _offline:
-        targets = [customer_id] if customer_id else list(_SEED)
+        # The shadow must start from the numbers before this click, so if this run hasn't read the
+        # persona yet (e.g. right after a restart), read it now, before the click counts as in flight.
+        from core import profile   # lazily: core.profile imports this module
+        for cid in targets:
+            if cid not in _SHADOW:
+                profile.get_profile(cid)
+    if not _offline:
         with _clicks_lock:
             for cid in targets:
                 _clicks[cid] = _clicks.get(cid, 0) + 1

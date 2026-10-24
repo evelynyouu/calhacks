@@ -74,8 +74,8 @@ def _live_profile(customer_id: str) -> FinancialProfile:
             raise
         nessie.go_offline(nessie.describe_failure(e))   # continues on the shadow copy: what was on screen
         return get_profile(customer_id)
-    nessie.sync_shadow(customer_id, p, as_of)
-    _save_cache(p, as_of)
+    if nessie.sync_shadow(customer_id, p, as_of):
+        _save_cache(p, as_of)   # only when the shadow is in step, so the cached balances and feed agree
     return p
 
 

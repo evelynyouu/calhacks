@@ -8,7 +8,7 @@ from datetime import timedelta
 import pytest
 import requests
 
-from core import nessie, profile, seed, state
+from core import live, nessie, profile, seed, state
 from core.payday import apply_life_event, fast_forward_to_payday, reset_persona
 from core.profile import diff, get_profile
 from tests.fake_nessie import FakeNessie
@@ -580,3 +580,63 @@ def test_concurrent_cache_writes_for_one_persona_never_fail(fake):
     for t in threads:
         t.join()
     assert errors == [] and profile.cached_snapshot("sam") is not None
+
+
+# ---------- fixes from the third review (its reproductions, kept as tests) ----------
+
+
+def test_first_click_after_restart_then_outage_keeps_the_click(fake, monkeypatch):
+    get_profile("sam")                   # earlier run: cache holds pre-click numbers
+    nessie._SHADOW.clear()               # server restart; page already open in the browser
+    real_send = nessie._send
+    state = {"down": False}
+    real_rp = live.record_purchase
+    def rp(*a):
+        real_rp(*a); state["down"] = True  # Nessie drops right after the click's writes
+    monkeypatch.setattr(live, "record_purchase", rp)
+    def send(m, p, b, q):
+        if state["down"]:
+            raise nessie.requests.ConnectionError("down")
+        return fake.request(m, p, b, q)
+    monkeypatch.setattr(nessie, "_send", send)
+    p = apply_life_event("sam", "car_repair")
+    _ = ("offline:", nessie.offline_reason(), "cash_cushion shown:", p.cash_cushion,
+          "car repair in feed:", any(i["text"] == "Car repair" for i in nessie.recent_activity("sam", None)))
+    assert p.cash_cushion == 8400, p.cash_cushion
+
+
+def test_cache_balances_and_feed_always_agree(fake, monkeypatch):
+    get_profile("alex")
+    real = live.record_purchase
+    def click_then_other_read(c, n, a):
+        real(c, n, a); get_profile(c)       # second tab reads mid-click
+    monkeypatch.setattr(live, "record_purchase", click_then_other_read)
+    nessie.record_purchase("alex", "Car repair", 600)
+    snap = profile.cached_snapshot("alex")[0]
+    feed = profile.cached_activity("alex")
+    truth = profile.derive_live("alex", nessie.load_ids()["alex"])
+    _ = ("cache cash_cushion", snap.cash_cushion, "truth", truth.cash_cushion,
+          "feed has car repair:", any(i["text"] == "Car repair" for i in feed))
+    assert any(i["text"] == "Car repair" for i in feed) == (snap.cash_cushion == truth.cash_cushion)
+
+
+def test_cache_keeps_its_feed_when_a_click_is_the_first_read(fake, monkeypatch):
+    get_profile("sam")
+    assert profile.cached_activity("sam") is not None
+    nessie._SHADOW.clear()               # restart
+    nessie.advance_days("sam", 1)        # click: its pre-write read saves the cache with no shadow feed
+    _ = ("cached feed after click:", profile.cached_activity("sam"))
+    assert profile.cached_activity("sam") is not None
+
+
+def test_reset_as_first_click_then_outage_shows_the_reset_numbers(fake, monkeypatch):
+    get_profile("sam"); apply_life_event("sam", "car_repair"); get_profile("sam")
+    nessie._SHADOW.clear()                    # restart
+    nessie.reset("sam")                       # live reset succeeds
+    def down(*a): raise nessie.requests.ConnectionError("down")
+    monkeypatch.setattr(nessie, "_send", down)
+    nessie.clear_cache()
+    p = get_profile("sam")
+    feed = nessie.recent_activity("sam", None)
+    _ = ("after reset+outage: cash_cushion", p.cash_cushion, "car repair in feed:", any(i["text"] == "Car repair" for i in feed))
+    assert p.cash_cushion == 9000
