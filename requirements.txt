@@ -7,6 +7,12 @@ anthropic>=0.40
 httpx>=0.27
 requests>=2.31
 pytest>=8
+# Sign-in (core/auth.py, app/routes/auth.py)
+argon2-cffi>=23.1
+pyotp>=2.9
+segno>=1.6
+itsdangerous>=2.1
+PyJWT[crypto]>=2.8
 # Engine (Saahil)
 # yfinance
 # pandas

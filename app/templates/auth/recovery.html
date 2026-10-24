@@ -1,0 +1,16 @@
+{% extends "auth/layout.html" %}
+{% block title %}Save your recovery codes · FirstFund{% endblock %}
+{% block card %}
+<p class="text-xs font-semibold uppercase tracking-wider text-green-700">2-step verification is on</p>
+<h1 class="mt-1 text-2xl font-bold text-black">Save your recovery codes</h1>
+<p class="mt-1 text-sm text-black/60">If you lose your phone, each code gets you in once. This is the only time they're shown, so store them somewhere safe, like a password manager.</p>
+<ul class="mt-4 grid grid-cols-2 gap-2 rounded-lg border border-black/10 bg-black/[.03] p-4 font-mono text-sm text-black" aria-label="Recovery codes">
+  {% for c in codes %}<li class="select-all">{{ c }}</li>{% endfor %}
+</ul>
+<div class="mt-3 flex gap-2">
+  <button type="button" data-codes="{{ codes | join(' ') }}"
+          onclick="navigator.clipboard.writeText(this.dataset.codes.split(' ').join('\n')).then(() => { this.textContent = 'Copied' })"
+          class="h-10 flex-1 rounded-lg border border-black/20 bg-white text-sm font-medium text-black hover:border-green-700">Copy codes</button>
+</div>
+<a href="{{ next or '/' }}" class="mt-5 flex h-11 w-full items-center justify-center rounded-lg bg-green-700 font-medium text-white hover:bg-green-800">I've saved them, continue</a>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "auth/layout.html" %}
+{% block title %}Sign in · FirstFund{% endblock %}
+{% block card %}
+<h1 class="text-2xl font-bold text-black">Sign in</h1>
+<p class="mt-1 mb-6 text-sm text-black/60">Welcome back to First<span class="text-green-700">Fund</span>.</p>
+{% include "auth/_error.html" %}
+{% include "auth/_social.html" %}
+<form method="post" action="/login" class="space-y-4">
+  <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="next" value="{{ next }}">
+  <div>
+    <label for="email" class="block text-sm font-medium text-black">Email</label>
+    <input id="email" name="email" type="email" required autocomplete="username" value="{{ email or '' }}" autofocus
+           class="mt-1 block h-11 w-full rounded-lg border border-black/20 bg-white px-3 text-black focus:border-green-700 focus:outline-none focus:ring-2 focus:ring-green-600/30">
+  </div>
+  <div>
+    <label for="password" class="block text-sm font-medium text-black">Password</label>
+    <input id="password" name="password" type="password" required autocomplete="current-password"
+           class="mt-1 block h-11 w-full rounded-lg border border-black/20 bg-white px-3 text-black focus:border-green-700 focus:outline-none focus:ring-2 focus:ring-green-600/30">
+  </div>
+  <button class="h-11 w-full rounded-lg bg-green-700 font-medium text-white hover:bg-green-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-600 focus-visible:ring-offset-2">Continue</button>
+</form>
+<p class="mt-2 text-center text-xs text-black/50">Next you'll enter a code from your authenticator app.</p>
+<p class="mt-6 text-center text-sm text-black/70">New here? <a href="/signup{% if next and next != '/' %}?next={{ next | urlencode }}{% endif %}" class="font-medium text-green-700 hover:underline">Create an account</a></p>
+{% endblock %}

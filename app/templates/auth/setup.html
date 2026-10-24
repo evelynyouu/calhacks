@@ -1,0 +1,30 @@
+{% extends "auth/layout.html" %}
+{% block title %}Set up 2-step verification · FirstFund{% endblock %}
+{% block card %}
+<p class="text-xs font-semibold uppercase tracking-wider text-green-700">Step 2 of 2</p>
+<h1 class="mt-1 text-2xl font-bold text-black">Turn on 2-step verification</h1>
+<p class="mt-1 mb-5 text-sm text-black/60">For {{ email }}. Every email sign-in will ask for a code from your phone.</p>
+{% include "auth/_error.html" %}
+<ol class="space-y-5 text-sm text-black">
+  <li>
+    <p class="font-medium">1. Scan this with an authenticator app</p>
+    <p class="text-black/60">Google Authenticator, Microsoft Authenticator, 1Password, Authy, or your phone's built-in passwords app.</p>
+    {% if qr %}<img src="{{ qr }}" alt="QR code for your authenticator app" class="mx-auto mt-3 h-48 w-48 rounded-lg border border-black/10">{% endif %}
+    {% if key %}
+    <details class="mt-2 text-center">
+      <summary class="cursor-pointer text-xs text-green-700">Can't scan? Enter this key instead</summary>
+      <code class="mt-2 inline-block select-all rounded bg-black/5 px-2 py-1 font-mono text-sm tracking-wider text-black">{{ key }}</code>
+    </details>
+    {% endif %}
+  </li>
+  <li>
+    <form method="post" action="/2fa/setup" class="space-y-3">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label for="code" class="block font-medium">2. Enter the 6-digit code it shows</label>
+      <input id="code" name="code" required inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7" autocomplete="one-time-code" autofocus
+             class="block h-12 w-full rounded-lg border border-black/20 bg-white px-3 text-center font-mono text-xl tracking-[.4em] text-black focus:border-green-700 focus:outline-none focus:ring-2 focus:ring-green-600/30">
+      <button class="h-11 w-full rounded-lg bg-green-700 font-medium text-white hover:bg-green-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-600 focus-visible:ring-offset-2">Turn on and continue</button>
+    </form>
+  </li>
+</ol>
+{% endblock %}

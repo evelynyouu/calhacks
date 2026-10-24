@@ -55,7 +55,7 @@
     {% elif q.kind == 'choice' %}
     <div class="grid sm:grid-cols-2 gap-2" role="group" aria-label="{{ q.prompt }}">
       {% for v, label in q.options %}
-      <button name="value" value="{{ v }}" class="choice-btn"><span class="choice-key">{{ 'ABCD'[loop.index0] }}</span>{{ label }}</button>
+      <button name="value" value="{{ v }}" class="choice-btn">{{ label }}</button>
       {% endfor %}
     </div>
 

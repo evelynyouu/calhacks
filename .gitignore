@@ -10,3 +10,6 @@ data/state.tmp
 data/cache/
 .env.*
 !.env.example
+data/users.db
+data/users.db-*
+*.p8

@@ -1,25 +1,32 @@
-/* Ticker strip. Owned by the tape partials (app/templates/partials/tape*.html). */
-.tape-dock { position:sticky; top:0; z-index:40; }
-.tape { background:#fff; border-bottom:1px solid rgba(27,36,32,.1); overflow:hidden; }
-.tape-track { display:flex; width:max-content; animation:tape-scroll 90s linear infinite; }
+/* Ticker strip (Yahoo Finance style). Owned by app/templates/partials/tape*.html.
+   One white row pinned to the top: never wraps, never widens the page, scrolls itself. */
+:root { --tape-h:52px; --tape-up:#0b7a3e; --tape-down:#d93025; --tape-ink:#000; --tape-muted:#5f6368; --tape-line:#e5e7eb; }
+.tape-dock { position:sticky; top:0; z-index:40; width:100%; max-width:100vw; overflow:hidden; }
+.tape { height:var(--tape-h); background:#fff; border-bottom:1px solid var(--tape-line); overflow:hidden; contain:layout paint;
+        font-family:Inter, system-ui, -apple-system, "Segoe UI", sans-serif; color:var(--tape-ink); }
+.tape-loading { display:flex; align-items:center; }
+.tape-track { display:flex; width:max-content; height:100%; animation:tape-scroll 80s linear infinite; will-change:transform; }
 .tape:hover .tape-track, .tape:focus-within .tape-track { animation-play-state:paused; }
-.tape-group { display:flex; }
-.tape-card { display:flex; align-items:center; gap:.75rem; padding:.55rem 1.1rem; border-right:1px solid rgba(27,36,32,.08); white-space:nowrap; }
-a.tape-card:hover { background:#f6f3ec; }
-.tape-text { display:flex; flex-direction:column; line-height:1.2; }
-.tape-sym { font-size:.75rem; font-weight:700; color:#1b2420; }
-.tape-price { font-size:.85rem; font-weight:600; font-variant-numeric:tabular-nums; color:#1b2420; }
-.tape-chg { font-size:.72rem; font-weight:600; font-variant-numeric:tabular-nums; }
-.tape-up { color:#1f7a45; }
-.tape-down { color:#c0392b; }
-.tape-spark { flex-shrink:0; }
-.tape-base { stroke:rgba(27,36,32,.3); stroke-width:1; stroke-dasharray:2 2; }
-.tape-line-up { stroke:#1f9d55; }
-.tape-line-down { stroke:#d64535; }
-.tape-note { font-size:.72rem; color:rgba(27,36,32,.45); }
+.tape-group { display:flex; flex-shrink:0; height:100%; }
+.tape-item { display:flex; align-items:center; gap:12px; height:100%; padding:0 18px; border-right:1px solid var(--tape-line);
+             white-space:nowrap; flex-shrink:0; text-decoration:none; color:inherit; }
+a.tape-item:hover .tape-name { color:var(--tape-up); text-decoration:underline; }
+a.tape-item:focus-visible { outline:2px solid var(--tape-up); outline-offset:-2px; }
+.tape-text { display:flex; flex-direction:column; justify-content:center; gap:2px; line-height:1.15; }
+.tape-name { font-size:12px; font-weight:700; color:var(--tape-ink); }
+.tape-nums { display:flex; align-items:baseline; gap:6px; font-size:12px; font-variant-numeric:tabular-nums; }
+.tape-price { font-weight:600; color:var(--tape-ink); }
+.tape-up { color:var(--tape-up); font-weight:600; }
+.tape-down { color:var(--tape-down); font-weight:600; }
+.tape-spark { display:block; flex-shrink:0; overflow:visible; }
+.tape-spark polyline { fill:none; stroke-width:1.5; stroke-linejoin:round; stroke-linecap:round; }
+.tape-base { stroke:#9aa0a6; stroke-width:1; stroke-dasharray:2 2; }
+.tape-line-up { stroke:var(--tape-up); }
+.tape-line-down { stroke:var(--tape-down); }
+.tape-note { font-size:11px; color:var(--tape-muted); border-right:0; }
 @keyframes tape-scroll { from { transform:translateX(0); } to { transform:translateX(-50%); } }
 @media (prefers-reduced-motion: reduce) {
-  .tape { overflow-x:auto; }
+  .tape { overflow-x:auto; scrollbar-width:thin; }
   .tape-track { animation:none; }
   .tape-group[aria-hidden="true"] { display:none; }
 }

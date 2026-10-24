@@ -16,6 +16,7 @@ from fastapi.templating import Jinja2Templates
 
 from agent import claude_agent
 from agent.tools import INDEXES, news_tickers
+from app.routes.auth import auth_disabled, csrf_token
 from app import state
 from core import feed, fund, intake, market, nessie
 from core.broker import get_broker, values
@@ -36,6 +37,7 @@ templates.env.filters["signed"] = lambda v, d=1: f"{round(v, d) + 0.0:+.{d}f}%"
 templates.env.filters["day"] = lambda d: d.strftime("%b %-d, %Y")
 templates.env.filters["ago"] = lambda d: _ago(d)
 templates.env.globals["info"] = market.info
+templates.env.globals["csrf_token"] = csrf_token
 
 MARKET_DROP_PCT = -10.0
 RAISE_PCT = 10.0
@@ -82,7 +84,8 @@ def _ctx(request: Request, cid: str, **extra) -> dict:
         "pie_data": _pie(a.portfolio), "broker_mode": get_broker().mode,
         "activity": nessie.recent_activity(cid), "nessie_mode": nessie.mode(), "nessie_offline": nessie.offline_reason(),
         "etfs": ETFS, "theme_labels": THEME_LABELS, "live_market": market.source("SPY") == "live",
-        "fast_forwarded": a.today > market.today(), "claude_on": claude_agent._get_client() is not None, **extra,
+        "fast_forwarded": a.today > market.today(), "claude_on": claude_agent._get_client() is not None,
+        "login_on": not auth_disabled(), **extra,
     }
 
 
@@ -444,35 +447,52 @@ def interests(cid: str, values: list[str] = Form(default=[])):
 
 # ---------- Ticker tape ----------
 
+TAPE_EXTRAS = ["BND", "GLD"]
+TAPE_DEFAULT = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA"]   # before a persona is picked
+
+
+@router.get("/tape", response_class=HTMLResponse)
+def tape_any(request: Request, cid: str = "", part: str = ""):
+    """The strip pinned to the top of every page. part=groups returns only the scrolling cards, so the
+    60s refresh swaps values inside the running animation instead of restarting it."""
+    s = state.get(cid) if cid and cid in {c["id"] for c in nessie.list_customers()} else None
+    a = s.fund if s else None
+    on = a.today if a else market.today()
+    held = [h.ticker for h in a.portfolio.holdings] if a and a.portfolio else []
+    symbols = list(dict.fromkeys(INDEXES + held + (s.watchlist if s else TAPE_DEFAULT) + TAPE_EXTRAS))
+    q = market.quotes(symbols, on)
+    items = [{**q[t], "label": _tape_label(t), "spark": _spark(t, on, q[t])} for t in symbols if t in q]
+    ctx = {"request": request, "cid": cid if s else "", "tape": items, "part": part,
+           "live_market": market.source("SPY") == "live", "demo_date": on if on > market.today() else None}
+    return templates.TemplateResponse(request, "partials/tape.html", ctx)
+
+
 @router.get("/p/{cid}/tape", response_class=HTMLResponse)
-def tape(request: Request, cid: str):
-    s = _session(cid)
-    a = s.fund
-    held = [h.ticker for h in a.portfolio.holdings] if a.portfolio else []
-    symbols = list(dict.fromkeys(INDEXES + held + s.watchlist + ["BND", "GLD"]))
-    q = market.quotes(symbols, a.today)
-    items = [{**q[t], "label": _tape_label(t), "spark": _spark(t, a.today)} for t in symbols if t in q]
-    return _render("partials/tape.html", _ctx(request, cid, tape=items))
+def tape(request: Request, cid: str, part: str = ""):
+    _session(cid)   # 404 for an unknown persona
+    return tape_any(request, cid, part)
 
 
-SPARK_W, SPARK_H, SPARK_DAYS = 64, 28, 30
+SPARK_W, SPARK_H, SPARK_DAYS = 60, 24, 30
 
 
 def _tape_label(t: str) -> str:
     return ETFS[t]["label"] if t in ETFS and ETFS[t]["role"] == "benchmark" else t
 
 
-def _spark(t: str, end) -> dict:
-    """A month of closes as SVG polyline points, plus the y of the first close (the dashed baseline)."""
+def _spark(t: str, end, quote: dict) -> dict:
+    """A month of closes as SVG polyline points. Like Yahoo's, it's colored by today's move, and the
+    dashed line marks the previous close (kept inside the box)."""
     pts = [p for _, p in market.series(t, end - timedelta(days=SPARK_DAYS), end)]
+    up = quote["change"] >= 0
     if len(pts) < 2:
-        return {"points": "", "base": SPARK_H / 2, "up": True}
+        return {"points": "", "base": SPARK_H / 2, "up": up}
     lo, hi = min(pts), max(pts)
     span = (hi - lo) or 1.0
-    y = lambda v: round(SPARK_H - 2 - (v - lo) / span * (SPARK_H - 4), 1)
+    y = lambda v: round(min(SPARK_H - 1, max(1, SPARK_H - 2 - (v - lo) / span * (SPARK_H - 4))), 1)
     step = SPARK_W / (len(pts) - 1)
-    return {"points": " ".join(f"{i * step:.1f},{y(v)}" for i, v in enumerate(pts)), "base": y(pts[0]),
-            "up": pts[-1] >= pts[0]}
+    return {"points": " ".join(f"{i * step:.1f},{y(v)}" for i, v in enumerate(pts)),
+            "base": y(quote.get("prev_close") or pts[0]), "up": up}
 
 
 def _ago(d) -> str:

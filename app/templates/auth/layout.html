@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{# Sign-in pages: no ticker strip, a single centered white card. Styled inline (white, green, black). #}
+{% block tape %}{% endblock %}
+{% block header_right %}{% endblock %}
+{% block content %}
+<div class="min-h-[70vh] flex items-start justify-center pt-4 sm:pt-10">
+  <div class="w-full max-w-md rounded-2xl border border-black/10 bg-white p-6 sm:p-8 shadow-sm">
+    {% block card %}{% endblock %}
+  </div>
+</div>
+{% endblock %}

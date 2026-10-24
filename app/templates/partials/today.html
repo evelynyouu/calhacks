@@ -9,7 +9,7 @@
         {{ '+' if up else '−' }}{{ day_change | abs | money2 }} ({{ day_pct | signed(2) }}) today
       </p>
     </div>
-    <span class="rounded-full px-2 py-0.5 text-xs {{ 'bg-emerald-100 text-emerald-800' if live_market and not fast_forwarded else 'bg-ink/5 text-ink/60' }}">
+    <span class="rounded-full px-2 py-0.5 text-xs {{ 'bg-moss-50 text-moss-700' if live_market and not fast_forwarded else 'bg-ink/5 text-ink/60' }}">
       {% if fast_forwarded %}Demo date {{ a.today | day }}: simulated{% elif live_market %}Live prices · Nasdaq, delayed{% else %}Simulated prices{% endif %}
     </span>
   </div>

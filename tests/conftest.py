@@ -12,6 +12,8 @@ from core.broker import get_broker
 def sandbox(monkeypatch, tmp_path):
     monkeypatch.setenv("NESSIE_MODE", "fixture")
     monkeypatch.setenv("MARKET_DATA", "sim")   # no real prices or news in tests: simulated, deterministic
+    monkeypatch.setenv("AUTH_DISABLED", "1")   # skip the sign-in gate; tests/test_auth.py turns it back on
+    monkeypatch.setenv("AUTH_DB", str(tmp_path / "users.db"))
     monkeypatch.setattr(feed, "CACHE_DIR", tmp_path / "prices")
     monkeypatch.setattr(nessie, "IDS_PATH", tmp_path / "nessie_ids.json")
     monkeypatch.setattr(state, "STATE_PATH", tmp_path / "state.json")

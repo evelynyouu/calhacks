@@ -88,7 +88,7 @@
           <td class="text-right tabular-nums text-ink/60">{{ h.target | pct(1) }}</td>
           <td class="text-right tabular-nums {% if (h.day_pct or 0) >= 0 %}text-moss-600{% else %}text-clay-500{% endif %}">{{ h.day_pct | signed(2) if h.day_pct is not none else '–' }}</td>
           <td class="text-right tabular-nums {% if h.period_pct >= 0 %}text-moss-600{% else %}text-clay-500{% endif %}">{{ h.period_pct | signed }}</td>
-          <td class="text-right tabular-nums">{% if h.gain_pct is not none %}{{ h.gain_pct | signed }}{% else %}–{% endif %}</td>
+          <td class="text-right tabular-nums {% if h.gain_pct is not none %}{{ 'text-moss-600' if h.gain_pct >= 0 else 'text-clay-500' }}{% endif %}">{% if h.gain_pct is not none %}{{ h.gain_pct | signed }}{% else %}–{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>

@@ -1,6 +1,7 @@
 // Charts: any <canvas data-chart="pie|fan|history|price" data-payload='json'>, including HTMX/OOB swaps.
 // Inputs: [data-slider] keeps a range and a number box in sync; [data-paycheck] previews dollars.
-const PALETTE = ['#25633f', '#5b7fa6', '#c99a1a', '#c2603a', '#8a6bb0', '#7a8f3a', '#3f8f8a', '#b0577a', '#6b6b6b'];
+// Greens, blacks and grays that stay distinguishable side by side in the fund doughnut.
+const PALETTE = ['#0b7a3e', '#0b0f0d', '#8fd3a8', '#4a4f4c', '#0e9f4f', '#a3a8a5', '#075c2e', '#d5d8d6', '#3fbf74'];
 
 function money(v) { return '$' + Math.round(v).toLocaleString(); }
 
@@ -19,9 +20,9 @@ function makeChart(el) {
     new Chart(el, {
       type: 'line',
       data: { labels, datasets: [
-        { label: 'Low (10th pct)', data: d.p10, borderColor: '#2f7a4f55', pointRadius: 0, borderWidth: 1 },
-        { label: 'Typical', data: d.p50, borderColor: '#25633f', pointRadius: 0, borderWidth: 2.5 },
-        { label: 'High (90th pct)', data: d.p90, borderColor: '#2f7a4f55', backgroundColor: '#2f7a4f1f',
+        { label: 'Low (10th pct)', data: d.p10, borderColor: '#0b7a3e55', pointRadius: 0, borderWidth: 1 },
+        { label: 'Typical', data: d.p50, borderColor: '#0b7a3e', pointRadius: 0, borderWidth: 2.5 },
+        { label: 'High (90th pct)', data: d.p90, borderColor: '#0b7a3e55', backgroundColor: '#0b7a3e1f',
           pointRadius: 0, borderWidth: 1, fill: 0 },
       ] },
       options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
@@ -35,8 +36,8 @@ function makeChart(el) {
     new Chart(el, {
       type: 'line',
       data: { labels, datasets: [
-        { label: 'Fund value', data: d.value, borderColor: '#25633f', backgroundColor: '#2f7a4f1a', fill: true, pointRadius: 0, borderWidth: 2.5 },
-        { label: 'You put in', data: d.contributed, borderColor: '#1b242066', borderDash: [5, 4], pointRadius: 0, borderWidth: 1.5, stepped: true },
+        { label: 'Fund value', data: d.value, borderColor: '#0b7a3e', backgroundColor: '#0b7a3e1a', fill: true, pointRadius: 0, borderWidth: 2.5 },
+        { label: 'You put in', data: d.contributed, borderColor: '#0b0f0d80', borderDash: [5, 4], pointRadius: 0, borderWidth: 1.5, stepped: true },
       ] },
       options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
         plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } },
@@ -47,7 +48,7 @@ function makeChart(el) {
 }
 
 function makePriceChart(el, d) {
-  const color = d.up ? '#2f7a4f' : '#c2603a';
+  const color = d.up ? '#0b7a3e' : '#d93025';
   const long = d.labels.length > 120;
   const labels = d.labels.map(s => new Date(s + 'T00:00').toLocaleDateString(undefined, long ? { month: 'short', year: '2-digit' } : { month: 'short', day: 'numeric' }));
   const ctx = el.getContext('2d');

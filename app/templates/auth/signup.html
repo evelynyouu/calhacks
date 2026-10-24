@@ -1,0 +1,29 @@
+{% extends "auth/layout.html" %}
+{% block title %}Create account · FirstFund{% endblock %}
+{% block card %}
+<h1 class="text-2xl font-bold text-black">Create your account</h1>
+<p class="mt-1 mb-6 text-sm text-black/60">Two steps: a password, then an authenticator app for 2-step verification.</p>
+{% include "auth/_error.html" %}
+{% include "auth/_social.html" %}
+<form method="post" action="/signup" class="space-y-4">
+  <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="next" value="{{ next }}">
+  <div>
+    <label for="email" class="block text-sm font-medium text-black">Email</label>
+    <input id="email" name="email" type="email" required autocomplete="username" value="{{ email or '' }}"
+           class="mt-1 block h-11 w-full rounded-lg border border-black/20 bg-white px-3 text-black focus:border-green-700 focus:outline-none focus:ring-2 focus:ring-green-600/30">
+  </div>
+  <div>
+    <label for="password" class="block text-sm font-medium text-black">Password</label>
+    <input id="password" name="password" type="password" required minlength="10" autocomplete="new-password" aria-describedby="pw-help"
+           class="mt-1 block h-11 w-full rounded-lg border border-black/20 bg-white px-3 text-black focus:border-green-700 focus:outline-none focus:ring-2 focus:ring-green-600/30">
+    <p id="pw-help" class="mt-1 text-xs text-black/50">At least 10 characters. A few random words works well.</p>
+  </div>
+  <div>
+    <label for="confirm" class="block text-sm font-medium text-black">Confirm password</label>
+    <input id="confirm" name="confirm" type="password" required minlength="10" autocomplete="new-password"
+           class="mt-1 block h-11 w-full rounded-lg border border-black/20 bg-white px-3 text-black focus:border-green-700 focus:outline-none focus:ring-2 focus:ring-green-600/30">
+  </div>
+  <button class="h-11 w-full rounded-lg bg-green-700 font-medium text-white hover:bg-green-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-600 focus-visible:ring-offset-2">Continue</button>
+</form>
+<p class="mt-6 text-center text-sm text-black/70">Already have an account? <a href="/login" class="font-medium text-green-700 hover:underline">Sign in</a></p>
+{% endblock %}

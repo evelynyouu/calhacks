@@ -1,0 +1,8 @@
+{% extends "auth/layout.html" %}
+{% block title %}Signed in with a recovery code · FirstFund{% endblock %}
+{% block card %}
+<h1 class="text-2xl font-bold text-black">You're in</h1>
+<p class="mt-2 text-sm text-black/70">You used a recovery code, so it won't work again. You have <strong>{{ left }}</strong> left.
+{% if left <= 2 %}Set up your authenticator app again soon so you don't get locked out.{% endif %}</p>
+<a href="{{ next or '/' }}" class="mt-5 flex h-11 w-full items-center justify-center rounded-lg bg-green-700 font-medium text-white hover:bg-green-800">Continue</a>
+{% endblock %}

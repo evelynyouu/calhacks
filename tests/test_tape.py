@@ -1,0 +1,41 @@
+"""The ticker strip pinned to the top of every page."""
+from fastapi.testclient import TestClient
+
+from app.main import app
+from core import market
+from tests.fund_helpers import make_fund
+
+client = TestClient(app)
+
+
+def test_strip_works_before_a_persona_is_picked():
+    r = client.get("/tape")
+    assert r.status_code == 200 and 'id="tape-strip"' in r.text and "S&amp;P 500" in r.text
+    assert "<a " not in r.text   # no persona, so nothing to link to
+
+
+def test_persona_strip_links_to_markets_and_includes_holdings():
+    make_fund("sam")
+    r = client.get("/p/sam/tape")
+    assert 'href="/p/sam/markets?s=VTI"' in r.text and 'tabindex="-1"' in r.text and 'aria-hidden="true"' in r.text
+
+
+def test_refresh_returns_only_the_cards():
+    r = client.get("/tape?part=groups")
+    assert 'class="tape-group"' in r.text and 'id="tape-strip"' not in r.text and "hx-trigger" not in r.text
+
+
+def test_change_and_percent_are_green_up_red_down():
+    r = client.get("/tape").text
+    q = market.quote("SPY", market.today())
+    cls = "tape-up" if q["change"] >= 0 else "tape-down"
+    assert f'<span class="{cls}">({q["change_pct"] + 0.0:+.2f}%)</span>' in r
+
+
+def test_unknown_persona_404():
+    assert client.get("/p/nobody/tape").status_code == 404
+
+
+def test_pages_render_the_loader_with_the_same_id():
+    r = client.get("/")
+    assert 'id="tape" class="tape tape-loading"' in r.text and 'hx-get="/tape"' in r.text
