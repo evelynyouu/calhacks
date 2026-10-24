@@ -238,6 +238,29 @@ def test_failed_reset_keeps_the_old_persona_and_cleans_up(fake, monkeypatch):
     assert get_profile("sam") == before                 # and live Sam is untouched
 
 
+@pytest.mark.parametrize("cid,steps", [
+    ("sam", ["payday_fund", "car_repair", "raise", "market_drop", "payday"]),
+    ("jordan", ["car_repair", "car_repair", "car_repair", "payday"]),   # card spill
+    ("alex", ["payday", "payday", "market_drop"]),
+])
+def test_activity_feed_matches_fixture(fake, monkeypatch, cid, steps):
+    from core.portfolio import build_portfolio
+    fund = build_portfolio(2, [])
+    for s in steps:
+        if s == "payday_fund":
+            step = lambda c: fast_forward_to_payday(c, fund)
+        elif s == "payday":
+            step = fast_forward_to_payday
+        else:
+            step = lambda c, s=s: apply_life_event(c, s)
+        step(cid)
+        in_mode(monkeypatch, "fixture", step, cid)
+    live = nessie.recent_activity(cid, limit=None)
+    fixture = in_mode(monkeypatch, "fixture", nessie.recent_activity, cid, None)
+    assert live == fixture
+    assert len(live) > 20
+
+
 def test_live_survives_a_restart_that_wipes_local_state(fake, monkeypatch):
     """Render's free plan wipes local files on restart; the sim clock and raises must come from Nessie."""
     fast_forward_to_payday("sam")
@@ -361,6 +384,16 @@ def test_reset_without_a_spare_rebuilds(fake):
     assert reset_persona("sam") == start
     seed.wait_for_background()
     assert "sam" in nessie.load_ids()["_spares"]        # and a spare is ready for next time
+
+
+def test_badge_says_when_nessie_dropped_out(fake, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    c = TestClient(app)
+    assert "Live: Capital One Nessie" in c.get("/p/sam").text
+    _nessie_goes_down(monkeypatch)
+    page = c.post("/p/sam/event/payday").text
+    assert "Nessie offline" in page and "Live: Capital One Nessie" not in page
 
 
 # ---------- fixes from the 2026-10-24 review ----------
@@ -517,6 +550,17 @@ def test_a_read_from_another_request_mid_click_does_not_double_count(fake, monke
     nessie.record_purchase("alex", "Car repair", 600)
     truth = profile.derive_live("alex", nessie.load_ids()["alex"])
     assert nessie._SHADOW["alex"]["cash_cushion"] == truth.cash_cushion
+
+
+def test_offline_feed_for_a_persona_not_opened_this_run_keeps_its_clicks(fake):
+    """Fresh server run, Nessie down before Sam's page was opened: the cached live feed is used."""
+    get_profile("sam")
+    apply_life_event("sam", "car_repair")
+    get_profile("sam")                                   # the cache now holds the post-click numbers and feed
+    nessie._SHADOW.pop("sam")                            # as if this server run never opened Sam
+    nessie.go_offline("test")
+    assert get_profile("sam").cash_cushion == 8400
+    assert any(i["text"] == "Car repair" for i in nessie.recent_activity("sam", None))
 
 
 def test_concurrent_cache_writes_for_one_persona_never_fail(fake):

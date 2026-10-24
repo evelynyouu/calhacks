@@ -406,6 +406,9 @@ def go_offline(reason: str) -> None:
                 try:
                     snap = profile.cached_snapshot(cid)
                     _SHADOW[cid] = _state_from_snapshot(cid, *snap) if snap else copy.deepcopy(_SEED[cid])
+                    feed = profile.cached_activity(cid) if snap else None
+                    if feed is not None:
+                        _SHADOW[cid]["activity"] = feed   # the feed matches the cached balances
                 except Exception:   # a bad cache must never stop the fallback
                     _SHADOW[cid] = copy.deepcopy(_SEED[cid])
         _offline = reason
@@ -425,8 +428,11 @@ def sync_shadow(cid: str, p, as_of) -> None:
     if not _offline and not busy:
         old = _SHADOW.get(cid, {})
         _SHADOW[cid] = _state_from_snapshot(cid, p, as_of)
-        if "activity" in old:
-            _SHADOW[cid]["activity"] = old["activity"]
+        try:
+            _SHADOW[cid]["activity"] = _live().activity(cid)   # the lists were just read, so this is cached
+        except Exception:
+            if "activity" in old:
+                _SHADOW[cid]["activity"] = old["activity"]
 
 
 def _state_from_snapshot(cid: str, p, as_of) -> dict:
@@ -483,6 +489,71 @@ def _demo(name: str, fx, customer_id, *args):
 
 def _store() -> dict:
     return _SHADOW if _offline else _STATE
+
+
+# ---------- bank activity feed ----------
+
+ACCOUNT_NAMES = {"checking": "Checking", "savings": "Savings", "investing": "Investing", "card": "Card"}
+
+
+def activity_item(on: str, description: str, amount: float, flow: str, account: str, to: str | None = None) -> dict:
+    """One feed line. `description` is the tagged Nessie description, e.g. "[payroll] paycheck".
+    flow: "in" (money arrives), "out" (money leaves), "move" (between the persona's own accounts)."""
+    tag, _, text = description.partition("] ")
+    return {"on": str(on)[:10], "tag": tag.lstrip("["), "text": text, "amount": round(amount, 2), "flow": flow,
+            "account": ACCOUNT_NAMES[account], "to": ACCOUNT_NAMES[to] if to else None}
+
+
+# Within one day, the order things happen in the demo: the clock runs (spending, bills), the
+# paycheck lands, then auto-invest, then whatever button was pressed. Newest-first puts events on top.
+_SAME_DAY_ORDER = {"seed": 0, "spend": 1, "bill": 2, "payroll": 3, "payroll-adj": 4, "firstfund": 5, "event": 6}
+
+
+def _feed_order(item: dict) -> tuple:
+    return (item["on"], _SAME_DAY_ORDER.get(item["tag"], 9), item["text"], item["amount"], item["flow"], item["account"])
+
+
+def recent_activity(customer_id: str, limit: int | None = 8) -> list[dict]:
+    """The transactions FirstFund wrote for this persona, newest first: what the bank actually shows."""
+    items = None
+    if _configured_live() and not _offline:
+        try:
+            items = _live().activity(customer_id)
+        except Exception as e:
+            if not needs_fallback(e):
+                raise
+            go_offline(describe_failure(e))
+    if items is None:
+        items = list(_activity(_store(), customer_id))
+    items.sort(key=_feed_order, reverse=True)
+    return items if limit is None else items[:limit]
+
+
+def _activity(store: dict, customer_id: str) -> list[dict]:
+    """A demo-data persona's transaction log, starting with the same history the seeder writes."""
+    c = store[customer_id]
+    if "activity" not in c:
+        from core import seed   # lazily: core.seed imports this module
+        plan = seed.plan_persona(customer_id)
+        log = [activity_item(d.isoformat(), "[payroll] paycheck", plan["persona"]["paycheck_amount"], "in", "checking")
+               for d in plan["paydays"]]
+        log += [activity_item(x["on"].isoformat(), f"[spend] {seed.MERCHANTS[x['merchant']][0]}", x["amount"], "out",
+                              "checking") for x in plan["purchases"]]
+        log += [activity_item(x["on"].isoformat(), f"[bill] {x['name']}", x["amount"], "out", "checking")
+                for x in plan["bill_payments"]]
+        t = plan["to_savings"]
+        if t:
+            src, dst = ("checking", "savings") if t > 0 else ("savings", "checking")
+            log.append(activity_item(plan["paydays"][-1].isoformat(), "[seed] move leftover to savings", abs(t), "move",
+                                     src, dst))
+        c["activity"] = log
+    return c["activity"]
+
+
+def _log(store: dict, customer_id: str, description: str, amount: float, flow: str, account: str,
+         to: str | None = None, on: str | None = None) -> None:
+    _activity(store, customer_id).append(
+        activity_item(on or store[customer_id]["as_of"], description, amount, flow, account, to))
 
 
 # ---------- demo stub (in-memory; what the web layer calls today) ----------
@@ -552,6 +623,7 @@ def _fx_transfer_to_investing(store: dict, customer_id: str, amount: float) -> s
     c = store[customer_id]
     c["checking_balance"] = round(c["checking_balance"] - amount, 2)
     c["invested_balance"] = round(c["invested_balance"] + amount, 2)
+    _log(store, customer_id, "[firstfund] payday auto-invest", amount, "move", "checking", "investing")
     return f"stub-xfer-{uuid.uuid4().hex[:8]}"
 
 
@@ -563,6 +635,7 @@ def _fx_deposit_paycheck(store: dict, customer_id: str) -> float:
     c = store[customer_id]
     c["checking_balance"] = round(c["checking_balance"] + c["paycheck_amount"], 2)
     c["days_to_payday"] = 14
+    _log(store, customer_id, "[payroll] paycheck", c["paycheck_amount"], "in", "checking")
     return c["paycheck_amount"]
 
 
@@ -579,10 +652,13 @@ def _fx_advance_days(store: dict, customer_id: str, days: int) -> None:
     c["days_to_payday"] = max(0, c["days_to_payday"] - days)
     spend = whole(c["monthly_spending"] * days / 30)
     c["checking_balance"] = round(c["checking_balance"] - spend, 2)
+    if spend:
+        _log(store, customer_id, "[spend] day-to-day spending", spend, "out", "checking", on=end.isoformat())
     for b in c["upcoming_bills"]:
         day = c["bill_days"][b["name"]]
-        for _ in state.occurrences(day, start, end):   # each due date we passed is paid
+        for d in state.occurrences(day, start, end):   # each due date we passed is paid
             c["checking_balance"] = round(c["checking_balance"] - b["amount"], 2)
+            _log(store, customer_id, f"[bill] {b['name']}", b["amount"], "out", "checking", on=d.isoformat())
         b["due_in_days"] = (state.next_due(day, end) - end).days
 
 
@@ -598,6 +674,11 @@ def _fx_record_purchase(store: dict, customer_id: str, name: str, amount: float)
     from_savings = whole(min(amount, max(0.0, c["cash_cushion"])))
     c["cash_cushion"] = round(c["cash_cushion"] - from_savings, 2)
     c["card_debt"] = round(c["card_debt"] + amount - from_savings, 2)
+    if from_savings > 0:
+        _log(store, customer_id, f"[event] cover {name}", from_savings, "move", "savings", "checking")
+        _log(store, customer_id, f"[event] {name}", from_savings, "out", "checking")
+    if amount - from_savings > 0:
+        _log(store, customer_id, f"[event] {name}", amount - from_savings, "out", "card")
 
 
 def raise_paycheck(customer_id: str, amount: float) -> None:
@@ -610,6 +691,7 @@ def _fx_raise_paycheck(store: dict, customer_id: str, amount: float) -> None:
     c["paycheck_amount"] = round(c["paycheck_amount"] + amount, 2)
     c["monthly_income"] = round(c["monthly_income"] + 2 * amount, 2)   # two paychecks a month
     c["checking_balance"] = round(c["checking_balance"] + amount, 2)
+    _log(store, customer_id, f"[payroll-adj] raise to {c['paycheck_amount']:g}", amount, "in", "checking")   # as live writes
 
 
 def apply_raise(customer_id: str, pct: float) -> None:
@@ -627,3 +709,5 @@ def _fx_apply_market_move(store: dict, customer_id: str, pct: float) -> None:
     c = store[customer_id]
     change = whole(c["invested_balance"] * pct / 100)
     c["invested_balance"] = round(c["invested_balance"] + change, 2)
+    if change:
+        _log(store, customer_id, f"[event] market move {pct:+g}%", abs(change), "in" if change > 0 else "out", "investing")

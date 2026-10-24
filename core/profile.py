@@ -166,7 +166,9 @@ def _save_cache(p: FinancialProfile, as_of: date) -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     path = CACHE_DIR / f"{p.customer_id}.json"
     tmp = path.with_name(f"{path.name}.{threading.get_ident()}.tmp")   # per thread: two requests can save at once
-    tmp.write_text(json.dumps({**to_dict(p), "_as_of": as_of.isoformat()}, indent=2))
+    feed = nessie._SHADOW.get(p.customer_id, {}).get("activity")   # the live feed, for an offline fallback
+    extra = {"_as_of": as_of.isoformat(), **({"_activity": feed} if feed is not None else {})}
+    tmp.write_text(json.dumps({**to_dict(p), **extra}, indent=2))
     tmp.replace(path)   # atomic, so a fallback read never sees half a file
 
 
@@ -177,11 +179,21 @@ def cached_snapshot(customer_id: str) -> tuple[FinancialProfile, date] | None:
     except (FileNotFoundError, ValueError):
         return None
     try:
+        d.pop("_activity", None)
         as_of = date.fromisoformat(d.pop("_as_of", state.SIM_START.isoformat()))
         d["upcoming_bills"] = [Bill(**b) for b in d["upcoming_bills"]]
         return FinancialProfile(**d), as_of
     except (TypeError, KeyError, ValueError, AttributeError):   # old format or corrupt: ignore it
         return None
+
+
+def cached_activity(customer_id: str) -> list[dict] | None:
+    """The live feed saved with the last good profile, or None."""
+    try:
+        feed = json.loads((CACHE_DIR / f"{customer_id}.json").read_text()).get("_activity")
+    except (FileNotFoundError, ValueError, AttributeError):
+        return None
+    return feed if isinstance(feed, list) else None
 
 
 def load_cached(customer_id: str) -> FinancialProfile | None:

@@ -81,6 +81,30 @@ def apply_market_move(cid: str, pct: float) -> None:
         nessie.create_deposit(acct, change, _today(cid), f"[event] market move {pct:+g}%")
 
 
+def activity(cid: str) -> list[dict]:
+    """Every tagged transaction on the persona's accounts (cached GETs, so this is cheap after a profile)."""
+    acct = _accounts(cid)
+    items, outs, ins = [], [], []
+    for r, aid in acct.items():
+        ins += [(r, t) for t in filter(nessie.is_ours, nessie.get_deposits(aid))]
+        outs += [(r, t) for t in filter(nessie.is_ours, nessie.get_withdrawals(aid))]
+        for t in filter(nessie.is_ours, nessie.get_purchases(aid)):
+            items.append(nessie.activity_item(nessie.txn_date(t), t["description"], t["amount"], "out", r))
+    # A move between the persona's accounts is a withdrawal + deposit with the same date, amount and
+    # description (Nessie transfers have no destination); show each pair as one "move" line.
+    for r_out, w in outs:
+        key = (nessie.txn_date(w), w["amount"], w["description"])
+        match = next((i for i, (r_in, d) in enumerate(ins)
+                      if r_in != r_out and (nessie.txn_date(d), d["amount"], d["description"]) == key), None)
+        if match is None:
+            items.append(nessie.activity_item(key[0], w["description"], w["amount"], "out", r_out))
+        else:
+            r_in, _ = ins.pop(match)
+            items.append(nessie.activity_item(key[0], w["description"], w["amount"], "move", r_out, r_in))
+    items += [nessie.activity_item(nessie.txn_date(d), d["description"], d["amount"], "in", r) for r, d in ins]
+    return items
+
+
 def reset(cid: str | None = None) -> None:
     for persona in [cid] if cid else list(nessie._SEED):
         seed.reset_persona(persona)
