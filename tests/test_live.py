@@ -501,3 +501,19 @@ def test_a_page_read_racing_a_reset_retries_with_the_new_ids(fake, monkeypatch):
     nessie.clear_cache()
     assert get_profile("sam").checking_balance == 575
     assert not nessie.offline_reason()
+
+
+def test_a_read_from_another_request_mid_click_does_not_double_count(fake, monkeypatch):
+    """Double-click or a second tab: a read lands after the click's Nessie write but before the
+    click updates the backup copy. The backup must still count the click once."""
+    from core import live
+    get_profile("alex")
+    real = live.record_purchase
+
+    def click_then_other_request_reads(c, name, amt):
+        real(c, name, amt)
+        get_profile(c)                      # the other request's read, mid-click
+    monkeypatch.setattr(live, "record_purchase", click_then_other_request_reads)
+    nessie.record_purchase("alex", "Car repair", 600)
+    truth = profile.derive_live("alex", nessie.load_ids()["alex"])
+    assert nessie._SHADOW["alex"]["cash_cushion"] == truth.cash_cushion
