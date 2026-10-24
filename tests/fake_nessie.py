@@ -66,6 +66,13 @@ class FakeNessie:
                 return self.accounts[aid]
             store = self.txns[kind]
             if method == "POST":
+                # Nessie's documented schema: amounts are integers (whole dollars) and every
+                # transaction, purchases included, is dated with transaction_date.
+                if kind != "bills":
+                    if not isinstance(body.get("amount"), int):
+                        raise nessie.NessieError(method, path, 400, {"message": f"amount must be an integer: {body.get('amount')!r}"})
+                    if "transaction_date" not in body:
+                        raise nessie.NessieError(method, path, 400, {"message": "transaction_date is required"})
                 tid = self._new(kind[:3])
                 store[tid] = {"_id": tid, "account_id": aid, "status": "pending", **body}
                 if kind == "transfers":

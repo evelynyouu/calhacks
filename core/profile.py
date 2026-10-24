@@ -99,7 +99,7 @@ def derive_live(customer_id: str, ids: dict) -> FinancialProfile:
     window_start = state.SIM_START - timedelta(days=SPENDING_WINDOW_DAYS)
     spent = sum(x["amount"] for account in (acct["checking"], acct["card"]) for x in nessie.get_purchases(account)
                 if nessie.is_ours(x) and not x["description"].startswith("[event")
-                and window_start < _date(x, "purchase_date") <= state.SIM_START)
+                and window_start < date.fromisoformat(nessie.txn_date(x)) <= state.SIM_START)
 
     bills = [Bill(b["nickname"], b["payment_amount"], (state.next_due(b["recurring_date"], as_of) - as_of).days)
              for b in nessie.get_bills(acct["checking"])]

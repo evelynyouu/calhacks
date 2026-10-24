@@ -145,7 +145,8 @@ def test_transaction_bodies(fake):
     dep, wd, pur, xfer = (c["json"] for c in calls)
     assert dep == {"medium": "balance", "transaction_date": "2026-10-30", "amount": 1400, "description": "[payroll]"}
     assert wd["transaction_date"] == "2026-10-30" and wd["amount"] == 900
-    assert pur["purchase_date"] == "2026-10-30" and pur["merchant_id"] == "m1" and "transaction_date" not in pur
+    assert pur["transaction_date"] == "2026-10-30" and pur["merchant_id"] == "m1"   # per Nessie's docs
+    assert all(isinstance(c["json"]["amount"], int) for c in calls)
     assert xfer["payee_id"] == "a2"
     assert [c["url"].rsplit("/", 1)[1] for c in calls] == ["deposits", "withdrawals", "purchases", "transfers"]
 
@@ -241,3 +242,11 @@ def test_get_in_flight_during_a_write_is_not_cached(monkeypatch):
     assert nessie.get_deposits("a1") == [1]          # this caller saw the old list; fine
     monkeypatch.setattr(nessie, "_send", lambda m, p, b=None, q=None: list(server["deposits"]))
     assert nessie.get_deposits("a1") == [1, 2]       # the next read must not get the stale [1]
+
+
+def test_transfer_direction_is_checked_even_if_nessie_ignores_the_filter(fake):
+    _, queue = fake
+    both = [{"payer_id": "a1", "payee_id": "a2", "amount": 50}, {"payer_id": "a2", "payee_id": "a1", "amount": 600}]
+    queue += [(200, both), (200, both)]   # server returns both directions for either ?type=
+    assert [t["amount"] for t in nessie.get_transfers("a1", role="payer")] == [50]
+    assert [t["amount"] for t in nessie.get_transfers("a1", role="payee")] == [600]

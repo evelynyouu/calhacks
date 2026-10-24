@@ -40,12 +40,12 @@ def plan_persona(cid: str) -> dict:
     paydays = [last_payday - timedelta(days=PAY_PERIOD_DAYS * k) for k in range(PAYCHECKS - 1, -1, -1)]
     history_start = min(paydays[0], SIM_START - timedelta(days=7 * PURCHASES))
 
-    total_spend = round(2 * p["monthly_spending"], 2)
-    each = round(total_spend / PURCHASES, 2)
+    # Two months of spending in whole dollars (Nessie amounts are integers), spread as evenly as possible.
+    total_spend = int(round(2 * p["monthly_spending"]))
+    base, extra = divmod(total_spend, PURCHASES)
     purchases = [{"merchant": SPEND_MERCHANTS[i % len(SPEND_MERCHANTS)],
                   "on": SIM_START - timedelta(days=7 * (PURCHASES - i)),
-                  "amount": each} for i in range(PURCHASES)]
-    purchases[-1]["amount"] = round(total_spend - each * (PURCHASES - 1), 2)
+                  "amount": float(base + (i < extra))} for i in range(PURCHASES)]
 
     bills = [{"name": b["name"], "amount": b["amount"],
               "recurring_date": (SIM_START + timedelta(days=b["due_in_days"])).day} for b in p["upcoming_bills"]]
