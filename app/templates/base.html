@@ -25,8 +25,8 @@
   <link rel="stylesheet" href="/static/nav.css">
 </head>
 <body class="bg-white text-ink font-sans antialiased min-h-screen">
-  {# Ticker strip: pinned to the top of every page, full width, above the sidebar. Pages without it (login) override this block with nothing. #}
-  {% block tape %}<div class="tape-dock">{% include "partials/tape_loader.html" %}</div>{% endblock %}
+  {# Ticker strip: portfolio/home page only. Other pages (login etc.) can override to show it if they want. #}
+  {% block tape %}{% if tab is not defined or tab == 'portfolio' %}<div class="tape-dock">{% include "partials/tape_loader.html" %}</div>{% endif %}{% endblock %}
   {# Customer pages (they have a session `s` and a `cid`) get the left sidebar; the landing page and sign-in don't. #}
   {% set with_nav = s is defined and cid is defined %}
   {% if with_nav %}<div class="shell">{% include "partials/nav.html" %}<div class="side-backdrop" data-nav-close aria-hidden="true"></div><div class="shell-main">{% endif %}

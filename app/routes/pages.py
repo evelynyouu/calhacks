@@ -228,11 +228,21 @@ def report(request: Request, cid: str):
     return _render("report.html", ctx)
 
 
+BACKTEST_PERIODS = [
+    (30,  "1 month"),
+    (91,  "3 months"),
+    (182, "6 months"),
+    (365, "1 year"),
+    (730, "2 years"),
+]
+
+
 @router.get("/p/{cid}/backtest", response_class=HTMLResponse)
-def backtest_page(request: Request, cid: str):
+def backtest_page(request: Request, cid: str, days: int = 91):
     ctx = _ctx(request, cid)
     if not ctx["portfolio"]:
         return RedirectResponse(f"/p/{cid}", status_code=303)
+    days = max(14, min(days, 730))
     a = ctx["a"]
     profile = ctx["profile"]
     tier = ctx["tier"]
@@ -243,8 +253,11 @@ def backtest_page(request: Request, cid: str):
         monthly_invest=monthly_invest,
         review_every_days=tier.review_every_days,
         today=a.today,
+        days=days,
     )
     ctx["bt"] = bt
+    ctx["bt_days"] = days
+    ctx["bt_periods"] = BACKTEST_PERIODS
     ctx["tab"] = "backtest"
     ctx["price_note"] = "real closes where available, simulated past that" if market.source("SPY") == "live" else "simulated"
     return _render("backtest.html", ctx)
