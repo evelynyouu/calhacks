@@ -3,6 +3,68 @@
 // Greens, blacks and grays that stay distinguishable side by side in the fund doughnut.
 const PALETTE = ['#0b7a3e', '#0b0f0d', '#8fd3a8', '#4a4f4c', '#0e9f4f', '#a3a8a5', '#075c2e', '#d5d8d6', '#3fbf74'];
 
+// ---------- Markdown parser ----------
+// Handles: **bold**, *italic*, `code`, - lists, 1. lists, paragraphs, line breaks.
+function parseMarkdown(raw) {
+  // Escape HTML
+  let s = raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Inline: bold > italic > code  (order matters)
+  s = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/(?<!\*)\*(?!\*)(?!\s)([\s\S]*?)(?<!\s)\*(?!\*)/g, '<em>$1</em>');
+  s = s.replace(/`([^`\n]+)`/g, '<code class="bg-ink/[.07] px-1 rounded text-[.88em] font-mono">$1</code>');
+  // Process lines to handle lists
+  const lines = s.split('\n');
+  const out = [];
+  let inUl = false, inOl = false;
+  for (const line of lines) {
+    const ul = line.match(/^[ \t]*[-*]\s+(.+)/);
+    const ol = line.match(/^[ \t]*\d+\.\s+(.+)/);
+    if (ul) {
+      if (!inUl) { if (inOl) { out.push('</ol>'); inOl = false; } out.push('<ul class="list-disc pl-4 space-y-0.5 my-1.5">'); inUl = true; }
+      out.push(`<li>${ul[1]}</li>`);
+    } else if (ol) {
+      if (!inOl) { if (inUl) { out.push('</ul>'); inUl = false; } out.push('<ol class="list-decimal pl-4 space-y-0.5 my-1.5">'); inOl = true; }
+      out.push(`<li>${ol[1]}</li>`);
+    } else {
+      if (inUl) { out.push('</ul>'); inUl = false; }
+      if (inOl) { out.push('</ol>'); inOl = false; }
+      out.push(line);
+    }
+  }
+  if (inUl) out.push('</ul>');
+  if (inOl) out.push('</ol>');
+  // Paragraph breaks (double newline) and soft line breaks
+  let html = out.join('\n');
+  html = html.replace(/\n{2,}/g, '</p><p>');
+  html = html.replace(/\n/g, '<br>');
+  html = `<p>${html}</p>`.replace(/<p>(\s*<\/?(ul|ol|li|p)[^>]*>)/g, '$1').replace(/(<\/(?:ul|ol)>)\s*<\/p>/g, '$1');
+  return html;
+}
+
+function renderMarkdown() {
+  document.querySelectorAll('.ff-prose[data-md]').forEach(el => {
+    if (!el.dataset.rendered) {
+      el.innerHTML = parseMarkdown(el.dataset.md || '');
+      el.dataset.rendered = '1';
+    }
+  });
+}
+
+// Fade-in animation for new chat messages
+function animateNewMessages() {
+  document.querySelectorAll('.ff-msg-in:not([data-anim])').forEach(el => {
+    el.dataset.anim = '1';
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(6px)';
+    requestAnimationFrame(() => {
+      el.style.transition = 'opacity .22s ease, transform .22s ease';
+      el.style.opacity = '1';
+      el.style.transform = 'translateY(0)';
+    });
+  });
+}
+
 function money(v) { return '$' + Math.round(v).toLocaleString(); }
 
 function makeChart(el) {
@@ -108,6 +170,8 @@ function init() {
   document.querySelectorAll('canvas[data-chart]').forEach(makeChart);
   paintSwatches();
   updatePreviews();
+  renderMarkdown();
+  animateNewMessages();
 }
 
 // After a chat turn (or on page load): scroll to the newest message and focus the next question's input

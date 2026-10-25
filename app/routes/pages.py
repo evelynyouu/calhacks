@@ -86,8 +86,32 @@ def _ctx(request: Request, cid: str, **extra) -> dict:
         "etfs": ETFS, "theme_labels": THEME_LABELS, "live_market": market.source("SPY") == "live",
         "fast_forwarded": a.today > market.today(), "claude_on": claude_agent._get_client() is not None,
         "login_on": not auth_disabled(),
-        "override": builder.override_offer(a.portfolio, a.answers) if a.portfolio else None, **extra,
+        "override": builder.override_offer(a.portfolio, a.answers) if a.portfolio else None,
+        "spend_details": _spend_details(cid, a),
+        "risk_adj": _risk_adj(cid, a),
+        **extra,
     }
+
+
+def _spend_details(cid: str, a) -> dict:
+    if not a.portfolio:
+        return {}
+    try:
+        from core.spending import spending_stock_details
+        return spending_stock_details(cid)
+    except Exception:
+        return {}
+
+
+def _risk_adj(cid: str, a) -> dict | None:
+    if not a.portfolio:
+        return None
+    try:
+        from core.spending import banking_risk_adjustment
+        adj = banking_risk_adjustment(get_profile(cid), a.portfolio.risk_level)
+        return adj if adj["delta"] != 0 else None
+    except Exception:
+        return None
 
 
 def _pie(p):

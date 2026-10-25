@@ -201,8 +201,9 @@ def test_portfolio_tab_shows_each_holding_today():
 
 def test_markets_tab_lists_indexes_fund_and_watchlist_and_shows_detail():
     make_fund("sam")
-    page = client.get("/p/sam/markets?s=AAPL&r=1M").text
-    for section in ("Indexes", "Your fund", "Watchlist", "Apple", "52-week high", "$25 buys", "Add to my fund"):
+    # AVGO (Broadcom) is known but not in default spending fund (tech interest only adds XLK top 3)
+    page = client.get("/p/sam/markets?s=AVGO&r=1M").text
+    for section in ("Indexes", "Your fund", "Watchlist", "Broadcom", "52-week high", "$25 buys", "Add to my fund"):
         assert section in page, section
     assert 'data-chart="price"' in page
     assert client.get("/p/sam/markets?s=NOPE123").status_code == 404
@@ -218,11 +219,12 @@ def test_watchlist_add_and_remove():
 
 def test_add_a_single_company_then_a_paycheck_buys_partial_shares():
     make_fund("sam", paycheck_pct=10)
-    client.post("/p/sam/stocks", data={"symbol": "AAPL", "op": "add"})
+    # AVGO not in default spending fund (not in spending history, not in tech interest top-3)
+    client.post("/p/sam/stocks", data={"symbol": "AVGO", "op": "add"})
     a = state.get("sam").fund
-    assert "AAPL" in [h.ticker for h in a.portfolio.holdings]
+    assert "AVGO" in [h.ticker for h in a.portfolio.holdings]
     r = client.post("/p/sam/paycheck")
-    assert "AAPL $" in r.text
+    assert "AVGO $" in r.text
     from core.broker import get_broker
     assert 0 < get_broker().positions("sam")["AAPL"] < 1          # a partial share
     client.post("/p/sam/stocks", data={"symbol": "AAPL", "op": "remove"})

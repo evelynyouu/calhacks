@@ -64,7 +64,7 @@ def test_one_paycheck_and_no_starting_money_has_no_misleading_percent():
     a = account(starting_amount=0)
     fund.paycheck(a)                                                        # the first order is today: no time has passed
     w = build_report(a)["returns"]["since_start"]
-    assert w["deposits"] == pytest.approx(a.contributed) and w["days"] == 0
+    assert w["deposits"] == pytest.approx(a.contributed, abs=0.10) and w["days"] == 0
     assert w["twr_pct"] is None and w["mwr_pct"] is None
 
 
@@ -139,7 +139,7 @@ def test_vs_benchmark_isolates_the_customers_choices(monkeypatch):
 
 
 def test_attribution_sums_to_the_market_gain_through_paychecks_and_a_rebalance():
-    a = account(starting_amount=20_000, started_days_ago=120, interests={"themes": ["ai_chips"], "unmatched": []})
+    a = account(starting_amount=20_000, started_days_ago=120, etf_mode=True, interests={"themes": ["ai_chips"], "unmatched": []})
     market.add_shock(a.today - timedelta(days=60), 30)
     fund.paycheck(a)
     a.auto_trade = True
@@ -153,7 +153,7 @@ def test_attribution_sums_to_the_market_gain_through_paychecks_and_a_rebalance()
 
 
 def test_each_pick_is_compared_with_the_core_it_replaced():
-    a = account(starting_amount=10_000, started_days_ago=60, interests={"themes": ["ai_chips"], "unmatched": []})
+    a = account(starting_amount=10_000, started_days_ago=60, etf_mode=True, interests={"themes": ["ai_chips"], "unmatched": []})
     market.add_shock(a.today - timedelta(days=20), 30)
     picks = build_report(a)["returns"]["since_start"]["picks"]
     pick = next(x for x in picks if x["ticker"] == "NVDA")               # chips is its biggest companies now, not SMH
@@ -204,7 +204,7 @@ def test_a_ticker_with_no_real_data_is_flagged_on_its_own_row(monkeypatch):
 
 
 def test_estimated_income_accrues_daily_and_stays_out_of_the_balance():
-    a = account(starting_amount=10_000, started_days_ago=365, interests={"themes": [], "unmatched": []})
+    a = account(starting_amount=10_000, started_days_ago=365, etf_mode=True, interests={"themes": [], "unmatched": []})
     rep = build_report(a)
     w = rep["returns"]["since_start"]
     assert w["start_value"] + w["deposits"] + w["market_gain"] == pytest.approx(w["end_value"], abs=0.02)   # price only

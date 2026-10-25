@@ -181,7 +181,7 @@ def test_market_dip_suggests_investing_more():
 
 
 def test_tech_heavy_picks_suggest_steadier_sectors():
-    a = _account(interests={"themes": ["tech", "ai_chips", "software"], "unmatched": []})
+    a = _account(etf_mode=True, interests={"themes": ["tech", "ai_chips", "software"], "unmatched": []})
     rec = next(r for r in build_report(a)["recommendations"] if r["action"] == "explore")
     assert len(rec["add_interest"]) == 2
 

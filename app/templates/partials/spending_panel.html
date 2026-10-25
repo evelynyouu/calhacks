@@ -1,0 +1,52 @@
+{# Spending insights panel — shown on the portfolio tab when Nessie spending data exists. #}
+{% set spend_stocks = portfolio.holdings | selectattr('role', 'eq', 'stock') | list if portfolio else [] %}
+{% set spend_driven = spend_stocks | selectattr('ticker', 'in', spend_details.keys()) | list %}
+{% if spend_details %}
+<section class="card">
+  <div class="flex items-start justify-between gap-2">
+    <div>
+      <p class="eyebrow">Spending → Stocks</p>
+      <h3 class="font-semibold text-base mt-0.5">Your purchases shape your fund</h3>
+    </div>
+    <span class="text-[.7rem] font-semibold tracking-wide uppercase px-2 py-1 rounded-full bg-moss-100 text-moss-700 shrink-0 mt-0.5">Nessie</span>
+  </div>
+
+  {% if risk_adj %}
+  <div class="mt-3 rounded-xl px-3 py-2.5 text-sm
+              {% if risk_adj.delta < 0 %}bg-clay-100 border border-clay-500/20{% else %}bg-moss-50 border border-moss-500/20{% endif %}">
+    <strong class="{% if risk_adj.delta < 0 %}text-clay-500{% else %}text-moss-700{% endif %}">
+      {% if risk_adj.delta < 0 %}Your banking data suggests a lower risk level.{% else %}Your finances support moving up a risk level.{% endif %}
+    </strong>
+    <p class="mt-0.5 text-ink/70">{{ risk_adj.reasons[0] }}</p>
+  </div>
+  {% endif %}
+
+  <ul class="mt-3 space-y-2">
+    {% for ticker, info in spend_details.items() %}
+    {% if loop.index <= 6 %}
+    <li class="flex items-start gap-3 text-sm">
+      <div class="mt-0.5 h-5 w-5 shrink-0 rounded bg-ink/[.05] grid place-items-center text-[.65rem] font-bold font-mono text-ink/60">{{ ticker[:3] }}</div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center justify-between gap-2">
+          <span class="font-semibold">{{ ticker }}</span>
+          <span class="text-xs text-ink/50 tabular-nums shrink-0">${{ '{:,.0f}'.format(info.amount) }}</span>
+        </div>
+        <p class="text-xs text-ink/55 truncate">
+          {% if info.source == 'bill' %}You pay {{ info.label }} — owning the stock puts you on the other side
+          {% else %}You spend at {{ info.label }}{% endif %}
+        </p>
+      </div>
+    </li>
+    {% endif %}
+    {% endfor %}
+  </ul>
+
+  {% if spend_details | length > 6 %}
+  <p class="mt-2 text-xs text-ink/40">+{{ spend_details | length - 6 }} more companies from your spending history</p>
+  {% endif %}
+
+  <p class="mt-3 text-xs text-ink/40 border-t border-ink/8 pt-2">
+    Powered by Capital One Nessie · {{ spend_details | length }} companies matched from your transaction history
+  </p>
+</section>
+{% endif %}
