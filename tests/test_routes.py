@@ -107,8 +107,10 @@ def test_report_page_has_every_section():
     client.post("/p/sam/paycheck")
     r = client.get("/p/sam/report")
     assert r.status_code == 200
-    for section in ("What to do now", "Your holdings", "Companies inside your fund", "Your interests",
-                    "The market, and what it means for you", "Where this could go", "prices simulated"):
+    # The report was reorganized (headline, what moved, your money, picks, mix, recs, outlook, finances, market, data notes).
+    for section in ("What moved your fund", "Your money", "Your picks", "Your mix and risk", "Companies inside your fund",
+                    "What to do now", "Looking ahead", "Your finances, and where the fund fits", "The market, briefly",
+                    "Where these numbers come from", "All prices here are simulated"):
         assert section in r.text, section
 
 
