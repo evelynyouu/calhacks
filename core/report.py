@@ -117,6 +117,9 @@ def build_report(acct: FundAccount) -> dict:
     rep["sectors"] = [{"sector": k, "share": round(v, 4)} for k, v in
                       sorted(_sector_exposure(vals, total).items(), key=lambda kv: -kv[1])[:6]]
     rep["data_notes"] = _data_notes(acct, holdings)
+    from core import targets
+    rep["target_changes"] = targets.history(acct)   # accepted target changes, newest first (core/targets.py)
+    rep["target_proposal"] = acct.proposal          # one waiting for Accept / Not now on the Portfolio tab
     targets = {h.ticker: h.weight for h in p.holdings}
     rep["finances"] = build_finances(
         get_profile(cid), acct.answers, total, per_paycheck, PAYCHECKS_PER_YEAR, sim.expected_return_pct,
