@@ -17,6 +17,7 @@ from core.broker import get_broker, values
 from core.models import Portfolio, Trade
 from core.policy import tier_for
 from core.builder import build as build_fund
+from core.portfolio import build_custom_portfolio, build_spending_portfolio
 from core.profile import get_profile
 from core.rebalance import allocate_new_money
 
@@ -40,9 +41,25 @@ class FundAccount:
 
 
 def build(acct: FundAccount) -> Portfolio:
-    """(Re)build the fund from the intake answers."""
+    """(Re)build the fund from the intake answers.
+
+    Priority:
+      1. custom_mode=True   -> build_custom_portfolio (each interest's fund swapped for its top companies)
+      2. spending_mode=True -> build_spending_portfolio (companies picked from Nessie spending;
+                               falls back to build_portfolio if no Nessie signals)
+      3. default            -> core.builder.build (the answer-driven fund, with a Reason for every choice)
+    """
     acct.risk_score = intake.risk_score(acct.answers)
-    acct.portfolio = build_fund(acct.answers)
+    if acct.answers.get("custom_mode"):
+        level = intake.risk_level(acct.risk_score)
+        acct.portfolio = build_custom_portfolio(level, intake.interests(acct.answers), intake.stocks(acct.answers),
+                                                acct.answers.get("spending_stocks", []))
+    elif acct.answers.get("spending_mode"):
+        level = intake.risk_level(acct.risk_score)
+        acct.portfolio = build_spending_portfolio(acct.customer_id, level, intake.interests(acct.answers),
+                                                  intake.stocks(acct.answers))
+    else:
+        acct.portfolio = build_fund(acct.answers)
     acct.invest_pct = float(acct.answers.get("paycheck_pct", acct.invest_pct))
     return acct.portfolio
 

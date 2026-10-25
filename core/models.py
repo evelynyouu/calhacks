@@ -101,6 +101,7 @@ class Portfolio:
     reasons: list[Reason] = field(default_factory=list)
     score: int | None = None          # 0..100, what the mix was built at (after any ceilings)
     pointed_level: int | None = None  # the level the answers pointed to, if a ceiling lowered it
+    holding_reasons: dict[str, str] = field(default_factory=dict)   # ticker -> why it's here (spending/custom modes)
 
     @property
     def core(self) -> Holding:

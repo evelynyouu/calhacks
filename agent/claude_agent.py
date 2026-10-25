@@ -203,8 +203,102 @@ def rundown(session: Session) -> str:
 
 
 def _offline_turn(session: Session, text: str) -> str:
+    from core import fund as _fund, intake as _intake, spending as _spending
+    from core.portfolio import custom_fund_preview as _preview, THEMES as _THEMES
+    from core.profile import get_profile as _get_profile
     t = text.lower()
     rep = build_report(session.fund)
+
+    # --- custom fund commands (check before generic "fund"/"hold" keywords) ---
+    _is_custom_req = any(w in t for w in ("custom", "individual stock", "real stock", "actual stock",
+                                           "switch to custom", "use stock", "stock instead"))
+    _is_etf_req = any(w in t for w in ("etf fund", "switch back", "back to etf", "use etf"))
+    _is_preview = any(w in t for w in ("preview", "what would", "show me what", "what would it look"))
+    _is_spending = any(w in t for w in ("spending", "insight", "habit", "purchase", "i buy", "i spend"))
+    _is_auto = any(w in t for w in ("auto trade", "auto-trade", "auto execute", "automat"))
+
+    if _is_etf_req:
+        session.fund.answers.pop("custom_mode", None)
+        session.fund.answers.pop("spending_stocks", None)
+        session.fund.answers.pop("spending_mode", None)
+        _fund.build(session.fund)
+        p = session.fund.portfolio
+        tilts = ", ".join(f"{h.ticker} ({h.weight:.1%})" for h in p.holdings if h.role == "tilt")
+        return (f"Switched to ETF mode. Your {p.risk_label.lower()} fund now holds "
+                + (f"sector ETFs: {tilts}." if tilts else "a broad core with no sector tilts."))
+
+    if _is_custom_req or _is_preview:
+        ints = _intake.interests(session.fund.answers)
+        level = session.fund.risk_score or 50
+        from core.intake import risk_level as _rl
+        lvl = _rl(level) if session.fund.risk_score is not None else 2
+        # detect spending tickers mentioned in the message
+        _spend_tickers: list[str] = []
+        try:
+            profile = _get_profile(session.fund.customer_id)
+            sugg = _spending.spending_stock_suggestions(session.fund.customer_id, profile)
+            for s in sugg:
+                if s["ticker"].lower() in t or s["name"].lower() in t:
+                    _spend_tickers.append(s["ticker"])
+        except Exception:
+            pass
+        if _is_preview:
+            rows = _preview(lvl, ints, _spend_tickers or None)
+            if not rows:
+                return ("A custom fund replaces your sector ETFs with the top 3 companies from each ETF. "
+                        "Add some interests first, then ask to switch.")
+            sample = ", ".join(f"{r['ticker']} ({r['weight_pct']}% via {r['from_interest']})" for r in rows[:6])
+            return (f"Here's a preview of your custom fund — {len(rows)} individual stocks instead of sector ETFs: "
+                    f"{sample}{'...' if len(rows) > 6 else ''}. "
+                    'Say "switch to custom fund" to apply it.')
+        # apply custom mode
+        session.fund.answers["custom_mode"] = True
+        session.fund.answers["spending_stocks"] = _spend_tickers
+        _fund.build(session.fund)
+        p = session.fund.portfolio
+        stocks = [h for h in p.holdings if h.role == "stock"]
+        sample = ", ".join(f"{h.ticker} ({h.weight:.1%})" for h in stocks[:6])
+        n = len(stocks)
+        return (f"Done! Your fund now holds {n} individual stock{'s' if n != 1 else ''} instead of sector ETFs: "
+                f"{sample}{'...' if n > 6 else ''}. "
+                "Your core (VTI/VXUS/BND) is unchanged. Check the Fund tab to see the full breakdown.")
+
+    if _is_spending:
+        try:
+            profile = _get_profile(session.fund.customer_id)
+            breakdown = _spending.spending_breakdown(session.fund.customer_id, profile)
+            sugg = breakdown["theme_suggestions"]
+            cats = list(breakdown["categories"].items())[:3]
+            cat_str = ", ".join(f"{k} ${v:,.0f}" for k, v in cats)
+            sugg_str = "; ".join(f"{s['why']}" for s in sugg[:3])
+            surplus = breakdown["spending_surplus_estimate"]
+            out = f"Your top spending: {cat_str}. " + (f"Themes that match: {sugg_str}. " if sugg_str else "")
+            if surplus > 0:
+                out += f"You spent ${surplus:,.0f} below your baseline this month — that could be invested."
+            return out
+        except Exception as e:
+            return f"Couldn't load spending data right now ({e})."
+
+    if _is_auto:
+        from core.fund import AUTO_EXECUTE_TIER
+        from core.policy import tier_for
+        import core.fund as _cf
+        enabled = "on" in t or "enabl" in t or "turn on" in t
+        disabled = "off" in t or "disabl" in t or "turn off" in t
+        if enabled or disabled:
+            session.fund.auto_trade = enabled and not disabled
+            bal = _cf.value(session.fund)
+            tier = tier_for(bal)
+            auto_exec = session.fund.auto_trade and tier.tier >= AUTO_EXECUTE_TIER
+            return (f"Auto-trade is now {'on' if session.fund.auto_trade else 'off'}. "
+                    + (f"You're Tier {tier.tier} — trades will execute automatically on each {tier.check_frequency.lower()} review."
+                       if auto_exec else
+                       f"You're Tier {tier.tier}; trades will queue for your confirmation "
+                       f"(auto-execute starts at Tier {AUTO_EXECUTE_TIER}, $50K+ AUM)."))
+        return (f"Auto-trade is currently {'on' if session.fund.auto_trade else 'off'}. "
+                'Say "turn auto-trade on" or "turn auto-trade off" to change it.')
+
+    # --- original offline handlers ---
     if any(w in t for w in ("today", "moved", "move ")):
         return " ".join(_moves(session))
     if "news" in t or "rundown" in t or "going on" in t:
@@ -222,10 +316,12 @@ def _offline_turn(session: Session, text: str) -> str:
                 "Drag the slider in the Paycheck autopilot panel to change it.")
     if any(w in t for w in ("why", "fund", "hold", "own", "explain")):
         p = session.fund.portfolio
-        return f"Your fund is {p.risk_label.lower()}: " + " ".join(
-            f"{h.ticker} ({h.weight:.0%}): {ETFS[h.ticker]['about']}." for h in p.holdings[:4])
-    return ("I'm in offline mode right now, so I can answer about your fund, your report, recommendations, or "
-            "your paycheck percent. Try “how am I doing?” or “what should I do next?”")
+        mode = " (custom — individual stocks)" if session.fund.answers.get("custom_mode") else ""
+        return f"Your fund is {p.risk_label.lower()}{mode}: " + " ".join(
+            f"{h.ticker} ({h.weight:.0%})." for h in p.holdings[:6])
+    return ("I'm in offline mode right now, so I can answer about your fund, report, recommendations, "
+            "paycheck percent, spending insights, or switch to a custom stock fund. "
+            'Try "show me a custom fund" or "how am I doing?".')
 
 
 # ---------- Explanations ----------
