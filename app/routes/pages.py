@@ -474,6 +474,7 @@ def interests(cid: str, values: list[str] = Form(default=[])):
 # ---------- Ticker tape ----------
 
 TAPE_EXTRAS = ["BND", "GLD"]
+TAPE_HOLDINGS = 8   # a custom index holds ~60 companies; the strip shows the biggest positions
 TAPE_DEFAULT = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA"]   # before a persona is picked
 
 
@@ -484,7 +485,8 @@ def tape_any(request: Request, cid: str = "", part: str = ""):
     s = state.get(cid) if cid and cid in {c["id"] for c in nessie.list_customers()} else None
     a = s.fund if s else None
     on = a.today if a else market.today()
-    held = [h.ticker for h in a.portfolio.holdings] if a and a.portfolio else []
+    held = [h.ticker for h in sorted(a.portfolio.holdings, key=lambda h: -h.weight)][:TAPE_HOLDINGS] \
+        if a and a.portfolio else []
     symbols = list(dict.fromkeys(INDEXES + held + (s.watchlist if s else TAPE_DEFAULT) + TAPE_EXTRAS))
     q = market.quotes(symbols, on)
     items = [{**q[t], "label": _tape_label(t), "spark": _spark(t, on, q[t])} for t in symbols if t in q]

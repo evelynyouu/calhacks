@@ -17,7 +17,7 @@ def test_strip_works_before_a_persona_is_picked():
 def test_persona_strip_links_to_markets_and_includes_holdings():
     make_fund("sam")
     r = client.get("/p/sam/tape")
-    assert 'href="/p/sam/markets?s=VTI"' in r.text and 'tabindex="-1"' in r.text and 'aria-hidden="true"' in r.text
+    assert 'href="/p/sam/markets?s=VXUS"' in r.text and 'tabindex="-1"' in r.text and 'aria-hidden="true"' in r.text
 
 
 def test_refresh_returns_only_the_cards():

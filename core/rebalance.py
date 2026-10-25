@@ -16,7 +16,11 @@ def allocate_new_money(p: Portfolio, current: dict[str, float], amount: float) -
     total = sum(current.values()) + amount
     gaps = {h.ticker: max(0.0, h.weight * total - current.get(h.ticker, 0.0)) for h in p.holdings}
     gap_sum = sum(gaps.values()) or 1.0
-    return {t: round(amount * g / gap_sum, 2) for t, g in gaps.items() if g > 0}
+    out = {t: round(amount * g / gap_sum, 2) for t, g in gaps.items() if g > 0}
+    if out:   # cents lost to rounding (a custom index has ~60 holdings) go to the biggest buy
+        top = max(out, key=out.get)
+        out[top] = round(out[top] + round(amount, 2) - round(sum(out.values()), 2), 2)
+    return out
 
 
 def drift(p: Portfolio, current: dict[str, float]) -> dict[str, float]:

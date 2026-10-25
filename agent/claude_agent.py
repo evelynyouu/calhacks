@@ -15,6 +15,7 @@ from agent.tools import TOOLS, headlines, market_today, news_tickers, run_tool
 from app.state import Session
 from core.explain import fallback_intro, intro_facts
 from core.intake import QUESTIONS
+from core import market
 from core.market import ETFS
 from core.report import build_report
 
@@ -188,7 +189,7 @@ def _offline_turn(session: Session, text: str) -> str:
     if any(w in t for w in ("why", "fund", "hold", "own", "explain")):
         p = session.fund.portfolio
         return f"Your fund is {p.risk_label.lower()}: " + " ".join(
-            f"{h.ticker} ({h.weight:.0%}): {ETFS[h.ticker]['about']}." for h in p.holdings[:4])
+            f"{h.ticker} ({h.weight:.0%}): {market.info(h.ticker)['about']}." for h in p.holdings[:4])
     return ("I'm in offline mode right now, so I can answer about your fund, your report, recommendations, or "
             "your paycheck percent. Try “how am I doing?” or “what should I do next?”")
 

@@ -17,7 +17,7 @@ from core.finances import build_finances
 from core.fund import FundAccount
 from core.market import ETFS, HOLDINGS
 from core.policy import tier_for
-from core.portfolio import THEME_LABELS, THEMES
+from core.portfolio import THEME_LABELS, THEMES, plain_index
 from core.profile import PAY_PERIOD_DAYS, get_profile
 from core.rebalance import band, drift as drift_of, off_target, rebalance_trades
 from core.sim import portfolio_assumptions, simulate
@@ -169,11 +169,25 @@ def _returns(acct: FundAccount, tier) -> dict:
 
 
 def benchmark_weights(p) -> dict[str, float]:
-    """The fund's own core mix: VTI/VXUS/BND at the fund's stock/bond split, with the interest and single-company
-    slices put back into VTI/VXUS. Read from the target weights, so it holds for any bond share."""
+    """For a custom index (the builder recorded p.parts): the plain index, meaning the same US stock share spread
+    over the US index by size with nothing personal, plus VXUS and BND at the fund's own shares. "vs benchmark"
+    is then only the customer's choices (where they spend, interests, companies added, drift)."""
+    if getattr(p, "parts", None):
+        bonds = sum(p.parts.get("bonds", {}).values())
+        intl = sum(p.parts.get("intl", {}).values())
+        plain = {t: round(w, 6) for t, w in plain_index(1 - bonds - intl).items()}
+        return {**plain, "VXUS": round(intl, 6), "BND": round(bonds, 6)}
+    return _three_fund_benchmark(p)
+
+
+def _three_fund_benchmark(p) -> dict[str, float]:
+    """The fund's own core mix: VTI/VXUS/BND at the fund's stock/bond split. Every US holding (the US index of
+    single companies, interests, where you spend, added companies, or a VTI core) counts as US stocks, since
+    the personal slices come out of the US part. Read from the target weights, so it holds for any bond share."""
     w = {h.ticker: h.weight for h in p.holdings}
     bonds = w.get("BND", 0.0)
-    us, intl = w.get("VTI", 0.0), w.get("VXUS", 0.0)
+    intl = w.get("VXUS", 0.0)
+    us = sum(v for t, v in w.items() if t not in ("BND", "VXUS"))
     us_frac = us / (us + intl) if us + intl > 0 else US_SHARE_OF_STOCKS
     return {"VTI": round((1 - bonds) * us_frac, 6), "VXUS": round((1 - bonds) * (1 - us_frac), 6), "BND": round(bonds, 6)}
 
@@ -211,16 +225,21 @@ def _window(orders: list[dict], first: date, end: date, start: date | None, benc
 def _attribution(r: returns.Replay, p) -> list[dict]:
     """What moved the fund: dollars each holding added or cost, biggest first. Adds up to the market gain."""
     roles = {h.ticker: h.role for h in p.holdings}
+    raw = returns.attribution(r)
     rows = [{"ticker": t, "label": market.info(t)["label"], "role": roles.get(t, "tilt"), "dollars": round(d, 2)}
-            for t, d in returns.attribution(r).items()]
+            for t, d in raw.items()]
+    if rows:   # cents lost rounding ~60 rows go on the biggest, so the rows still add up to the market gain
+        top = max(rows, key=lambda x: abs(x["dollars"]))
+        top["dollars"] = round(top["dollars"] + round(sum(raw.values()), 2) - round(sum(x["dollars"] for x in rows), 2), 2)
     return sorted(rows, key=lambda x: -abs(x["dollars"]))
 
 
 def _picks(r: returns.Replay, p, bench: dict[str, float], px, since: date) -> list[dict]:
     """Each interest fund and single company: its price move, the dollars it added, and how it did against
     the core stock funds it replaced (VTI/VXUS at the fund's own US/international split)."""
-    stocks = bench["VTI"] + bench["VXUS"]
-    core = {"VTI": bench["VTI"] / stocks, "VXUS": bench["VXUS"] / stocks} if stocks else {"VTI": 1.0}
+    stock_part = {t: w for t, w in bench.items() if t != "BND"}   # the stock funds or the plain index
+    stocks = sum(stock_part.values())
+    core = {t: w / stocks for t, w in stock_part.items()} if stocks else {"VTI": 1.0}
     gains = returns.attribution(r)
     core_pct = round(sum(w * market.change_pct(t, since, r.end) for t, w in core.items()), 2)
     rows = []
@@ -384,8 +403,9 @@ def _recommendations(acct, vals, total, holdings, companies, interests, mkt, tie
                          facts + ["If one company has a bad year, you'll feel it. Fewer overlapping picks spreads that out."],
                          remove_interest=list(dict.fromkeys(tilts)), remove_stock=list(dict.fromkeys(direct)), trigger=trig))
 
-    tilt_total = sum(h["target"] for h in holdings if h["role"] == "tilt")
-    tech_picks = sum(h["target"] for h in holdings if h["role"] == "tilt" and ETFS[h["ticker"]]["theme"] in TECH_THEMES)
+    interest = _interest_parts(acct.portfolio, holdings)
+    tilt_total = sum(interest.values())
+    tech_picks = sum(w for t, w in interest.items() if _theme_of(t) in TECH_THEMES)
     sectors = _sector_exposure(vals, total)
     tech_fund = sum(v for k, v in sectors.items() if k in TECH_SECTORS)
     held = set(intake.interests(acct.answers))
@@ -448,6 +468,22 @@ def _stock_sleeve(holdings: list[dict], today: date) -> dict | None:
         index.append(index[-1] * (1 + sum(x * (px[t][i] / px[t][i - 1] - 1) for t, x in w.items())))
     return {"share": round(share, 4), "m1": round((index[-1] / index[-31] - 1) * 100, 2),
             "below_high": round((index[-1] / max(index) - 1) * 100, 2)}
+
+
+def _interest_parts(p, holdings: list[dict]) -> dict[str, float]:
+    """{ticker: target share} of the interest slice. The custom-index builder records it exactly (a company held
+    for an interest and in the US index counts only its interest part); otherwise it's the tilt holdings."""
+    if getattr(p, "parts", None):
+        return dict(p.parts.get("interest", {}))
+    return {h["ticker"]: h["target"] for h in holdings if h["role"] == "tilt"}
+
+
+def _theme_of(ticker: str) -> str:
+    """An interest's theme: a theme fund's own, or a company's home fund's."""
+    if ticker in ETFS:
+        return ETFS[ticker]["theme"]
+    home = market.COMPANIES.get(ticker, {}).get("etf")
+    return ETFS[home]["theme"] if home in ETFS else ""
 
 
 def _sector_exposure(vals: dict[str, float], total: float) -> dict[str, float]:
