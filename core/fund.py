@@ -75,7 +75,7 @@ def paycheck(acct: FundAccount) -> dict:
     nessie.advance_days(cid, days)
     acct.today += timedelta(days=days)
     pay = nessie.deposit_paycheck(cid)
-    amount = math.floor(pay * acct.invest_pct / 100)   # Nessie moves whole dollars
+    amount = invest_amount(pay, acct.invest_pct)
     trades, transfer_id = [], None
     if amount > 0 and acct.portfolio:
         transfer_id = nessie.transfer_to_investing(cid, amount)
@@ -87,6 +87,21 @@ def paycheck(acct: FundAccount) -> dict:
     acct.log.insert(0, f"Paycheck of {_money(pay)}: invested {_money(amount)} ({acct.invest_pct:g}%).")
     review_if_due(acct)
     return entry
+
+
+def invest_amount(pay: float, pct: float) -> int:
+    """Dollars a paycheck of `pay` moves to the fund at `pct` percent: rounded down, since Nessie moves whole dollars."""
+    return math.floor(pay * pct / 100)
+
+
+def next_paycheck(acct: FundAccount) -> dict:
+    """Read-only preview of the next paycheck(): when it lands, how much, and how much it invests.
+    Nothing is invested before the fund is built."""
+    p = get_profile(acct.customer_id)
+    days = max(1, p.days_to_payday)
+    invested = invest_amount(p.paycheck_amount, acct.invest_pct) if acct.portfolio else 0
+    return {"on": acct.today + timedelta(days=days), "days": days, "paycheck": p.paycheck_amount,
+            "pct": acct.invest_pct, "invested": float(invested)}
 
 
 def review_if_due(acct: FundAccount) -> dict | None:
