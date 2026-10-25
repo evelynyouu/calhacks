@@ -17,16 +17,20 @@ onboarding), Ethan (web app, Claude agent, report). The user of this repo's Clau
 ## Where things stand (2026-10-24, night)
 
 - **`main`** (`6e3168c`) = the pivot + Ethan's report-accuracy PR #4, his demo script and Render `SESSION_SECRET`, and
-  Saahil's backtest / spending insights / Tier 4+ auto-execution.
+  Saahil's backtest / spending insights / Tier 4+ auto-execution, plus `257658d` (Saahil, 2026-10-24 19:49): a
+  spending-driven fund (Nessie merchants → single stocks, e.g. Costco → COST) **made the default**, and the same backtest
+  `{% endif %}` fix.
 - **`origin/lance/fund-builder`** (`d9e4f6d`) = the pivot + Evelyn's fund builder (PR #5: horizon question, max drop as a
   ceiling, smooth bond share, interest sizing, override, "How your fund was built" page). **`main` doesn't have PR #5,
   and `lance/fund-builder` doesn't have Saahil's or Ethan's latest: the two have diverged.**
+- **`lance/polish`** (local, not pushed) = `lance/onboarding` + `257658d` merged (`445b8b6`), then the polish round
+  (six parallel agents, one branch each, merged here). Merge decision: Evelyn's answer-driven builder stays the default;
+  Saahil's `build_spending_portfolio` / `build_custom_portfolio` are opt-in via `answers["spending_mode"]` /
+  `answers["custom_mode"]` (`etf_mode` dropped). The team should confirm.
 - **`lance/onboarding`** (local only, **not pushed**) = both of the above merged, plus the onboarding round: new
   customers + demo bank link, left sidebar + Money tab, intake follow-up questions, the dark ticker with the real
   Nasdaq Composite, one shared price label. 533 tests pass in both Nessie modes. Pushing it (or opening a PR into
   `main`) would also bring PR #5 to `main`. Ask Lance first.
-- Fixed on `lance/onboarding`, still broken on `main`: `app/templates/backtest.html` had a stray `{% endif %}` in
-  the `tone` macro, so the Backtest page didn't render (`6da3e33`).
 - Leftover agent worktrees under `.claude/worktrees/` (three, already merged) can be removed.
 - Local `main` is stale (old unpushed `db94d83`, already contained upstream). `stash@{0}` ("lance: readiness, tilt
   caps, prompt") is old; don't drop it without asking. `refs/snapshots/pre-fanout` is a safety snapshot.
@@ -171,7 +175,10 @@ While off, `/login` etc. return 404. Redirect URIs: `{PUBLIC_BASE_URL}/auth/goog
 ## Open items
 
 - Decide how `lance/onboarding` reaches `main` (PR), so `main` gets Evelyn's PR #5 and the onboarding round.
-- Confirm Tier 4+ auto-execution is intended (it skips Confirm); wire `core/spending.py` into a page or drop it.
+- Confirm Tier 4+ auto-execution is intended (it skips Confirm).
+- Decide the default fund: answer-driven (CLAUDE.md rules, current `lance/polish`) or Saahil's spending-driven single
+  stocks (his `257658d` on `main`). Spending mode picks individual companies by default, which sits awkwardly with
+  "doesn't tell customers which stocks to buy" and the 5%-per-company / level caps.
 - Ethan: one-page fund PDF (`/p/<cid>/fund.pdf`, pure-Python library) per the prompt Lance sent.
 - Next polish round (prompt drafted): goal as choice cards, targets that adapt to the customer's situation (not the
   market), holdings-only ticker, account context for Claude, chat duplicate/clipping bugs, collapsible/hidden
