@@ -1,20 +1,12 @@
 <section id="account" {% if swap_oob %}hx-swap-oob="true"{% endif %} class="card {% if not portfolio %}hidden{% endif %}">
   {% if portfolio %}
-  <div class="flex flex-wrap items-center justify-between gap-2">
-    <p class="eyebrow">Paycheck autopilot</p>
-    <div class="flex flex-wrap gap-1.5 text-xs">
-      <span class="rounded-full bg-ink/5 px-2 py-0.5 text-ink/60">Trades: {{ broker_mode }}</span>
-      {% if nessie_offline %}<span class="rounded-full bg-ink px-2 py-0.5 text-white" title="{{ nessie_offline }}">Nessie offline: demo data</span>
-      {% elif nessie_mode == 'live' %}<span class="rounded-full bg-moss-50 px-2 py-0.5 text-moss-700">Live: Capital One Nessie</span>
-      {% else %}<span class="rounded-full bg-ink/5 px-2 py-0.5 text-ink/60">Bank: demo data</span>{% endif %}
-    </div>
-  </div>
+  <p class="eyebrow">Paycheck autopilot</p>{# bank / broker state is in the disclosure line under the header #}
 
   <dl class="mt-3 grid grid-cols-3 gap-2 text-center">
     <div class="stat"><dt>Fund value</dt><dd>{{ value | money }}</dd></div>
-    <div class="stat"><dt>You put in</dt><dd>{{ a.contributed | money }}</dd></div>
-    {% set gain = value - a.contributed %}
-    <div class="stat"><dt>Gain</dt><dd class="{% if gain >= 0 %}text-moss-600{% else %}text-clay-500{% endif %}">{{ '+' if gain >= 0 else '−' }}{{ gain | abs | money }}</dd></div>
+    <div class="stat"><dt>You put in</dt><dd>{{ total.put_in | money }}</dd></div>
+    {% set gain = total.total_gain %}
+    <div class="stat" title="{{ defs.total }}"><dt>Total gain</dt><dd class="{% if gain >= 0 %}text-moss-600{% else %}text-clay-500{% endif %}">{{ '+' if gain >= 0 else '−' }}{{ gain | abs | money }}</dd><dd class="text-[.7rem] font-normal text-ink/50">since you started</dd></div>
   </dl>
 
   <form hx-post="/p/{{ cid }}/pct" hx-trigger="change" hx-swap="none" class="mt-4">

@@ -4,6 +4,7 @@
   {% if 'account' in oob %}{% include "partials/account.html" %}{% endif %}
   {% if 'tier' in oob %}{% include "partials/tier.html" %}{% endif %}
   {% if 'today' in oob and rows is defined %}{% include "partials/today.html" %}{% endif %}
+  {% include "partials/disclosure.html" %}{# bank, price and broker state can change with any action #}
 {% endwith %}
 {% if chat_note %}
 <div hx-swap-oob="beforeend:#chat-messages">{% with m = chat_note %}{% include "partials/chat_bubble.html" %}{% endwith %}</div>

@@ -62,7 +62,15 @@
       {% endif %}
     </div>
   </header>
+  {% if disclosure is defined %}{% include "partials/disclosure.html" %}{% endif %}
   <main class="max-w-6xl mx-auto px-4 sm:px-6 pb-16">{% block content %}{% endblock %}</main>
+  {% if disclosure is defined %}
+  {% set dis = disclosure(a.today if a is defined and a else None) %}
+  <footer id="disclosures" class="max-w-6xl mx-auto px-4 sm:px-6 pb-10 pt-5 border-t border-ink/10 text-xs text-ink/55 space-y-1.5">
+    <p class="font-medium text-ink/70">About the numbers on this page</p>
+    {% for line in dis.full %}<p>{{ line }}</p>{% endfor %}
+  </footer>
+  {% endif %}
   {% if with_nav %}</div></div>{% endif %}
   <script src="/static/app.js"></script>
 </body>

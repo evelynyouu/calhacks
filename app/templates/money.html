@@ -3,11 +3,6 @@
 {% block header_right %}{% include "partials/tier.html" %}{% endblock %}
 {% block content %}
 {# Bank and investing together. Every number comes from app/routes/money.py; this file only formats them. #}
-{% macro bank_badge() %}
-{% if nessie_offline %}<span class="rounded-full bg-ink px-2 py-0.5 text-xs text-white" title="{{ nessie_offline }}">Nessie offline: demo data</span>
-{% elif nessie_mode == 'live' %}<span class="rounded-full bg-moss-50 px-2 py-0.5 text-xs text-moss-700">Live: Capital One Nessie</span>
-{% else %}<span class="rounded-full bg-ink/5 px-2 py-0.5 text-xs text-ink/60">Bank: demo data</span>{% endif %}
-{% endmacro %}
 {% macro signed_money(v) %}{{ '+' if v >= 0 else '−' }}{{ v | abs | money2 }}{% endmacro %}
 
 <div class="flex flex-wrap items-end justify-between gap-2 mb-4">
@@ -15,10 +10,6 @@
     <p class="eyebrow">Money</p>
     <h1 class="font-display text-3xl font-bold">Your bank and your fund</h1>
     <p class="text-sm text-ink/60">A mock bank (Capital One's Nessie sandbox): pretend money, real arithmetic.</p>
-  </div>
-  <div class="flex flex-wrap gap-1.5">
-    {{ bank_badge() }}
-    {% if has_fund %}<span class="rounded-full px-2 py-0.5 text-xs {{ 'bg-moss-50 text-moss-700' if live_market and not fast_forwarded else 'bg-ink/5 text-ink/60' }}">{{ price_label(a.today) }}</span>{% endif %}
   </div>
 </div>
 
@@ -95,7 +86,7 @@
       <div class="mt-4 rounded-xl bg-paper px-3 py-2.5 text-sm" id="moved-vs-value">
         {% if has_fund %}
         <p>You've put in <strong class="tabular-nums">{{ inv.contributed | money2 }}</strong>{% if inv.starting > 0 and inv.from_paychecks > 0 %} ({{ inv.starting | money2 }} to start, {{ inv.from_paychecks | money2 }} from paychecks){% elif inv.from_paychecks > 0 %} from paychecks{% elif inv.starting > 0 %} as your starting amount{% endif %}. It's worth <strong class="tabular-nums">{{ inv.value | money2 }}</strong> now:
-          <strong class="{{ 'text-moss-600' if inv.gain >= 0 else 'text-clay-500' }} tabular-nums">{{ signed_money(inv.gain) }}</strong>.</p>
+          <strong class="{{ 'text-moss-600' if inv.gain >= 0 else 'text-clay-500' }} tabular-nums">{{ signed_money(inv.gain) }}</strong> since you started.</p>
         <p class="mt-0.5 text-xs text-ink/55">The starting amount is a mock deposit; paycheck amounts move from checking through Nessie ({{ inv.moved_by_bank | money2 }} recorded by the bank).</p>
         {% else %}
         <p class="text-ink/60">Nothing has moved to investing yet.</p>
@@ -106,7 +97,6 @@
     <section class="card" id="activity">
       <div class="flex flex-wrap items-baseline justify-between gap-2">
         <p class="eyebrow">Recent bank activity</p>
-        {{ bank_badge() }}
       </div>
       {% if feed %}
       <ul class="mt-2 divide-y divide-ink/10 text-sm">
@@ -135,12 +125,11 @@
       </div>
       {% if has_fund %}
       <p class="mt-1 font-display text-3xl font-bold tabular-nums">{{ inv.value | money2 }}</p>
+      <p class="text-base font-semibold {{ 'text-moss-600' if inv.gain >= 0 else 'text-clay-500' }}" title="{{ defs.total }}" data-fig="total">{{ signed_money(inv.gain) }}{% if inv.gain_pct is not none %} ({{ inv.gain_pct | signed(2) }}){% endif %}
+        <span class="font-normal text-ink/60">since you started{% if inv.started %} on {{ inv.started | day }}{% endif %} · you put in {{ inv.contributed | money2 }}</span></p>
       {% set up = inv.day_change >= 0 %}
-      <p class="text-sm font-medium {{ 'text-moss-600' if up else 'text-clay-500' }}">{{ signed_money(inv.day_change) }} ({{ inv.day_pct | signed(2) }}) today</p>
-      <dl class="mt-3 grid grid-cols-2 gap-2 text-center">
-        <div class="stat"><dt>You put in</dt><dd>{{ inv.contributed | money2 }}</dd></div>
-        <div class="stat"><dt>Gain</dt><dd class="{{ 'text-moss-600' if inv.gain >= 0 else 'text-clay-500' }}">{{ signed_money(inv.gain) }}</dd></div>
-      </dl>
+      <p class="text-sm font-medium {{ 'text-moss-600' if up else 'text-clay-500' }}" title="{{ defs.today }}" data-fig="today">{{ signed_money(inv.day_change) }} ({{ inv.day_pct | signed(2) }}) <span class="font-normal text-ink/60">today</span></p>
+
       {% if inv.value > 0 %}
       <p class="mt-4 text-sm font-medium">Biggest holdings</p>
       <ul class="mt-1 divide-y divide-ink/10 text-sm">

@@ -231,3 +231,21 @@ def shadow_orders(flows: dict[date, float], weights: dict[str, float], px: Price
 
 def day_before(d: date) -> date:
     return d - timedelta(days=1)
+
+
+# ---------- The simple figures every screen shows (core/figures.py puts them together for an account) ----------
+
+def total_gain(value: float, put_in: float) -> tuple[float, float | None]:
+    """"Total" everywhere in the app: what it's worth now minus the money put in, in dollars and as a percent
+    of the money put in (None when nothing was put in). Used for the whole fund (since you started) and for one
+    holding (since you bought, against its cost)."""
+    gain = round(value - put_in, 2)
+    return gain, (round(gain / put_in * 100, 2) if put_in > 0 else None)
+
+
+def day_change(held: dict[str, float], change_pct: dict[str, float]) -> tuple[float, float]:
+    """Today's move in dollars and percent, from each holding's value now and its percent change since the
+    previous close. A holding with no quote counts as unchanged."""
+    day = sum(v * change_pct[t] / (100 + change_pct[t]) for t, v in held.items() if t in change_pct)
+    before = sum(held.values()) - day
+    return day, (day / before * 100 if before else 0.0)

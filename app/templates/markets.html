@@ -43,9 +43,10 @@
           <h1 class="font-display text-3xl font-bold mt-1">{{ d.info.name }}</h1>
           <p class="text-sm text-ink/60">{{ d.info.about }}</p>
         </div>
-        <span class="rounded-full px-2 py-0.5 text-xs {{ 'bg-moss-50 text-moss-700' if d.source == 'live' and not fast_forwarded else 'bg-ink/5 text-ink/60' }}">
-          {{ price_label(a.today, d.symbol) }}
-        </span>
+        {# Inline only when this price's source differs from the rest (e.g. a ticker Nasdaq doesn't cover); the usual source is in the disclosure line. #}
+        {% if price_label(a.today, d.symbol) != price_label(a.today) %}
+        <span class="text-xs text-ink/60">{{ price_label(a.today, d.symbol) }}</span>
+        {% endif %}
       </div>
       <p class="mt-4 font-display text-4xl font-bold tabular-nums">{{ q.price | money2 }}</p>
       <p class="text-sm font-medium {{ 'text-moss-600' if q.change >= 0 else 'text-clay-500' }}">
@@ -68,7 +69,7 @@
       {% if d.shares %}
       <div class="mt-4 rounded-xl bg-moss-50 px-4 py-3 text-sm">
         <p class="font-medium">You own {{ '%.4f' % d.shares }} shares, worth {{ d.value | money2 }}</p>
-        <p class="text-ink/65">You paid {{ d.cost | money2 }}; {{ '+' if d.value >= d.cost else '−' }}{{ (d.value - d.cost) | abs | money2 }}{% if d.cost %} ({{ ((d.value / d.cost - 1) * 100) | signed(2) }}){% endif %} since.</p>
+        <p class="text-ink/65" title="{{ defs.since_bought }}">You paid {{ d.cost | money2 }}; <span class="{{ 'text-moss-600' if d.gain >= 0 else 'text-clay-500' }}">{{ '+' if d.gain >= 0 else '−' }}{{ d.gain | abs | money2 }}{% if d.gain_pct is not none %} ({{ d.gain_pct | signed(2) }}){% endif %}</span> since you bought.</p>
       </div>
       {% endif %}
 
