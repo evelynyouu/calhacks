@@ -29,6 +29,8 @@ function makeChart(el) {
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${money(c.parsed.y)}` } } },
         scales: { y: { ticks: { callback: money } }, x: { grid: { display: false } } } },
     });
+  } else if (el.dataset.chart === 'backtest') {
+    makeBacktestChart(el, d);
   } else if (el.dataset.chart === 'price') {
     makePriceChart(el, d);
   } else if (el.dataset.chart === 'history') {
@@ -45,6 +47,32 @@ function makeChart(el) {
         scales: { y: { ticks: { callback: money } }, x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } } } },
     });
   }
+}
+
+function makeBacktestChart(el, d) {
+  const labels = d.labels.map(s => new Date(s + 'T00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }));
+  new Chart(el, {
+    type: 'line',
+    data: { labels, datasets: [
+      { label: 'Auto-trade',        data: d.auto,       borderColor: '#0b7a3e',   backgroundColor: '#0b7a3e18', fill: true,  pointRadius: 0, borderWidth: 2.5 },
+      { label: 'Buy & hold',        data: d.hold,       borderColor: '#0b0f0d',   backgroundColor: 'transparent',            pointRadius: 0, borderWidth: 1.5 },
+      { label: 'Benchmark',         data: d.benchmark,  borderColor: '#9ca3af',   backgroundColor: 'transparent',            pointRadius: 0, borderWidth: 1.5 },
+      { label: 'SPY',               data: d.spy,        borderColor: '#d1d5db',   backgroundColor: 'transparent',            pointRadius: 0, borderWidth: 1,   borderDash: [4,3] },
+      { label: 'You put in',        data: d.contributed,borderColor: '#0b0f0d55', backgroundColor: 'transparent',            pointRadius: 0, borderWidth: 1.5, borderDash: [5,4], stepped: true },
+    ] },
+    options: {
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => `${c.dataset.label}: ${money(c.parsed.y)}` } },
+      },
+      scales: {
+        y: { ticks: { callback: money } },
+        x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } },
+      },
+    },
+  });
 }
 
 function makePriceChart(el, d) {

@@ -3,7 +3,8 @@
 Flow: the intake answers set the risk level, interests and paycheck percent. The starting amount
 is invested on day one. Each paycheck, the chosen percent moves from checking to the fund
 (through Nessie) and is spread across the funds furthest below target. When the customer's tier
-allows it and they've turned it on, each review lines up trades they must confirm.
+allows it and they've turned it on, each review lines up trades they must confirm — or, for
+Tier 4+ ($50K+) with auto_trade on, executes them immediately without a second click.
 """
 from __future__ import annotations
 
@@ -15,6 +16,8 @@ from core import intake, market, nessie
 from core.broker import get_broker, values
 from core.models import Portfolio, Trade
 from core.policy import tier_for
+
+AUTO_EXECUTE_TIER = 4   # Tier 4+ ($50K+): trades run immediately when auto_trade is on
 from core.portfolio import build_portfolio
 from core.profile import get_profile
 from core.rebalance import allocate_new_money
@@ -101,8 +104,15 @@ def review_if_due(acct: FundAccount) -> dict | None:
     acct.last_review = acct.today
     acct.pending = [dict(t, why=r["title"]) for r in rep["recommendations"] for t in r["trades"]]
     if acct.pending:
-        acct.log.insert(0, f"Your {tier.check_frequency.lower()} review lined up {len(acct.pending)} "
-                           f"trade{'s' if len(acct.pending) != 1 else ''} for you to confirm.")
+        n = len(acct.pending)
+        freq = tier.check_frequency.lower()
+        if tier.tier >= AUTO_EXECUTE_TIER:
+            # High-AUM accounts with auto_trade on execute immediately — no second click needed.
+            confirm_pending(acct, _msg=f"Auto-executed {n} trade{'s' if n != 1 else ''} "
+                                       f"from your {freq} review.")
+        else:
+            acct.log.insert(0, f"Your {freq} review lined up {n} "
+                               f"trade{'s' if n != 1 else ''} for you to confirm.")
     return rep
 
 
@@ -110,12 +120,12 @@ def queue(acct: FundAccount, trades: list[dict], why: str) -> None:
     acct.pending = [dict(t, why=why) for t in trades]
 
 
-def confirm_pending(acct: FundAccount) -> list[Trade]:
+def confirm_pending(acct: FundAccount, _msg: str | None = None) -> list[Trade]:
     """Place every queued trade: sells first, so their cash covers the buys."""
     ordered = sorted(acct.pending, key=lambda t: t["side"] != "sell")
     done = [get_broker().submit(acct.customer_id, t["symbol"], t["side"], t["notional"], acct.today) for t in ordered]
     if done:
-        acct.log.insert(0, f"You confirmed {len(done)} trade{'s' if len(done) != 1 else ''}.")
+        acct.log.insert(0, _msg or f"You confirmed {len(done)} trade{'s' if len(done) != 1 else ''}.")
     acct.pending = []
     return done
 
