@@ -45,7 +45,7 @@
           <p class="text-sm text-ink/60">{{ d.info.about }}</p>
         </div>
         <span class="rounded-full px-2 py-0.5 text-xs {{ 'bg-moss-50 text-moss-700' if d.source == 'live' and not fast_forwarded else 'bg-ink/5 text-ink/60' }}">
-          {% if fast_forwarded %}Demo date {{ a.today | day }}: simulated{% elif d.source == 'live' %}Nasdaq · delayed{% else %}Simulated{% endif %}
+          {{ price_label(a.today, d.symbol) }}
         </span>
       </div>
       <p class="mt-4 font-display text-4xl font-bold tabular-nums">{{ q.price | money2 }}</p>

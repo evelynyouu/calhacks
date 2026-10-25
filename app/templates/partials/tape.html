@@ -6,7 +6,7 @@
   {% for q in tape %}
   {% set up = q.change >= 0 %}
   {% set tag = 'a' if cid else 'span' %}
-  <{{ tag }} class="tape-item" {% if cid %}href="/p/{{ cid }}/markets?s={{ q.symbol }}"{% endif %} {% if copy and cid %}tabindex="-1"{% endif %}
+  <{{ tag }} class="tape-item" {% if cid %}href="/p/{{ cid }}/markets?s={{ q.link }}"{% endif %} {% if copy and cid %}tabindex="-1"{% endif %}
      title="{{ q.name }}">
     <span class="tape-text">
       <span class="tape-name">{{ q.label }}</span>
@@ -24,7 +24,7 @@
     {% endif %}
   </{{ tag }}>
   {% endfor %}
-  <span class="tape-item tape-note">{{ 'Nasdaq · delayed' if live_market else 'Simulated prices' }}{% if demo_date %} · demo date {{ demo_date.strftime('%b %-d') }}{% endif %}</span>
+  <span class="tape-item tape-note">{{ price_label(on) }}</span>
 </div>
 {% endmacro %}
 {% if part == 'groups' %}{{ cards(0) }}{{ cards(1) }}{% else %}

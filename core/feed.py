@@ -41,7 +41,7 @@ _lock = threading.Lock()
 _history: dict[str, tuple[float, list[tuple[date, float]] | None]] = {}
 _quotes: dict[str, tuple[float, dict]] = {}
 _news: dict[str, tuple[float, list[dict]]] = {}
-_asset: dict[str, str] = {}          # symbol -> "etf" / "stocks", learned as we go
+_asset: dict[str, str] = {"COMP": "index"}   # symbol -> "etf" / "stocks", learned as we go; Nasdaq Composite is an index
 _names: dict[str, str] = {}
 
 

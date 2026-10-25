@@ -1,4 +1,6 @@
 """The ticker strip pinned to the top of every page."""
+from datetime import timedelta
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -39,3 +41,14 @@ def test_unknown_persona_404():
 def test_pages_render_the_loader_with_the_same_id():
     r = client.get("/")
     assert 'id="tape" class="tape tape-loading"' in r.text and 'hx-get="/tape"' in r.text
+
+
+def test_every_screen_uses_the_same_price_label():
+    """Ticker, Portfolio, chat and Markets all say where prices come from in the same words."""
+    make_fund("sam")
+    label = market.price_label(market.today())
+    assert label == "Simulated prices"   # tests run offline
+    for path in ("/p/sam/tape", "/p/sam", "/p/sam/chat", "/p/sam/markets?s=VTI"):
+        assert label in client.get(path).text, path
+    later = market.today() + timedelta(days=14)
+    assert market.price_label(later).startswith("Simulated prices · demo date ")

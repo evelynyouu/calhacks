@@ -119,6 +119,14 @@ def today() -> date:
     return real[0][-1] if real else SIM_START
 
 
+def price_label(on: date | None = None, ticker: str = "SPY") -> str:
+    """The one wording every screen uses for where prices come from. Past the last real close (the demo
+    fast-forwarded) everything is simulated, even for tickers Nasdaq covers."""
+    if on is not None and on > today():
+        return f"Simulated prices · demo date {on.strftime('%b %-d')}"
+    return "Nasdaq prices · delayed" if source(ticker) == "live" else "Simulated prices"
+
+
 @lru_cache(maxsize=None)
 def _market_steps() -> tuple[float, ...]:
     rng = random.Random(MARKET_SEED)

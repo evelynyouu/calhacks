@@ -37,6 +37,7 @@ templates.env.filters["signed"] = lambda v, d=1: f"{round(v, d) + 0.0:+.{d}f}%"
 templates.env.filters["day"] = lambda d: d.strftime("%b %-d, %Y")
 templates.env.filters["ago"] = lambda d: _ago(d)
 templates.env.globals["info"] = market.info
+templates.env.globals["price_label"] = market.price_label
 templates.env.globals["csrf_token"] = csrf_token
 
 MARKET_DROP_PCT = -10.0
@@ -448,6 +449,9 @@ def interests(cid: str, values: list[str] = Form(default=[])):
 # ---------- Ticker tape ----------
 
 TAPE_EXTRAS = ["BND", "GLD"]
+# The Nasdaq Composite itself, in place of QQQ. Nasdaq's API serves its own indexes but not the S&P 500 or
+# the Dow, so those stay as their ETFs. Offline (no real closes) COMP can't be priced and QQQ stays.
+TAPE_NASDAQ = "COMP"
 TAPE_DEFAULT = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA"]   # before a persona is picked
 
 
@@ -459,11 +463,17 @@ def tape_any(request: Request, cid: str = "", part: str = ""):
     a = s.fund if s else None
     on = a.today if a else market.today()
     held = [h.ticker for h in a.portfolio.holdings] if a and a.portfolio else []
-    symbols = list(dict.fromkeys(INDEXES + held + (s.watchlist if s else TAPE_DEFAULT) + TAPE_EXTRAS))
+    mine = held + (s.watchlist if s else TAPE_DEFAULT)
+    indexes = [x for t in INDEXES for x in ([TAPE_NASDAQ, t] if t == "QQQ" else [t])]
+    symbols = list(dict.fromkeys(indexes + mine + TAPE_EXTRAS))
     q = market.quotes(symbols, on)
-    items = [{**q[t], "label": _tape_label(t), "spark": _spark(t, on, q[t])} for t in symbols if t in q]
+    if TAPE_NASDAQ in q and "QQQ" not in mine:
+        symbols.remove("QQQ")
+    # An index can't be bought, so the Nasdaq card opens QQQ (the fund that tracks Nasdaq's biggest companies)
+    items = [{**q[t], "label": _tape_label(t), "spark": _spark(t, on, q[t]), "link": "QQQ" if t == TAPE_NASDAQ else t}
+             for t in symbols if t in q]
     ctx = {"request": request, "cid": cid if s else "", "tape": items, "part": part,
-           "live_market": market.source("SPY") == "live", "demo_date": on if on > market.today() else None}
+           "on": on}
     return templates.TemplateResponse(request, "partials/tape.html", ctx)
 
 
@@ -477,6 +487,8 @@ SPARK_W, SPARK_H, SPARK_DAYS = 60, 24, 30
 
 
 def _tape_label(t: str) -> str:
+    if t == TAPE_NASDAQ:
+        return "Nasdaq"
     return ETFS[t]["label"] if t in ETFS and ETFS[t]["role"] == "benchmark" else t
 
 

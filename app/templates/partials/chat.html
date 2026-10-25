@@ -1,7 +1,7 @@
 <section class="card p-0 flex flex-col h-[calc(100vh-8.5rem)] min-h-[34rem]">
   <div class="flex items-center justify-between px-5 pt-4 pb-2">
     <p class="eyebrow">Chat</p>
-    <span class="rounded-full bg-ink/5 px-2 py-0.5 text-xs text-ink/60">{% if claude_on %}Claude{% else %}Offline replies{% endif %} · {{ 'live prices' if live_market and not fast_forwarded else 'simulated prices' }}</span>
+    <span class="rounded-full bg-ink/5 px-2 py-0.5 text-xs text-ink/60">{% if claude_on %}Claude{% else %}Offline replies{% endif %} · {{ price_label(a.today) }}</span>
   </div>
   <div id="chat-messages" class="flex-1 overflow-y-auto space-y-5 px-5 py-3" aria-live="polite">
     {% for m in s.transcript %}{% include "partials/chat_bubble.html" %}{% endfor %}
