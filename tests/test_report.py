@@ -396,3 +396,39 @@ def test_a_fund_that_started_today_says_it_is_too_soon_instead_of_showing_return
     make_fund("sam", starting_amount=3_000)
     text = page_text("sam")
     assert "shows once your money has been invested for a day" in text and "Returns show up once your money" in text
+
+
+# ---------- Claude's intro never comes back blank ----------
+
+class _Resp:
+    def __init__(self, blocks, stop_reason):
+        self.content, self.stop_reason = blocks, stop_reason
+
+
+class _Block:
+    def __init__(self, type_, text=""):
+        self.type, self.text = type_, text
+
+
+class _Client:
+    def __init__(self, resp):
+        self.messages = self
+        self._resp = resp
+
+    def create(self, **kw):
+        self.kw = kw
+        return self._resp
+
+
+def test_a_reply_with_no_text_falls_back_to_the_offline_intro(monkeypatch):
+    from agent import claude_agent
+    client = _Client(_Resp([_Block("thinking")], "max_tokens"))      # what a long prompt does when thinking uses the whole budget
+    monkeypatch.setattr(claude_agent, "_get_client", lambda: client)
+    assert claude_agent.explain(["a fact"], "intro", fallback="the offline intro") == "the offline intro"
+    assert client.kw["max_tokens"] >= 1000
+
+
+def test_a_reply_with_text_is_used(monkeypatch):
+    from agent import claude_agent
+    monkeypatch.setattr(claude_agent, "_get_client", lambda: _Client(_Resp([_Block("thinking"), _Block("text", " Hello. ")], "end_turn")))
+    assert claude_agent.explain(["a fact"], "intro", fallback="offline") == "Hello."
