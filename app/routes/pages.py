@@ -7,6 +7,7 @@ HTMX endpoints return partials; extra panels refresh with hx-swap-oob, and app e
 """
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -65,6 +66,18 @@ def _session(cid: str) -> state.Session:
         raise HTTPException(404, "Unknown persona")
     s = state.get(cid)
     if not s.transcript:
+        with _SEED_LOCK:   # two first requests at once (a double click) must not seed twice
+            _seed(s, cid, profile)
+    return s
+
+
+# Sync routes run in a thread pool, so two requests for a fresh session can both see an empty transcript.
+_SEED_LOCK = threading.Lock()
+
+
+def _seed(s: state.Session, cid: str, profile) -> None:
+    """A new session's opening messages (and Alex's year-old fund). Runs once per session, under _SEED_LOCK."""
+    if not s.transcript:
         preset = DEMO_PRESETS.get(cid)
         if preset:
             s.fund.answers = dict(preset["answers"])
@@ -78,7 +91,6 @@ def _session(cid: str) -> state.Session:
                 s.say(s.linked["note"])
             s.say(claude_agent.greeting(profile.name))
             s.say(claude_agent.question_text(s))
-    return s
 
 
 def _ctx(request: Request, cid: str, **extra) -> dict:
@@ -151,11 +163,16 @@ def how_built(request: Request, cid: str, full: bool = False):
 
 @router.get("/p/{cid}/chat", response_class=HTMLResponse)
 def chat_page(request: Request, cid: str, ask: str = ""):
+    """?ask= (a suggested prompt tapped on another tab) is stored and redirected away, so the address bar,
+    a reload and Back/Forward never hold it; the page then sends it once (POST /chat/ask pops it)."""
     s = _session(cid)
     if not s.done:
         return RedirectResponse(f"/p/{cid}", status_code=303)
+    if ask.strip():
+        s.pending_ask = ask.strip()[:300]
+        return RedirectResponse(f"/p/{cid}/chat", status_code=303)
     return _render("chat_page.html", _ctx(request, cid, tab="chat", prompts=claude_agent.suggested_prompts(s),
-                                          ask=ask.strip()[:300]))
+                                          ask=s.pending_ask))
 
 
 @router.get("/p/{cid}/report", response_class=HTMLResponse)
@@ -274,6 +291,19 @@ def chat(request: Request, cid: str, message: str = Form(""), echo: str = Form("
     return _render("partials/chat_turn.html", _ctx(request, cid, new_messages=new, oob=events))
 
 
+@router.post("/p/{cid}/chat/ask", response_class=HTMLResponse)
+def chat_ask(request: Request, cid: str):
+    """Send the stored suggested prompt (see chat_page). Takes it off the session first, so a second load of
+    the page, a retry or a double request answers nothing instead of asking it again."""
+    s = _session(cid)
+    text, s.pending_ask = s.pending_ask, None
+    if not text or not s.done:
+        return HTMLResponse("")
+    sent = s.say(text, "user")
+    reply, events = claude_agent.chat_turn(s, text)
+    return _render("partials/chat_turn.html", _ctx(request, cid, new_messages=[sent, s.say(reply)], oob=events))
+
+
 # ---------- Paycheck autopilot and demo events ----------
 
 def _need_fund(cid: str) -> state.Session:
@@ -293,6 +323,7 @@ def paycheck(request: Request, cid: str):
            + (f": {buys}." if buys else "."))
     if len(s.fund.pending) and len(s.fund.pending) != pending_before:
         say += f" Your scheduled review also lined up {len(s.fund.pending)} trades; they're waiting for your OK."
+    say += f" (Payday {d['on'].strftime('%b %-d')}.)"   # two paydays would read the same otherwise
     return _panels(request, cid, say)
 
 

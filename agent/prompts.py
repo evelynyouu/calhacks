@@ -28,10 +28,21 @@ Tools: get_fund for what they hold; get_fund_explanation for why (the builder's 
 recommendations; get_market_today for today's moves in the indexes, their holdings and watchlist; get_news for
 recent headlines with links; update_interests to add or drop industries and add_stock / remove_stock for single
 companies (these rebuild the fund's targets; nothing is sold until they confirm a rebalance);
-set_paycheck_percent if they ask to change how much of each paycheck is invested.
+set_paycheck_percent if they ask to change how much of each paycheck is invested; get_spending_insights for
+what their bank spending says. switch_to_custom_fund, switch_to_etf_fund and toggle_auto_trade change the fund
+or how it trades: call them only when the customer clearly asks for that change, never to answer a question, and
+say what will change first (get_custom_fund_preview shows a custom fund without changing anything).
+
+The account snapshot after these instructions is computed by the app at the start of this turn (value,
+holdings, paychecks, bank activity, reviews, goal, preferences). Cite it freely; it is current. For anything it
+doesn't cover, or more detail, call a tool rather than guessing.
 
 The app already shows the fund card, charts and report, so don't repeat every number.
 Keep each message under 90 words unless they ask for detail."""
+
+
+# Heads the second system block (agent/claude_agent.system_blocks); the snapshot itself is agent/tools.account_snapshot.
+SNAPSHOT_HEADER = "Account snapshot (app-computed at the start of this turn; safe to cite):\n"
 
 
 # Buttons under the chat once the fund is built. {top} is the biggest company in their fund.

@@ -1,10 +1,16 @@
-<section class="card p-0 flex flex-col h-[calc(100vh-8.5rem)] min-h-[34rem]">
-  <div class="flex items-center justify-between px-5 pt-4 pb-2">
+{# The chat panel. Its height fits the screen under the ticker and header (and the page's bottom padding), so the
+   page itself doesn't scroll and the sticky mobile header never covers it. Messages scroll in [data-chat-scroll],
+   a column-reverse box: it opens at the newest message and stays pinned there while late layout (the web font
+   loading, text re-wrapping) grows the text, so the last reply is never cut off at the bottom. #}
+<section class="card p-0 flex flex-col h-[calc(100dvh-13.25rem)] md:h-[calc(100dvh-12.25rem)] min-h-[26rem]">
+  <div class="flex flex-wrap items-center justify-between gap-2 px-5 pt-4 pb-2">
     <p class="eyebrow">Chat</p>
-    <span class="rounded-full bg-ink/5 px-2 py-0.5 text-xs text-ink/60">{% if claude_on %}Claude{% else %}Offline replies{% endif %} · {{ price_label(a.today) }}</span>
+    <span class="rounded-full bg-ink/5 px-2 py-0.5 text-xs leading-5 text-ink/60">{% if claude_on %}Claude{% else %}Offline replies{% endif %} · {{ price_label(a.today) }}</span>
   </div>
-  <div id="chat-messages" class="flex-1 overflow-y-auto space-y-5 px-5 py-3" aria-live="polite">
-    {% for m in s.transcript %}{% include "partials/chat_bubble.html" %}{% endfor %}
+  <div class="flex-1 min-h-0 overflow-y-auto flex flex-col-reverse px-5 py-3" data-chat-scroll>    {# mb-auto: a short conversation sits at the top, as before; a long one fills the box and starts at the end #}
+    <div id="chat-messages" class="mb-auto space-y-5" aria-live="polite">
+      {% for m in s.transcript %}{% include "partials/chat_bubble.html" %}{% endfor %}
+    </div>
   </div>
   <div id="typing" class="htmx-indicator px-5 pb-2 text-sm text-ink/50">FirstFund is thinking…</div>
   {% if s.done and prompts %}{% include "partials/prompts.html" %}{% endif %}
