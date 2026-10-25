@@ -3,13 +3,13 @@
 {% set changes = rep.target_changes if rep is defined and rep.target_changes is defined else (how.target_history if how is defined else []) %}
 {% if changes %}
 <section class="card" id="target-history">
-  <p class="eyebrow">Changes you accepted</p>
+  <h2 class="eyebrow">Changes you accepted</h2>
   <p class="mt-1 text-xs text-muted">Your targets change only when your situation or your answers do, never because prices moved.</p>
-  <ul class="mt-3 space-y-2 text-sm">
+  <ul class="mt-2 divide-y divide-line text-sm">
     {% for c in changes %}
-    <li class="rounded-lg border border-line px-3 py-2" data-target-change="{{ c.kind }}">
+    <li class="py-3" data-target-change="{{ c.kind }}">
       <p class="text-xs text-muted">{{ c.on | day }}</p>
-      <p class="leading-relaxed">{{ c.text }}</p>
+      <p>{{ c.text }}</p>
       {% if c.rows %}
       <p class="mt-1 text-xs text-muted">{% for r in c.rows %}{{ r.ticker }} {{ r.before | pct(1) }} → {{ r.after | pct(1) }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
       {% elif c.pct %}
