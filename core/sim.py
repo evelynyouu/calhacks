@@ -22,6 +22,8 @@ import csv
 import math
 from pathlib import Path
 
+from core import market
+from core.market import COMPANIES
 from core.models import Portfolio, SimResult
 
 DATA = Path(__file__).resolve().parent.parent / "data"
@@ -39,8 +41,32 @@ with (DATA / "correlations.csv").open() as _f:
                                            for r in csv.DictReader(_f)}
 
 
+US_INDEX = "VTI"   # the custom index's ~55 US companies are projected as one diversified basket, like VTI
+
+
 def assumption(ticker: str) -> dict:
-    return ASSUMPTIONS.get(ticker) or ASSUMPTIONS["company"]
+    """A fund's own row. A single company: its home sector fund's expected return, and the volatility the
+    simulated market gives it (core/market.py: its sector's beta times the market's moves, plus its own
+    COMPANY_RESID_VOL), in the `company` correlation group."""
+    if ticker in ASSUMPTIONS:
+        return ASSUMPTIONS[ticker]
+    home = ASSUMPTIONS.get(COMPANIES.get(ticker, {}).get("etf", ""))
+    if not home:
+        return ASSUMPTIONS["company"]
+    vol = math.hypot(market.beta(ticker) * market.MARKET_VOL, market.COMPANY_RESID_VOL)
+    return {"group": "company", "mean": home["mean"], "vol": vol}
+
+
+def _positions(p: Portfolio) -> dict[str, float]:
+    """What the projection holds: the US-index part as one US basket, everything else per ticker."""
+    if not getattr(p, "parts", None):
+        return {h.ticker: h.weight for h in p.holdings}
+    out = {US_INDEX: sum(p.parts.get("us_core", {}).values())} if p.parts.get("us_core") else {}
+    for k, part in p.parts.items():
+        if k != "us_core":
+            for t, x in part.items():
+                out[t] = out.get(t, 0.0) + x
+    return out
 
 
 def _correlation(a: str, b: str) -> float:
@@ -51,12 +77,27 @@ def _correlation(a: str, b: str) -> float:
 
 def portfolio_assumptions(p: Portfolio) -> dict:
     """Expected return and volatility of the whole fund (yearly, as fractions) from its target weights."""
-    w = {h.ticker: h.weight for h in p.holdings}
+    w = _positions(p)
     mean = sum(x * assumption(t)["mean"] for t, x in w.items()) - p.annual_fee_pct / 100
     var = sum(w[a] * w[b] * _correlation(a, b) * assumption(a)["vol"] * assumption(b)["vol"] for a in w for b in w)
-    return {"mean": mean, "vol": math.sqrt(var),
-            "rows": [{"ticker": t, "weight": x, "mean": assumption(t)["mean"], "vol": assumption(t)["vol"]}
-                     for t, x in w.items()]}
+    return {"mean": mean, "vol": math.sqrt(var), "rows": _rows(p, w)}
+
+
+def _rows(p: Portfolio, w: dict[str, float]) -> list[dict]:
+    """The assumptions table the report shows: the funds one by one, the US index as one basket, and the single
+    companies together (they share one row of assumptions)."""
+    names = {h.ticker: h.name for h in p.holdings}
+    rows, companies = [], 0.0
+    for t, x in w.items():
+        if t not in ASSUMPTIONS and t != US_INDEX:
+            companies += x
+            continue
+        label = "Your US index (as one US basket)" if t == US_INDEX and any(h.sector for h in p.holdings) else names.get(t, t)
+        rows.append({"ticker": t, "label": label, "weight": x, "mean": assumption(t)["mean"], "vol": assumption(t)["vol"]})
+    if companies:
+        rows.append({"ticker": "company", "label": "Single companies (spend, interest, added)", "weight": companies,
+                     "mean": assumption("company")["mean"], "vol": assumption("company")["vol"]})
+    return rows
 
 
 def simulate(p: Portfolio, start: float, monthly: float, years: int = 10) -> SimResult:

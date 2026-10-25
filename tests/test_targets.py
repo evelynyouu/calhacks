@@ -265,7 +265,7 @@ def test_changed_answers_rebuild_with_the_builder():
     assert prop["kind"] == "answers" and "Your mix moves from Growth to" in prop["title"]
     targets.accept(a)
     assert a.answers["risk_priority"] == "protect"
-    assert weights(a) == {h.ticker: h.weight for h in build(a.answers).holdings}
+    assert weights(a) == {h.ticker: h.weight for h in build(a.answers, spending=fund._spending(a.customer_id)).holdings}
     assert a.target_history[0]["reason"].kind == "answers"
 
 

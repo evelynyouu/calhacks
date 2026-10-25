@@ -19,7 +19,7 @@ from agent import claude_agent
 from agent.tools import INDEXES, news_tickers
 from app.routes.auth import auth_disabled, csrf_token
 from app import state
-from core import backtest, builder, disclosure, explain, feed, figures, followups, fund, intake, market, nessie, targets
+from core import backtest, builder, disclosure, explain, feed, figures, followups, fund, intake, market, nessie, slices, targets
 from core.broker import get_broker, values
 from core.intake import QUESTIONS, AnswerError
 from core.market import ETFS
@@ -100,7 +100,7 @@ def _ctx(request: Request, cid: str, **extra) -> dict:
     return {
         "request": request, "cid": cid, "profile": get_profile(cid), "s": s, "a": a, "portfolio": a.portfolio,
         "value": value, "total": figures.total(value, a.contributed), "tier": tier_for(value), "questions": QUESTIONS,
-        "pie_data": _pie(a.portfolio), "broker_mode": get_broker().mode,
+        "pie_data": _pie(a.portfolio), "slices": slices.view(a.portfolio) if a.portfolio else [], "broker_mode": get_broker().mode,
         "activity": nessie.recent_activity(cid), "nessie_mode": nessie.mode(), "nessie_offline": nessie.offline_reason(),
         "etfs": ETFS, "theme_labels": THEME_LABELS, "live_market": market.source("SPY") == "live",
         "fast_forwarded": a.today > market.today(), "claude_on": claude_agent._get_client() is not None,
@@ -110,10 +110,8 @@ def _ctx(request: Request, cid: str, **extra) -> dict:
 
 
 def _pie(p):
-    if not p:
-        return None
-    return {"labels": [f"{h.ticker} · {market.info(h.ticker)['label']}" for h in p.holdings],
-            "values": [round(h.weight * 100, 1) for h in p.holdings]}
+    """One wedge per slice (six at most), not one per holding: a custom fund has about 60 of those."""
+    return slices.pie(p)
 
 
 def _render(name: str, ctx: dict) -> HTMLResponse:
@@ -148,16 +146,22 @@ def dashboard(request: Request, cid: str):
 
 
 def _today(a) -> dict:
-    """The fund's figures (core/figures.py): total since you started, today's move, and each holding's row."""
+    """The fund's figures (core/figures.py): total since you started, today's move, and each holding's row, labeled
+    with its slice. The list opens with the TOP_POSITIONS biggest; `rest` is behind "Show all"."""
     f = figures.fund_figures(a)
-    return {"fig": f, "rows": f["rows"], "day_change": f["day_change"], "day_pct": f["day_pct"]}
+    where = {h.ticker: dict(slices.SLICE_LABELS)[a.portfolio.slice_of(h)] for h in a.portfolio.holdings} if a.portfolio else {}
+    rows = sorted(({**r, "slice": where.get(r["ticker"], "")} for r in f["rows"]), key=lambda r: -r["value"])
+    top, rest = slices.top_positions(rows)
+    return {"fig": f, "rows": top, "rest": rest, "day_change": f["day_change"], "day_pct": f["day_pct"]}
 
 
 @router.get("/p/{cid}/how", response_class=HTMLResponse)
 def how_built(request: Request, cid: str, full: bool = False):
     """How your fund was built: every number and reason comes from core/explain.py. ?full=1 opens the full version."""
     s = _need_fund(cid)
-    return _render("how_built.html", _ctx(request, cid, tab="portfolio", how=explain.build(s.fund),
+    how = explain.build(s.fund)
+    how["slices"] = slices.complete(how.get("slices") or slices.explained(s.fund.portfolio, explain.ADJUST_KINDS))
+    return _render("how_built.html", _ctx(request, cid, tab="portfolio", how=how,
                                           intro=claude_agent.fund_intro(s), full=full))
 
 
@@ -561,19 +565,21 @@ TAPE_NASDAQ = "COMP"
 # wide screen and the loop has no gap (a card is ~180px; 14 cover a 2560px window).
 TAPE_MIN_CARDS = 14
 TAPE_SECONDS_PER_CARD = 5.5   # scroll speed stays the same however many cards there are
+TAPE_HOLDINGS = 10   # a custom index holds ~60 companies; the strip shows its biggest positions only
 
 
 def _tape_holdings(cid: str, a) -> list[str]:
     """What the customer holds: the fund's holdings by weight (biggest first), then anything else the
-    broker says they own (largest dollar value first). Empty before a fund is built."""
+    broker says they own outside the fund's targets (largest dollar value first). Empty before a fund is built."""
     if not a or not a.portfolio:
         return []
-    held = [h.ticker for h in sorted(a.portfolio.holdings, key=lambda h: -h.weight)]
+    targets = [h.ticker for h in sorted(a.portfolio.holdings, key=lambda h: -h.weight)]
     try:
         owned = {t: v for t, v in values(cid, a.today).items() if v > 0.005}
     except Exception:   # a real broker that can't be reached shouldn't break the strip
         owned = {}
-    return list(dict.fromkeys(held + sorted(owned, key=lambda t: -owned[t])))
+    outside = [t for t in sorted(owned, key=lambda t: -owned[t]) if t not in targets]   # owned, no longer a target
+    return targets[:TAPE_HOLDINGS] + outside
 
 
 @router.get("/tape", response_class=HTMLResponse)

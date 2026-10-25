@@ -69,8 +69,10 @@ def test_full_intake_builds_the_fund():
         if i == 6:
             assert 'type="checkbox" name="values"' in r.text and 'name="other"' in r.text   # next: chips + Other
     assert "Your fund is ready" in r.text and 'id="fund-card" hx-swap-oob' in r.text
-    for t in ("VTI", "XLK", "XLV", "ESPO"):
-        assert t in r.text
+    # the custom index: VXUS and BND stay funds; interests became their biggest companies (tech: AAPL, MSFT;
+    # healthcare: LLY, JNJ; gaming: NTDOY, RBLX); Sam's spending adds Target and Netflix
+    for t in ("VXUS", "BND", "AAPL", "LLY", "NTDOY", "TGT", "NFLX"):
+        assert t in r.text, t
     s = state.get("sam")
     assert s.done and s.fund.contributed == 2500 and s.fund.invest_pct == 12
     assert 'placeholder="Ask about your fund' in r.text                                # composer is free chat now
@@ -142,7 +144,8 @@ def test_queue_then_confirm_rebalance_trades():
     assert "waiting for your OK" in page and "Confirm trades" in page
     r = client.post("/p/sam/trades/confirm")
     # SMH is smaller now (sized for how much it swings), so it's no longer the first sale
-    assert "Done: sell" in r.text and "sell SMH" in r.text and not state.get("sam").fund.pending
+    # chips is its biggest companies now (NVDA, AVGO), spread with the rest; the point is that the queued sells ran
+    assert "Done: sell" in r.text and not state.get("sam").fund.pending
 
 
 def test_recommendation_buttons_change_pct_and_interests():
@@ -150,9 +153,9 @@ def test_recommendation_buttons_change_pct_and_interests():
     client.post("/p/sam/rec", data={"action": "set_pct", "value": "15"})
     client.post("/p/sam/rec", data={"action": "add_interest", "value": "utilities"})
     a = state.get("sam").fund
-    assert a.invest_pct == 15 and "XLU" in [h.ticker for h in a.portfolio.holdings]
+    assert a.invest_pct == 15 and {"NEE", "SO"} <= set(a.portfolio.parts["interest"])   # utilities' companies
     client.post("/p/sam/rec", data={"action": "remove_interest", "value": "tech"})
-    assert "XLK" not in [h.ticker for h in a.portfolio.holdings]
+    assert not {"AAPL", "MSFT"} & set(a.portfolio.parts["interest"])                     # still in the US index
     assert client.post("/p/sam/rec", data={"action": "add_interest", "value": "nope"}).status_code == 400
 
 
@@ -231,7 +234,7 @@ def test_add_a_single_company_then_a_paycheck_buys_partial_shares():
     from core.broker import get_broker
     assert 0 < get_broker().positions("sam")["AAPL"] < 1          # a partial share
     client.post("/p/sam/stocks", data={"symbol": "AAPL", "op": "remove"})
-    assert "AAPL" not in [h.ticker for h in a.portfolio.holdings]
+    assert "AAPL" not in a.portfolio.parts["added"]              # Apple stays in the US index, just not as your pick
     assert client.post("/p/sam/stocks", data={"symbol": "VTI", "op": "add"}).status_code == 400
 
 
@@ -271,13 +274,13 @@ def test_account_page_sections_and_settings():
     assert state.get("sam").prefs == {"weekly_report": True, "trade_confirmations": False, "big_moves": False,
                                       "big_move_pct": 5}
     client.post("/p/sam/interests", data={"values": ["utilities", "bogus"]})
-    assert [h.ticker for h in state.get("sam").fund.portfolio.holdings if h.role == "tilt"] == ["XLU"]
+    assert list(state.get("sam").fund.portfolio.parts["interest"]) == ["NEE", "SO"]   # utilities' biggest companies
 
 
 def test_ticker_tape_has_holdings():
     make_fund("sam")
     r = client.get("/p/sam/tape")
-    assert "S&amp;P 500" not in r.text and "VTI" in r.text and "Simulated prices" in r.text
+    assert "S&amp;P 500" not in r.text and "VXUS" in r.text and "Simulated prices" in r.text   # biggest holdings only
 
 
 def test_finishing_the_intake_reloads_the_ticker_with_the_holdings():

@@ -27,12 +27,13 @@ from core.state import SIM_START, next_due, occurrences   # noqa: F401  (re-expo
 PAY_PERIOD_DAYS = 14
 PAYCHECKS = 4
 PURCHASES = 8
-SPEND_MERCHANTS = ["groceries", "dining", "transit"]
-MERCHANTS = {   # key -> (name, category); created once, shared by every persona
+# key -> (name, category); created once, shared by every persona. "groceries" takes fast-forward's lump of
+# day-to-day spending and "auto" the car repair; the rest are the personas' own merchants (personas.json),
+# keyed by name, which their seeded purchases are spread across.
+MERCHANTS = {
     "groceries": ("Berkeley Bowl", "Groceries"),
-    "dining": ("Sliver Pizzeria", "Restaurants"),
-    "transit": ("Bay Area Transit", "Transportation"),
     "auto": ("Mike's Auto", "Auto Repair"),
+    **{m["name"]: (m["name"], m["category"]) for cid in nessie._SEED for m in nessie.persona_seed(cid)["merchants"]},
 }
 
 
@@ -60,10 +61,10 @@ def plan_from(p: dict, label: str | None = None, check: bool = True) -> dict:
 
     # Two months of spending in whole dollars (Nessie amounts are integers), spread as evenly as possible.
     total_spend = int(round(2 * p["monthly_spending"]))
-    base, extra = divmod(total_spend, PURCHASES)
-    purchases = [{"merchant": SPEND_MERCHANTS[i % len(SPEND_MERCHANTS)],
-                  "on": SIM_START - timedelta(days=7 * (PURCHASES - i)),
-                  "amount": float(base + (i < extra))} for i in range(PURCHASES) if base + (i < extra) > 0]
+    slots = _merchant_slots(p["merchants"], PURCHASES)
+    amounts = _amounts_by_share(p["merchants"], slots, total_spend)
+    purchases = [{"merchant": slots[i], "on": SIM_START - timedelta(days=7 * (PURCHASES - i)),
+                  "amount": float(amounts[i])} for i in range(PURCHASES)]
 
     bills = [{"name": b["name"], "amount": b["amount"],
               "recurring_date": (SIM_START + timedelta(days=b["due_in_days"])).day} for b in p["upcoming_bills"]]
@@ -84,6 +85,37 @@ def plan_from(p: dict, label: str | None = None, check: bool = True) -> dict:
             raise ValueError(f"{label or p['name']}: opening {k} balance {v} must be a whole, non-negative dollar amount")
     return {"persona": p, "paydays": paydays, "purchases": purchases, "bills": bills,
             "bill_payments": bill_payments, "to_savings": to_savings, "opening": opening}
+
+
+def _amounts_by_share(merchants: list[dict], slots: list[str], total: int) -> list[int]:
+    """Whole-dollar purchase amounts so each merchant gets its share of `total` in dollars (largest remainder),
+    split evenly over that merchant's purchases. Adds up to `total` exactly."""
+    raw = {m["name"]: total * m["share"] for m in merchants}
+    dollars = {k: int(v) for k, v in raw.items()}
+    for k in sorted(raw, key=lambda k: raw[k] - int(raw[k]), reverse=True)[:total - sum(dollars.values())]:
+        dollars[k] += 1
+    out, seen = [], {}
+    for name in slots:
+        n, i = slots.count(name), seen.get(name, 0)
+        base, extra = divmod(dollars[name], n)
+        out.append(base + (i < extra))
+        seen[name] = i + 1
+    return out
+
+
+def _merchant_slots(merchants: list[dict], n: int) -> list[str]:
+    """Which merchant each of the n weekly purchases is at: counts by share (largest remainder, at least one
+    each), interleaved so the history reads like real weeks."""
+    raw = {m["name"]: m["share"] * n for m in merchants}
+    count = {k: max(1, int(v)) for k, v in raw.items()}
+    for k in sorted(raw, key=lambda k: raw[k] - int(raw[k]), reverse=True):
+        if sum(count.values()) >= n:
+            break
+        count[k] += 1
+    while sum(count.values()) > n:
+        count[max(count, key=count.get)] -= 1
+    order = sorted(((i + 0.5) / count[k], k) for k in count for i in range(count[k]))
+    return [k for _, k in order]
 
 
 # ---------- writes ----------

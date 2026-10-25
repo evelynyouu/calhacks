@@ -80,3 +80,44 @@ def test_a_paycheck_is_26_a_year_not_24_and_the_deposit_matches_fund_paycheck_ro
     assert rep["projection_inputs"]["per_paycheck"] == 205
     assert rep["projection"].monthly_contribution == pytest.approx(205 * 26 / 12, abs=0.01)   # not 205 x 2 = 410
     assert rep["projection"].total_contributed == pytest.approx(3_000 + rep["projection"].monthly_contribution * 120, abs=1)
+
+
+# ---------- a custom index is modeled as one US basket ----------
+
+def test_a_custom_funds_range_matches_the_old_vti_core_fund_at_the_same_bond_share():
+    from core.models import Holding
+    from tests.fund_helpers import make_portfolio_fixture
+    p = make_portfolio_fixture()
+    w = p.slice_weights()
+    old = Portfolio(3, "Growth", [Holding("BND", "", w["bonds"], "core", 0.0), Holding("VXUS", "", w["intl"], "core", 0.0),
+                                  Holding("VTI", "", 1 - w["bonds"] - w["intl"], "core", 0.0)], 0.0, 2022, -17.0)
+    new, was = sim.portfolio_assumptions(p), sim.portfolio_assumptions(old)
+    assert new["vol"] == pytest.approx(was["vol"], abs=0.01)                    # within 1 point of volatility
+    assert new["mean"] == pytest.approx(was["mean"], abs=0.005)
+    a, b = sim.simulate(p, 10_000, 500), sim.simulate(old, 10_000, 500)
+    assert a.p50[-1] == pytest.approx(b.p50[-1], rel=0.05) and a.p10[-1] == pytest.approx(b.p10[-1], rel=0.08)
+
+
+def test_the_us_index_is_one_basket_and_the_other_companies_keep_the_company_row():
+    from tests.fund_helpers import make_portfolio_fixture
+    p = make_portfolio_fixture()
+    rows = {r["ticker"]: r for r in sim.portfolio_assumptions(p)["rows"]}
+    assert set(rows) == {"BND", "VXUS", "VTI", "company"}                       # four lines, not 58
+    assert rows["VTI"]["weight"] == pytest.approx(p.slice_weights()["us_core"]) and rows["VTI"]["vol"] == sim.assumption("VTI")["vol"]
+    assert rows["company"]["weight"] == pytest.approx(0.08 + 0.06 + 0.03) and rows["company"]["vol"] == sim.assumption("company")["vol"]
+
+
+def test_fifty_single_company_volatilities_would_misstate_the_funds_spread():
+    import copy
+    from tests.fund_helpers import make_portfolio_fixture
+    p = make_portfolio_fixture()
+    naive = copy.deepcopy(p)
+    naive.parts = {}                                                            # no recorded parts: every company on its own, the old way
+    right, wrong = sim.portfolio_assumptions(p)["vol"], sim.portfolio_assumptions(naive)["vol"]
+    assert abs(right - wrong) > 0.01 and wrong < right                          # understated: single names are less correlated
+
+
+def test_an_older_etf_fund_is_modeled_as_before():
+    p = portfolio(VTI=0.6, BND=0.4)
+    assert [r["ticker"] for r in sim.portfolio_assumptions(p)["rows"]] == ["VTI", "BND"]
+    assert sim.portfolio_assumptions(p)["mean"] == pytest.approx(0.6 * sim.assumption("VTI")["mean"] + 0.4 * sim.assumption("BND")["mean"])

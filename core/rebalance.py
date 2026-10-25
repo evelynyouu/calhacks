@@ -1,4 +1,9 @@
-"""Drift and rebalancing.  OWNER: Saahil."""
+"""Drift and rebalancing.  OWNER: Saahil.
+
+A custom index (core/portfolio.py) holds ~55 companies weighted by size. Like any market-cap index fund,
+it doesn't trade when one company outgrows another: inside the US index, each company's target follows its
+current value (targets()); only the index's total share, and the personal picks, count as drift.
+"""
 from __future__ import annotations
 
 from core.models import Portfolio
@@ -11,27 +16,92 @@ DRIFT_REL = 0.25
 DRIFT_MIN_DOLLARS = 25.0
 
 
-def allocate_new_money(p: Portfolio, current: dict[str, float], amount: float) -> dict[str, float]:
-    """Send new cash to the most underweight funds first. Returns {ticker: dollars}."""
+def targets(p: Portfolio, current: dict[str, float]) -> dict[str, float]:
+    """Target weight per ticker. For a custom index, the US index's companies share its target in proportion to
+    what they're worth now (personal parts of a position stay fixed), so price moves inside it aren't drift."""
+    base = {h.ticker: h.weight for h in p.holdings}
+    index = (getattr(p, "parts", None) or {}).get("us_core", {})
+    total = sum(current.values())
+    if not index or not total:
+        return base
+    personal = {t: base[t] - index.get(t, 0.0) for t in index}       # the rest of each position is a fixed pick
+    held = {t: max(0.0, current.get(t, 0.0) - personal[t] * total) for t in index}
+    held_sum = sum(held.values())
+    if not held_sum:
+        return base
+    share = sum(index.values())
+    return {**base, **{t: personal[t] + share * held[t] / held_sum for t in index}}
+
+
+NEW_MONEY_PICKS = 10   # a paycheck buys at most this many holdings: a 58-holding fund would otherwise get ~58 tiny orders
+
+
+def allocate_new_money(p: Portfolio, current: dict[str, float], amount: float, picks: int | None = None) -> dict[str, float]:
+    """Send new cash to the most underweight holdings first. Returns {ticker: dollars}, none under MIN_TRADE
+    (a custom index has ~60 holdings; tiny orders aren't worth placing and a broker may refuse them).
+
+    `picks` limits how many holdings get money: the ones furthest below target, which catch up first; the rest
+    catch up on later paychecks. None means every underweight holding, which is what a first deposit wants."""
+    if amount < MIN_TRADE:
+        return {}                                   # not worth an order; the money waits for the next paycheck
     total = sum(current.values()) + amount
-    gaps = {h.ticker: max(0.0, h.weight * total - current.get(h.ticker, 0.0)) for h in p.holdings}
-    gap_sum = sum(gaps.values()) or 1.0
-    return {t: round(amount * g / gap_sum, 2) for t, g in gaps.items() if g > 0}
+    goal = targets(p, current)
+    gaps = {t: max(0.0, w * total - current.get(t, 0.0)) for t, w in goal.items()}
+    gaps = {t: g for t, g in gaps.items() if g > 0}
+    if picks:
+        gaps = dict(sorted(gaps.items(), key=lambda kv: (-kv[1], kv[0]))[:picks])
+    while gaps:
+        gap_sum = sum(gaps.values())
+        small = [t for t, g in gaps.items() if amount * g / gap_sum < MIN_TRADE]
+        if not small or len(small) == len(gaps):
+            break
+        del gaps[min(small, key=gaps.get)]   # drop the smallest, then share again
+    if not gaps:
+        return {}
+    gap_sum = sum(gaps.values())
+    out = {t: round(amount * g / gap_sum, 2) for t, g in gaps.items()}
+    top = max(out, key=out.get)   # cents lost to rounding go to the biggest buy
+    out[top] = round(out[top] + round(amount, 2) - round(sum(out.values()), 2), 2)
+    return out
 
 
 def drift(p: Portfolio, current: dict[str, float]) -> dict[str, float]:
     """Actual weight minus target weight, per ticker. Holdings no longer in the fund have target 0."""
     total = sum(current.values()) or 1.0
-    targets = {h.ticker: h.weight for h in p.holdings}
-    return {t: round(current.get(t, 0.0) / total - targets.get(t, 0.0), 4) for t in {**targets, **current}}
+    goal = targets(p, current)
+    return {t: round(current.get(t, 0.0) / total - goal.get(t, 0.0), 4) for t in {**goal, **current}}
 
 
 def rebalance_trades(p: Portfolio, current: dict[str, float]) -> dict[str, float]:
     """Dollars to trade per ticker to get back to target: positive buys, negative sells."""
     total = sum(current.values())
-    targets = {h.ticker: h.weight for h in p.holdings}
-    trades = {t: round(targets.get(t, 0.0) * total - current.get(t, 0.0), 2) for t in {**targets, **current}}
+    goal = targets(p, current)
+    trades = {t: round(goal.get(t, 0.0) * total - current.get(t, 0.0), 2) for t in {**goal, **current}}
     return {t: v for t, v in trades.items() if abs(v) >= MIN_TRADE}
+
+
+REBALANCE_MAX_TRADES = 15   # a rebalance trades the biggest mismatches only; the customer confirms every one of these
+
+
+def limited_rebalance(p: Portfolio, current: dict[str, float], max_trades: int = REBALANCE_MAX_TRADES) -> dict[str, float]:
+    """rebalance_trades, cut to at most `max_trades` of the biggest mismatches and balanced so the sells pay for the
+    buys. A fund small enough to fit is returned as is. A year-old 58-holding fund can be a little off everywhere;
+    asking the customer to confirm 58 trades helps no one, so the rest catch up at the next review or paycheck."""
+    full = rebalance_trades(p, current)
+    if len(full) <= max_trades:
+        return full
+    sells = sorted(((t, d) for t, d in full.items() if d < 0), key=lambda kv: kv[1])
+    buys = sorted(((t, d) for t, d in full.items() if d > 0), key=lambda kv: -kv[1])
+    n_sell = min(len(sells), max(max_trades // 2, max_trades - len(buys)))
+    n_buy = min(len(buys), max_trades - n_sell)
+    n_sell = min(len(sells), max_trades - n_buy)
+    sells, buys = sells[:n_sell], buys[:n_buy]
+    sold, bought = -sum(d for _, d in sells), sum(d for _, d in buys)
+    if not sold or not bought:
+        return {}
+    k_sell, k_buy = min(1.0, bought / sold), min(1.0, sold / bought)          # the bigger side shrinks to match
+    out = {t: round(d * (k_sell if d < 0 else k_buy), 2) for t, d in sells + buys}
+    return {t: d for t, d in out.items() if abs(d) >= MIN_TRADE}
 
 
 def band(target: float) -> float:
@@ -42,6 +112,6 @@ def band(target: float) -> float:
 def off_target(p: Portfolio, current: dict[str, float]) -> dict[str, float]:
     """{ticker: drift} for holdings outside their band, ignoring gaps too small in dollars to matter."""
     total = sum(current.values())
-    targets = {h.ticker: h.weight for h in p.holdings}
+    goal = targets(p, current)
     return {t: d for t, d in drift(p, current).items()
-            if abs(d) >= band(targets.get(t, 0.0)) and abs(d) * total >= DRIFT_MIN_DOLLARS}
+            if abs(d) >= band(goal.get(t, 0.0)) and abs(d) * total >= DRIFT_MIN_DOLLARS}

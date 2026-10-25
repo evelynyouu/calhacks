@@ -119,6 +119,9 @@ def starting_numbers(c: NewCustomer) -> dict:
         "checking_balance": c.checking, "cash_cushion": c.savings, "card_debt": 0.0, "card_apr": 0.0,
         "invested_balance": 0.0, "paycheck_amount": c.paycheck, "days_to_payday": DAYS_TO_PAYDAY,
         "upcoming_bills": bills,
+        # We don't ask where a new customer shops, so their purchases go to the shared grocery merchant: no
+        # company is picked from their spending, and the fund says so.
+        "merchants": [{"name": "groceries", "category": "Groceries", "share": 1.0}],
     }
     plan = seed.plan_from(nessie._with_other_bills(dict(p, upcoming_bills=list(bills))), check=False)
     pay_total = c.paycheck * len(plan["paydays"])

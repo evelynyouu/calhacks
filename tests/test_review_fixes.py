@@ -37,7 +37,8 @@ def test_claude_and_the_chat_tool_get_both_scores_and_the_reason():
 
 def test_drop_help_text_is_true_for_low_answers_and_the_default_isnt_the_floor():
     q = intake.BY_KEY["max_drop"]
-    steadiest = worst_year(build_portfolio(1, [], bond_share=BOND_MAX).holdings)[1]
+    from core.portfolio import worst_return_for
+    steadiest = worst_return_for(1, [], [], bond_share=BOND_MAX)   # the same check the builder uses
     assert f"{abs(steadiest):g}%" in q.help and "steadiest" in q.help
     assert q.default > abs(steadiest)
 
@@ -58,8 +59,9 @@ def test_horizon_sentence_reads_right_for_every_option():
 def test_full_version_counts_funds_not_companies_and_retaking_is_described_right():
     s = make_fund("sam", stocks=["NVDA", "AAPL"])
     how = explain.build(s.fund)
-    funds = sum(1 for h in s.fund.portfolio.holdings if h.role != "stock")
-    assert f"built from {funds} of them" in " ".join(how["full"][0]["paras"])
+    # the first section now counts the companies in the US index (the companies you added aren't in that count)
+    from core.universe import core_companies
+    assert f"your US stocks are {len(core_companies())} companies" in " ".join(how["full"][0]["paras"])
     assert "clears your simulated fund" in " ".join(how["change"])
 
 

@@ -14,13 +14,12 @@
       {{ '+' if up else '−' }}{{ fig.day_change | abs | money2 }} ({{ fig.day_pct | signed(2) }}) <span class="font-normal text-ink/60">today</span>
     </p>
   </div>
-  <ul class="mt-4 divide-y divide-ink/10">
-    {% for r in rows %}
+  {% macro position(r) %}
     <li>
       <a href="/p/{{ cid }}/markets?s={{ r.ticker }}" class="flex items-center justify-between gap-3 py-2.5 hover:bg-paper/60 -mx-2 px-2 rounded-lg">
         <span class="min-w-0">
           <span class="font-semibold">{{ r.ticker }}</span>
-          <span class="block truncate text-xs text-ink/55">{{ r.info.label }}{% if r.info.kind == 'stock' %} · single company{% endif %}</span>
+          <span class="block truncate text-xs text-ink/55">{{ r.info.label }}{% if r.slice %} · {{ r.slice }}{% endif %}</span>
         </span>
         <span class="flex items-center gap-3 shrink-0">
           <span class="tabular-nums text-sm">{{ r.value | money2 }}</span>
@@ -28,6 +27,16 @@
         </span>
       </a>
     </li>
-    {% endfor %}
+  {% endmacro %}
+  <ul class="mt-4 divide-y divide-ink/10" id="positions">
+    {% for r in rows %}{{ position(r) }}{% endfor %}
   </ul>
+  {% if rest %}
+  <details class="mt-1" id="all-positions">
+    <summary class="chev py-2 text-sm font-medium text-moss-600">Show all {{ rows | length + rest | length }} positions</summary>
+    <ul class="divide-y divide-ink/10 border-t border-ink/10">
+      {% for r in rest %}{{ position(r) }}{% endfor %}
+    </ul>
+  </details>
+  {% endif %}
 </section>

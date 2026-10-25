@@ -19,7 +19,7 @@ from datetime import date, timedelta
 from core import market
 from core.broker import SimBroker
 from core.models import Holding, Portfolio
-from core.rebalance import allocate_new_money, rebalance_trades
+from core.rebalance import NEW_MONEY_PICKS, allocate_new_money, rebalance_trades
 
 PAY_PERIOD_DAYS = 14    # bi-weekly paychecks
 RECORD_EVERY_DAYS = 7   # weekly chart points
@@ -92,7 +92,7 @@ def run_backtest(
                 (bench_br, bench_cid, bench_port),
             ]:
                 vals = _vals(br, cid, current)
-                plan = allocate_new_money(port, vals, deposit)
+                plan = allocate_new_money(port, vals, deposit, NEW_MONEY_PICKS)   # as a real paycheck buys
                 for t, d in plan.items():
                     if d >= 1.0:
                         br.submit(cid, t, "buy", d, current)

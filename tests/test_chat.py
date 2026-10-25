@@ -229,13 +229,9 @@ def test_a_question_never_rebuilds_the_fund_or_flips_auto_trade(q):
 
 def test_mode_switches_need_the_command_phrase():
     s = _alex_with_history()
-    assert claude_agent.mode_command("is my fund custom?") is None
-    assert claude_agent.mode_command("I'd like a custom fund someday") is None
-    reply, events = claude_agent.offline_turn(s, "Switch to custom fund")
-    assert s.fund.answers.get("custom_mode") and {"fund", "account"} <= events
-    assert any(h.role == "stock" for h in s.fund.portfolio.holdings)
-    claude_agent.offline_turn(s, "switch back to ETF fund.")
-    assert "custom_mode" not in s.fund.answers and not any(h.role == "stock" for h in s.fund.portfolio.holdings)
+    assert claude_agent.mode_command("how does auto-trade work?") is None
+    assert claude_agent.mode_command("I'd like auto-trade on someday") is None
+    assert claude_agent.mode_command("Switch to custom fund") is None   # the custom index is the only fund now
     claude_agent.offline_turn(s, "Turn off auto-trade")
     assert s.fund.auto_trade is False
     claude_agent.offline_turn(s, "please turn on auto-trade")

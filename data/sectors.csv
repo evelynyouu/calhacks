@@ -2,10 +2,10 @@ fund,sector,weight_pct
 VTI,Technology,31
 VTI,Financials,13
 VTI,Healthcare,10
-VTI,Consumer discretionary,10
+VTI,Consumer,10
 VTI,Industrials,9
 VTI,Communication,9
-VTI,Consumer staples,5
+VTI,Everyday essentials,5
 VTI,Energy,3
 VTI,Real estate,3
 VTI,Utilities,2
@@ -14,10 +14,10 @@ VTI,Other,3
 VXUS,Financials,22
 VXUS,Industrials,14
 VXUS,Technology,13
-VXUS,Consumer discretionary,11
+VXUS,Consumer,11
 VXUS,Healthcare,9
 VXUS,Materials,7
-VXUS,Consumer staples,7
+VXUS,Everyday essentials,7
 VXUS,Communication,6
 VXUS,Energy,5
 VXUS,Utilities,3

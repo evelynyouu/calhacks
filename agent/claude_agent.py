@@ -15,10 +15,11 @@ from agent.prompts import RUNDOWN_INSTRUCTION, SNAPSHOT_HEADER, SUGGESTED_PROMPT
 from agent.tools import TOOLS, account_facts, account_snapshot, headlines, market_today, news_tickers, run_tool
 from app.state import Session
 from core.followups import HIGH_RISK_LEVEL, HORIZON_LABELS
-from core.explain import fallback_intro, intro_facts
+from core import intake, market, slices
+from core.explain import fallback_intro, intro_facts, slice_facts
 from core.intake import QUESTIONS, goal_label, suggested_horizon
-from core import intake, market
 from core.market import ETFS
+from core.models import SLICES
 from core.report import build_report
 
 MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-5-5")
@@ -87,8 +88,6 @@ def fund_facts(session: Session) -> list[str]:
     """The fund in Python-computed facts. When a limit or the customer's own choice moved the mix away
     from what the answers scored, both numbers and the reason are included, so Claude can't misstate why."""
     a, p = session.fund, session.fund.portfolio
-    core = ", ".join(f"{h.ticker} {h.weight:.0%}" for h in p.holdings if h.role == "core")
-    tilts = ", ".join(f"{h.ticker} {h.weight:.1%}" for h in p.holdings if h.role == "tilt")
     if p.score is None or p.score == a.risk_score:
         score = [f"Risk score {a.risk_score} out of 100, so the fund is {p.risk_label} (level {p.risk_level} of 4)."]
     else:
@@ -97,8 +96,7 @@ def fund_facts(session: Session) -> list[str]:
                  f"(level {p.risk_level} of 4), for these reasons:",
                  *(r.text for r in p.reasons if r.kind in ("contradiction", "horizon", "drop", "override")
                    and (r.kind in ("contradiction", "override") or r.facts.get("lowered")))]
-    return [*score, f"Core: {core}.",
-            f"Interest slice: {tilts}." if tilts else "No interest slice: the fund stays broad.",
+    return [*score, *slice_facts(p),
             f"Yearly fee {p.annual_fee_pct:.2f}%.",
             f"{a.invest_pct:g}% of each paycheck will be invested as soon as it lands.",
             *p.overlap_warnings]
@@ -107,8 +105,6 @@ def fund_facts(session: Session) -> list[str]:
 def fund_ready(session: Session) -> str:
     """The first message after the fund is built: Claude explains it, or a Python summary offline."""
     a, p = session.fund, session.fund.portfolio
-    core = ", ".join(f"{h.ticker} {h.weight:.0%}" for h in p.holdings if h.role == "core")
-    tilts = ", ".join(f"{h.ticker} {h.weight:.1%}" for h in p.holdings if h.role == "tilt")
     facts = fund_facts(session)
     unmatched = a.answers.get("interests", {}).get("unmatched", [])
     notes = list(p.overlap_warnings)
@@ -116,12 +112,13 @@ def fund_ready(session: Session) -> str:
         notes.append("No fund matches these yet, so they were noted but not added: " + ", ".join(unmatched) + ".")
         facts.append(notes[-1])
     facts += _followup_facts(a.answers, p.risk_level)
-    offline = (f"Your fund is ready: {p.risk_label.lower()}, with {core}"
-               + (f", plus {tilts} for your interests" if tilts else "") + f". The yearly fee is {p.annual_fee_pct:.2f}%. "
-               + " ".join(notes) + " Press “Paycheck arrives” to watch a paycheck invest itself, or ask me anything.")
+    offline = (f"Your fund is ready: {p.risk_label.lower()}. " + " ".join(slice_facts(p))
+               + f" The yearly fee is {p.annual_fee_pct:.2f}%. " + " ".join(notes) + " Press “Paycheck arrives” to watch a paycheck invest itself, or ask me anything.")
     return explain(facts, f"The customer's goal: {goal_label(a.answers)!r}. In 3 to 4 short sentences, explain "
-                          "their new fund: what the core does, what the interest slice adds, and one thing to "
-                          "know about their risk level. End by inviting questions.", fallback=offline)
+                          "their new fund: what their own US index is, what the personal slices (where they spend, "
+                          "their interests) add, and one thing to know about their risk level. Say the spending "
+                          "picks personalize the fund and aren't predictions. End by inviting questions.",
+                   fallback=offline)
 
 
 def fund_intro(session: Session) -> str:
@@ -220,25 +217,20 @@ def rundown(session: Session) -> str:
 
 
 # ---------- Offline replies (no API key, or the API failed) ----------
-# Python-written answers to the same questions the snapshot covers. Questions never change anything: switching
-# fund type or auto-trade needs one of the exact command phrases below, typed as a request, not a question.
+# Python-written answers to the same questions the snapshot covers. Questions never change anything: turning
+# auto-trade on or off needs one of the exact command phrases below, typed as a request, not a question.
 
 _CMD_LEAD = r"^\s*(?:ok(?:ay)?[,!.]?\s+|yes[,!.]?\s+|please\s+)*(?:please\s+)?"
 _COMMANDS = [
-    ("custom", re.compile(_CMD_LEAD + r"(?:switch|change|move)\s+(?:me\s+|my\s+fund\s+)?to\s+(?:a\s+|the\s+)?"
-                          r"custom(?:\s+stock)?\s+fund(?:\s+please)?\s*[.!]*\s*$")),
-    ("etf", re.compile(_CMD_LEAD + r"(?:switch|change|move|go)\s+(?:me\s+|my\s+fund\s+)?back\s+to\s+(?:the\s+|my\s+)?"
-                       r"(?:etf|standard)\s+fund(?:\s+please)?\s*[.!]*\s*$")),
     ("auto_on", re.compile(_CMD_LEAD + r"turn\s+(?:on\s+auto[- ]?trade|auto[- ]?trade\s+on)(?:\s+please)?\s*[.!]*\s*$")),
     ("auto_off", re.compile(_CMD_LEAD + r"turn\s+(?:off\s+auto[- ]?trade|auto[- ]?trade\s+off)(?:\s+please)?\s*[.!]*\s*$")),
 ]
-COMMAND_PHRASES = {"custom": "switch to custom fund", "etf": "switch back to ETF fund",
-                   "auto_on": "turn on auto-trade", "auto_off": "turn off auto-trade"}
+COMMAND_PHRASES = {"auto_on": "turn on auto-trade", "auto_off": "turn off auto-trade"}
 
 
 def mode_command(text: str) -> str | None:
-    """'custom' / 'etf' / 'auto_on' / 'auto_off' when the whole message is one of the command phrases, else None.
-    A question ("is my fund custom?", "how does auto-trade work?") is never a command."""
+    """'auto_on' / 'auto_off' when the whole message is one of the command phrases, else None.
+    A question ("how does auto-trade work?") is never a command."""
     t = text.lower().strip()
     if "?" in t:
         return None
@@ -273,30 +265,6 @@ def _run_command(session: Session, cmd: str) -> tuple[str, set[str]]:
     from core.fund import AUTO_EXECUTE_TIER
     from core.policy import tier_for
     a = session.fund
-    if cmd == "etf":
-        for k in ("custom_mode", "spending_stocks", "spending_mode"):
-            a.answers.pop(k, None)
-        _fund.build(a)
-        a.log.insert(0, "Rebuilt your fund from your answers.")
-        p = a.portfolio
-        tilts = ", ".join(f"{h.ticker} ({h.weight:.1%})" for h in p.holdings if h.role == "tilt")
-        return (f"Done: your {p.risk_label.lower()} fund is back to funds (ETFs)"
-                + (f", with {tilts} for your interests." if tilts else ", a broad core with no interest slice.")
-                + " New paychecks steer toward it; nothing is sold unless you confirm a rebalance."), {"fund", "account"}
-    if cmd == "custom":
-        if not intake.interests(a.answers):
-            return ("A custom fund swaps each interest's fund for its biggest companies, and you haven't picked any "
-                    "interests yet. Add some on the Account tab first."), set()
-        a.answers["custom_mode"] = True
-        a.answers["spending_stocks"] = []
-        _fund.build(a)
-        stocks = [h for h in a.portfolio.holdings if h.role == "stock"]
-        a.log.insert(0, f"Switched to custom fund: {len(stocks)} individual stocks.")
-        sample = ", ".join(f"{h.ticker} ({h.weight:.1%})" for h in stocks[:6])
-        return (f"Done: your interest slice is now {len(stocks)} individual stock{'s' if len(stocks) != 1 else ''}: "
-                f"{sample}{'…' if len(stocks) > 6 else ''}. Your core (VTI/VXUS/BND) is unchanged. New paychecks steer "
-                f"toward it; nothing is sold unless you confirm a rebalance. Say “{COMMAND_PHRASES['etf']}” to undo."), \
-            {"fund", "account"}
     tier = tier_for(_fund.value(a))
     if cmd == "auto_on" and not tier.auto_trades:
         return (f"Automatic trade prep unlocks at a higher balance; you're Tier {tier.tier} ({tier.balance_range}). "
@@ -322,7 +290,6 @@ def offline_turn(session: Session, text: str) -> tuple[str, set[str]]:
 
 def _offline_answer(session: Session, text: str) -> str:
     from core import spending as _spending
-    from core.portfolio import custom_fund_preview as _preview
     from core.profile import get_profile as _get_profile
     a = session.fund
     if not a.portfolio:
@@ -331,32 +298,16 @@ def _offline_answer(session: Session, text: str) -> str:
     f = account_facts(session)
     fd, pc, rv = f["fund"], f["paycheck"], f["review"]
 
-    # Why is a holding there? ("why do I own BND?", "why bonds?")
+    # Why is a holding there? ("why do I own TGT?", "why bonds?"): the builder's own reasons, with its slice
     tick = _held_ticker(session, text)
     if tick and _has(t, r"\bwhy\b", r"\bwhat'?s .* for\b", r"\breason"):
-        from core.explain import explain_for_chat
-        reasons = [r["text"] for r in explain_for_chat(a.portfolio, tick)["reasons"]]
-        why = a.portfolio.holding_reasons.get(tick)
-        h = next(h for h in fd["holdings"] if h["ticker"] == tick) if any(
-            h["ticker"] == tick for h in fd["holdings"]) else None
-        head = (f"{tick} ({market.info(tick)['label']}) is {h['pct']:.1f}% of your fund now, target {h['target_pct']:.1f}%. "
-                if h else f"{tick} ({market.info(tick)['label']}). ")
-        body = " ".join(reasons[:2]) or why or "It's part of the broad core every FirstFund fund starts from."
-        return head + body + " The “How your fund was built” page has the full reasoning."
+        p = a.portfolio
+        named = next(h for h in p.holdings if h.ticker == tick)
+        why = " ".join(r.text for r in p.reasons if r.ticker == tick and r.kind not in ("cap", "dropped"))
+        return (f"{tick} is in the “{dict(SLICES)[p.slice_of(named)]}” part of your fund, {named.weight:.1%} of it. "
+                f"{why}").strip()
 
-    # Questions about fund type or auto-trade: explain, change nothing
-    if _has(t, r"\bcustom\b", r"individual stocks?", r"\betf fund\b"):
-        if _has(t, r"\bpreview\b", r"\bshow me\b", r"what would"):
-            rows = _preview(a.portfolio.risk_level, intake.interests(a.answers), None)
-            if not rows:
-                return "A custom fund swaps each interest's fund for its biggest companies. Pick some interests first."
-            sample = ", ".join(f"{r['ticker']} ({r['weight_pct']}% via {r['from_interest']})" for r in rows[:6])
-            return (f"A custom fund would hold {len(rows)} individual stocks instead of your interest funds: {sample}"
-                    f"{'…' if len(rows) > 6 else ''}. Nothing has changed. To switch, type “{COMMAND_PHRASES['custom']}”.")
-        now = "custom (individual stocks)" if fd["mode"] == "custom" else fd["mode"]
-        return (f"Your fund type is {now}. A custom fund swaps each interest's fund for its biggest companies; the core "
-                f"stays. Ask “preview a custom fund” to see it, type “{COMMAND_PHRASES['custom']}” to switch, or "
-                f"“{COMMAND_PHRASES['etf']}” to go back. Asking never changes anything.")
+    # Questions about auto-trade: explain, change nothing
     if _has(t, r"\bauto[- ]?trad", r"\bauto[- ]?execut", r"\bautomatic trad"):
         state = "on" if rv["auto_trade"] else "off"
         return (f"Auto-trade is {state}. You're Tier {rv['tier']} ({rv['tier_range']}); "
@@ -421,11 +372,11 @@ def _offline_answer(session: Session, text: str) -> str:
     if _has(t, r"\breport\b", r"how am i", r"how is", r"\bdoing\b", r"perform", r"\breturns?\b", r"\bmarket\b"):
         return " ".join(rep["facts"][:3]) + " The full report has every holding and the market picture."
     if _has(t, r"\bhold", r"\bown\b", r"\bin my fund\b", r"\bfund\b", r"\bexplain\b", r"\bwhy\b", r"\bportfolio\b"):
-        rows = "; ".join(f"{h['ticker']} {h['label']} {h['pct']:.1f}% ({_money(h['dollars'])})" for h in fd["holdings"][:6])
-        more = f" and {fd['more_holdings']} more" if fd["more_holdings"] else ""
-        mode = " Individual stocks replace your interest funds (custom fund)." if fd["mode"] == "custom" else ""
-        return (f"Your fund is {fd['risk_label'].lower()}: {rows}{more}.{mode} Ask “why do I own "
-                f"{fd['holdings'][-1]['ticker']}?” about any holding.")
+        top = ""
+        if not _has(t, r"\bwhy\b", r"\bexplain\b"):   # "what do I hold?": the biggest positions too, never all sixty
+            top = " Biggest positions: " + ", ".join(f"{h['ticker']} {h['pct']:.1f}%" for h in fd["holdings"][:6]) + "."
+        return (f"Your fund is {fd['risk_label'].lower()}: {slices.describe(a.portfolio)}.{top} Ask “why do I own” and "
+                "a ticker for the reason behind any holding.")
     return ("I'm answering offline right now (no Claude connection), so I can tell you: what your fund is worth, "
             "what it holds and why, your last paycheck, your bank activity, your next review, your goal and timeline, "
             "today's moves, news, and your report's recommendations.")

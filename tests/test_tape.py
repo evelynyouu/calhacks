@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from app import state
 from app.main import app
 from core import market
+from app.routes.pages import TAPE_HOLDINGS
 from core.broker import get_broker
 from tests.fund_helpers import make_fund
 
@@ -22,7 +23,7 @@ def test_strip_works_before_a_persona_is_picked():
 def test_persona_strip_links_to_markets_and_includes_holdings():
     make_fund("sam")
     r = client.get("/p/sam/tape")
-    assert 'href="/p/sam/markets?s=VTI"' in r.text and 'tabindex="-1"' in r.text and 'aria-hidden="true"' in r.text
+    assert 'href="/p/sam/markets?s=VXUS"' in r.text and 'tabindex="-1"' in r.text and 'aria-hidden="true"' in r.text
 
 
 def test_refresh_returns_only_the_cards():
@@ -66,7 +67,8 @@ def _names(html: str) -> list[str]:
 
 
 def _by_weight(s) -> list[str]:
-    return [h.ticker for h in sorted(s.fund.portfolio.holdings, key=lambda h: -h.weight)]
+    """The fund's biggest TAPE_HOLDINGS positions (a custom index holds ~60; the strip shows the biggest)."""
+    return [h.ticker for h in sorted(s.fund.portfolio.holdings, key=lambda h: -h.weight)][:TAPE_HOLDINGS]
 
 
 def test_landing_page_strip_shows_the_major_indexes_only():
@@ -84,6 +86,7 @@ def test_before_a_fund_is_built_the_strip_shows_indexes():
 
 def test_with_a_fund_the_strip_shows_only_holdings_in_weight_order():
     s = make_fund("sam", stocks=["AAPL"])
+    assert len(s.fund.portfolio.holdings) > TAPE_HOLDINGS
     s.watchlist = ["TSLA", "META"]
     r = client.get("/p/sam/tape").text
     assert _names(r) == _by_weight(s) and "AAPL" in _by_weight(s)
@@ -91,17 +94,17 @@ def test_with_a_fund_the_strip_shows_only_holdings_in_weight_order():
     assert 'aria-label="Your holdings"' in r
 
 
-def test_anything_the_broker_holds_shows_too():
+def test_anything_the_broker_holds_outside_the_fund_shows_too():
     s = make_fund("sam")
-    get_broker().submit("sam", "NVDA", "buy", 50.0, s.fund.today)
+    assert "GLD" not in {h.ticker for h in s.fund.portfolio.holdings}
+    get_broker().submit("sam", "GLD", "buy", 50.0, s.fund.today)
     names = _names(client.get("/p/sam/tape").text)
-    assert names == _by_weight(s) + ["NVDA"]
+    assert names == _by_weight(s) + ["GLD"]
 
 
 def test_a_short_list_repeats_to_fill_the_loop():
-    s = make_fund("sam", interests={"themes": [], "unmatched": []})
-    n = len(s.fund.portfolio.holdings)
-    assert n <= 6
+    make_fund("sam", interests={"themes": [], "unmatched": []})
+    n = TAPE_HOLDINGS   # fewer cards than fill a wide screen
     r = client.get("/p/sam/tape").text
     first = r.split('<div class="tape-group"', 2)[1]
     cards = first.count('class="tape-item') - 1   # minus the price note
@@ -114,4 +117,4 @@ def test_a_short_list_repeats_to_fill_the_loop():
 def test_refresh_keeps_holdings():
     make_fund("sam")
     r = client.get("/tape?cid=sam&part=groups").text
-    assert "VTI" in r and "S&amp;P 500" not in r and r.count('class="tape-group"') == 2
+    assert "BND" in r and "S&amp;P 500" not in r and r.count('class="tape-group"') == 2

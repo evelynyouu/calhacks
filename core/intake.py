@@ -17,7 +17,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Literal
 
-from core.portfolio import BOND_MAX, THEME_LABELS, build_portfolio, level_for_score, worst_year
+from core.portfolio import BOND_MAX, THEME_LABELS, level_for_score, worst_return_for
 
 QuestionKind = Literal["text", "money", "slider", "scale", "choice", "chips"]
 
@@ -41,7 +41,7 @@ class Question:
 
 INTEREST_OPTIONS = sorted(THEME_LABELS.items(), key=lambda kv: kv[1])
 # The steadiest mix's real worst year (2022, when bonds fell too): no answer below this can be met.
-STEADIEST_WORST = abs(worst_year(build_portfolio(1, [], bond_share=BOND_MAX).holdings)[1])
+STEADIEST_WORST = abs(worst_return_for(1, [], [], bond_share=BOND_MAX))   # the same check the builder uses
 MAX_MONEY = 10_000_000
 
 # The goal is a choice card, or "Something else" typed (stored as "other" plus answers["goal_text"]).

@@ -19,7 +19,7 @@ Nothing here reads a price. The inputs are the answers, the dates, the accepted 
 profile/feed, so a market move can't create a proposal (tests/test_targets.py checks that).
 
 Glide path, custom and spending-mode funds: the glide floor is applied only to the default, answer-built fund
-(core/builder.py). Saahil's custom_mode / spending_mode builds don't take a bond share, so they're left alone.
+(core/builder.py).
 """
 from __future__ import annotations
 
@@ -204,7 +204,8 @@ def propose_answers(acct, changes: dict) -> dict | None:
     target = goal_date(answers.get("horizon"), acct.today) if "horizon" in changes else acct.target_date
     years = (target - acct.today).days / DAYS_PER_YEAR if target else None
     glide = acct.glide_bonds if "horizon" not in changes else None   # a new goal date starts a new glide path
-    after = with_glide(build_fund(answers), answers, glide, years)
+    from core.fund import _spending
+    after = with_glide(build_fund(answers, spending=_spending(acct.customer_id)), answers, glide, years)
     names = ", ".join(f"{_ANSWER_NAMES[k]} to “{intake.answer_label(k, answers)}”" for k in changes)
     because = f"you changed {names}"
     if "horizon" in changes:

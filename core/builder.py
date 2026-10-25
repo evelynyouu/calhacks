@@ -10,7 +10,8 @@ from __future__ import annotations
 
 from core import intake
 from core.models import Portfolio, Reason
-from core.portfolio import RISK_LABELS, bond_share_for, build_portfolio, level_for_score, warnings_from
+from core.portfolio import (RISK_LABELS, bond_share_for, build_portfolio, level_for_score, warnings_from,
+                            worst_return_for)
 
 # The riskiest level for each horizon. Money needed in under 3 years can't wait out a crash
 # (US stocks took about 5 years to recover from 2008), so it stays conservative.
@@ -20,7 +21,8 @@ _PART_NAMES = {"risk_priority": "what matters most", "risk_range": "the $1,000 r
                "max_drop": "the drop you could live with"}
 
 
-def build(answers: dict) -> Portfolio:
+def build(answers: dict, spending=None) -> Portfolio:
+    """spending: the customer's core/spending.Spend list (None = leave out the "where you spend" slice)."""
     themes, stocks = intake.interests(answers), intake.stocks(answers)
     reasons: list[Reason] = []
     score = intake.risk_score(answers)
@@ -35,18 +37,20 @@ def build(answers: dict) -> Portfolio:
         why.append("horizon")
     max_drop = answers.get("max_drop")
     if max_drop is not None:
-        fit = _fits_drop(ceiling, max_drop, themes, stocks)
+        fit = _fits_drop(ceiling, max_drop, themes, stocks, spending)
         if fit < ceiling:
             ceiling = fit
             why.append("drop")
 
     override = bool(answers.get("override")) and ceiling < score
     used = score if override else ceiling
-    p = build_portfolio(level_for_score(used), themes, stocks, bond_share=bond_share_for(used), score=used)
+    p = build_portfolio(level_for_score(used), themes, stocks, bond_share=bond_share_for(used), score=used,
+                        spending=spending)
     reasons += _horizon_reason(answers, cap, why, used, override)
     reasons += _drop_reason(answers, p, why, used, override)
     if override:
-        built = build_portfolio(level_for_score(ceiling), themes, stocks, bond_share=bond_share_for(ceiling))
+        built = build_portfolio(level_for_score(ceiling), themes, stocks, bond_share=bond_share_for(ceiling),
+                                spending=spending)
         reasons.append(Reason("override", f"You chose the {RISK_LABELS[p.risk_level].lower()} mix your answers "
                                           f"pointed to, over our suggestion of {RISK_LABELS[built.risk_level].lower()} "
                                           f"({_limits(why)}). That's your call; you can switch back any time.",
@@ -71,13 +75,13 @@ def override_offer(p: Portfolio, answers: dict) -> dict | None:
     return None
 
 
-def _fits_drop(start: int, max_drop: float, themes, stocks) -> int:
+def _fits_drop(start: int, max_drop: float, themes, stocks, spending=None) -> int:
     """The highest score <= start whose fund's real worst year is within max_drop; 0 if none is."""
     seen = {}
     for s in range(start, -1, -1):
         key = (bond_share_for(s), level_for_score(s))
         if key not in seen:
-            seen[key] = build_portfolio(key[1], themes, stocks, bond_share=key[0]).worst_year_return
+            seen[key] = worst_return_for(key[1], themes, stocks, bond_share=key[0], spending=spending)
         if seen[key] >= -max_drop:
             return s
     return 0
@@ -144,8 +148,10 @@ def _drop_reason(answers: dict, p: Portfolio, why: list[str], used: int, overrid
     worst = f"{p.worst_year}, {abs(p.worst_year_return):g}%"
     bonds = next((h.weight for h in p.holdings if h.ticker == "BND"), 0.0)
     lowered = "drop" in why and not override
+    how = ("Worst years use the real 2008 and 2022 returns of the market, VXUS and BND; single companies outside "
+           "your US index are estimated from how much they move with the market.")
     if override and not within:
-        text = (f"This mix's worst real year was {worst}, more than the {d:g}% drop you said you could live with. "
+        text = (f"This mix's worst year was {worst}, more than the {d:g}% drop you said you could live with. "
                 f"You chose it over our suggestion.")
     elif not within:
         text = (f"You said you could live with a {d:g}% drop in a year. No mix of these funds stayed within that in "
@@ -156,8 +162,8 @@ def _drop_reason(answers: dict, p: Portfolio, why: list[str], used: int, overrid
                 f"further than that in 2008 or 2022: a risk score of {used}, {bonds:.0%} bonds. Its worst year was "
                 f"{worst}.")
     else:
-        text = f"This mix's worst real year was {worst}, within the {d:g}% drop you said you could live with."
-    return [Reason("drop", text, facts={"max_drop": d, "worst_year": p.worst_year, "worst_return": p.worst_year_return,
+        text = f"This mix's worst year was {worst}, within the {d:g}% drop you said you could live with."
+    return [Reason("drop", f"{text} {how}", facts={"max_drop": d, "worst_year": p.worst_year, "worst_return": p.worst_year_return,
                                         "lowered": lowered, "warn": not within})]
 
 

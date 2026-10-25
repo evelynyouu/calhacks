@@ -17,9 +17,10 @@ from core.broker import get_broker, values
 from core.models import Portfolio, Trade
 from core.policy import tier_for
 from core.builder import build as build_fund
-from core.portfolio import build_custom_portfolio, build_spending_portfolio
+from core.spending import spending_profile
 from core.profile import get_profile
-from core.rebalance import allocate_new_money
+from core.rebalance import NEW_MONEY_PICKS, allocate_new_money
+
 
 AUTO_EXECUTE_TIER = 4   # Tier 4+ ($50K+): trades run immediately when auto_trade is on
 
@@ -51,28 +52,21 @@ class FundAccount:
 
 
 def build(acct: FundAccount) -> Portfolio:
-    """(Re)build the fund from the intake answers.
-
-    Priority:
-      1. custom_mode=True   -> build_custom_portfolio (each interest's fund swapped for its top companies)
-      2. spending_mode=True -> build_spending_portfolio (companies picked from Nessie spending;
-                               falls back to build_portfolio if no Nessie signals)
-      3. default            -> core.builder.build (the answer-driven fund, with a Reason for every choice)
-    """
+    """(Re)build the fund from the intake answers and the customer's spending (core/builder.py), keeping any
+    accepted glide step (core/targets.py)."""
+    from core import targets   # targets reads this module
     acct.risk_score = intake.risk_score(acct.answers)
-    if acct.answers.get("custom_mode"):
-        level = intake.risk_level(acct.risk_score)
-        acct.portfolio = build_custom_portfolio(level, intake.interests(acct.answers), intake.stocks(acct.answers),
-                                                acct.answers.get("spending_stocks", []))
-    elif acct.answers.get("spending_mode"):
-        level = intake.risk_level(acct.risk_score)
-        acct.portfolio = build_spending_portfolio(acct.customer_id, level, intake.interests(acct.answers),
-                                                  intake.stocks(acct.answers))
-    else:
-        from core import targets   # targets reads this module
-        acct.portfolio = targets.apply_glide(acct, build_fund(acct.answers))   # keeps an accepted glide step
+    acct.portfolio = targets.apply_glide(acct, build_fund(acct.answers, spending=_spending(acct.customer_id)))
     acct.invest_pct = float(acct.answers.get("paycheck_pct", acct.invest_pct))
     return acct.portfolio
+
+
+def _spending(cid: str):
+    """Where the customer spends, from the bank; [] (no spend slice, with a note) for a customer it doesn't know."""
+    try:
+        return spending_profile(cid)
+    except KeyError:
+        return []   # no bank record: no purchases, and the fund says so
 
 
 def start(acct: FundAccount, on: date | None = None) -> list[Trade]:
@@ -89,10 +83,11 @@ def start(acct: FundAccount, on: date | None = None) -> list[Trade]:
     return trades
 
 
-def invest(acct: FundAccount, amount: float, on: date | None = None) -> list[Trade]:
-    """Buy `amount` dollars, sending it to the funds furthest below target."""
+def invest(acct: FundAccount, amount: float, on: date | None = None, picks: int | None = None) -> list[Trade]:
+    """Buy `amount` dollars, sending it to the holdings furthest below target. `picks` limits it to that many
+    (a paycheck buys NEW_MONEY_PICKS; the first deposit buys everything)."""
     on = on or acct.today
-    plan = allocate_new_money(acct.portfolio, values(acct.customer_id, on), amount)
+    plan = allocate_new_money(acct.portfolio, values(acct.customer_id, on), amount, picks)
     return [get_broker().submit(acct.customer_id, t, "buy", d, on) for t, d in plan.items() if d > 0]
 
 
@@ -111,7 +106,7 @@ def paycheck(acct: FundAccount) -> dict:
     trades, transfer_id = [], None
     if amount > 0 and acct.portfolio:
         transfer_id = nessie.transfer_to_investing(cid, amount)
-        trades = invest(acct, amount)
+        trades = invest(acct, amount, picks=NEW_MONEY_PICKS)
         acct.contributed += amount
     entry = {"on": acct.today, "paycheck": pay, "pct": acct.invest_pct, "invested": float(amount),
              "transfer_id": transfer_id, "trades": trades}
