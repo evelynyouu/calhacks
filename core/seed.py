@@ -134,18 +134,28 @@ def _delete_accounts(account_ids) -> None:
 
 # The ids file is updated from the request thread and from background rebuilds; every
 # read-modify-write goes through this lock so neither overwrites the other.
-_ids_lock = threading.RLock()
+_ids_lock = nessie.IDS_LOCK
 _background: list[threading.Thread] = []
 PAUSE_BACKGROUND = False   # tests set this to look at the fast path before the rebuild runs
 
 
 def _update_ids(change, save: bool = True) -> dict:
+    """Saved ids also go to the Nessie registry, so another server (or this one after its disk is
+    wiped) finds the current accounts. "_seq" orders the copies; the newest wins."""
+    if save:
+        nessie.pull_ids()   # in any mode: a seeder run on an old file mustn't publish it over a newer reset
     with _ids_lock:
         ids = nessie.load_ids()
+        before = json.dumps(ids, sort_keys=True)
         change(ids)
+        save = save and json.dumps(ids, sort_keys=True) != before   # nothing changed: nothing to write
         if save:
+            ids["_seq"] = max(time.time_ns(), ids.get("_seq", 0) + 1)
             nessie.save_ids(ids)
-        return ids
+        snapshot = json.loads(json.dumps(ids))
+    if save:
+        nessie.publish_ids(snapshot)   # outside the lock: a slow Nessie mustn't hold up a reset click
+    return ids
 
 
 def seed(personas: list[str] | None = None, reset: str | None = None, save: bool = True,

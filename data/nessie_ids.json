@@ -5,6 +5,7 @@
     "groceries": "8eac0d4a-1cf2-4768-97ec-e6c09151690a",
     "transit": "70b1363f-d337-4aeb-9381-0770e149dee0"
   },
+  "_seq": 1792882824806687000,
   "_spares": {
     "alex": {
       "accounts": {
@@ -53,12 +54,12 @@
     },
     "sam": {
       "accounts": {
-        "card": "a9e55467-7959-4277-8a78-6dcc8a0ace04",
-        "checking": "647c1741-b071-42ca-84d5-8cf2fbc43ee1",
-        "investing": "b24aad61-f421-4634-b98a-763734342d49",
-        "savings": "01bed4b6-7fd5-4f0f-a2ae-5cdaaaab6644"
+        "card": "4606fd5d-d8cd-4c34-b3bc-0ab5ecc068ca",
+        "checking": "2a6e4fa9-def6-467e-a35a-68c038207713",
+        "investing": "4477b1f3-7ca9-4902-9c46-15ac8d35a7eb",
+        "savings": "e11e7c8f-89a4-4afb-b63b-9d44fc7e7701"
       },
-      "customer_id": "0ff33301-1692-49b8-b075-5de1a7bba523",
+      "customer_id": "fc4ab3b6-ce2d-48dc-9417-ad57e6824174",
       "seed": {
         "card": 0,
         "checking": 575,
@@ -114,12 +115,12 @@
   },
   "sam": {
     "accounts": {
-      "card": "9b54c74e-2d20-48f6-9f5f-8949d03efde5",
-      "checking": "9928b8d6-e588-40fd-9d3c-b1e05a41ce28",
-      "investing": "406dd9ec-bf14-4be9-aa45-881900735784",
-      "savings": "593c0833-649b-49ea-94df-3002fb350ce4"
+      "card": "d8a7bd8a-756f-484a-b153-6b8710f108f0",
+      "checking": "0e907f5f-3e65-438d-9d1f-054384fa3c9e",
+      "investing": "cd4718d1-dbb5-4bbc-a810-073ba11588ca",
+      "savings": "6cd26f41-d48b-4b68-bbba-e5b7f06ab813"
     },
-    "customer_id": "0c9a1656-489c-4d42-8b17-48acb2174eee",
+    "customer_id": "a3945e0d-7f56-4f47-af49-11deb4f5eced",
     "seed": {
       "card": 0,
       "checking": 575,

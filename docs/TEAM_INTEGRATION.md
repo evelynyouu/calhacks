@@ -30,8 +30,9 @@ functions keep their names, and `core/models.py` is untouched. Details of each c
   on screen, and the click still works. The money panel badge then says "Nessie offline: demo data".
   Restart the server to go back to live.
 - **Reset in live mode is instant** (it swaps in a pre-built copy of the persona). It changes
-  `data/nessie_ids.json`: **if you reset in live mode, commit that file**, or other machines point
-  at deleted accounts. If that happens anyway, the app falls back to demo data with "re-seed or reset
+  `data/nessie_ids.json`, and the new ids are also saved in Nessie, so other machines and Render pick
+  them up on their own: **no need to commit the file after a reset** any more. If ids still end up
+  pointing at deleted accounts (e.g. Nessie unreachable during the reset), the app falls back to demo data with "re-seed or reset
   this persona"; pressing Reset fixes it.
 - Health check before a demo: `python scripts/nessie_spike.py` (prints PASS) and
   `NESSIE_MODE=live python -m core.profile --diff` (prints OK for all four).
@@ -66,7 +67,7 @@ Three PRs touching your files were merged on 2026-10-24 (Evelyn approved merging
 
 - `data/personas.json` is still yours and still the source of truth. The seeder builds the Nessie
   accounts from it. **If you change a persona's numbers,** re-seed that persona so live matches:
-  `NESSIE_MODE=live python -m scripts.seed_nessie --reset <cid>`, then commit `data/nessie_ids.json`.
+  `NESSIE_MODE=live python -m scripts.seed_nessie --reset <cid>` (the new ids are saved in Nessie too).
 - If `monthly_bills` is more than the bills listed in `upcoming_bills`, the gap shows as one
   "Other bills" line (so bills actually paid add up to `monthly_bills`).
 - Payday uses `safe_monthly_amount / 2` per paycheck, rounded down to $5. Sam's demo line is still

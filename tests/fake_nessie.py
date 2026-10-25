@@ -61,6 +61,9 @@ class FakeNessie:
             self.merchants[mid] = {"_id": mid, **body}
             return {"code": 201, "objectCreated": self.merchants[mid]}
 
+        if method == "GET" and path == "/accounts":
+            return list(self.accounts.values())
+
         m = re.fullmatch(r"/customers/([^/]+)(/accounts)?", path)
         if m:
             cid, sub = m.groups()

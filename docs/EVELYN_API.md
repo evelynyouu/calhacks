@@ -32,8 +32,10 @@ Payday rule: invest only what's left after bills due by the next paycheck, spend
 the rest of the run, starting from the last live numbers each persona showed, and the click that hit the
 outage still completes. `nessie.offline_reason()` says why. Restart the server to go back to live.
 
-**`data/nessie_ids.json` changes on every live reset** (the persona moves to new accounts). If you
-reset in live mode, commit that file, or teammates' copies will point at deleted accounts.
+**`data/nessie_ids.json` changes on every live reset** (the persona moves to new accounts). Every
+change is also written to Nessie (a "FirstFund registry" account; `nessie.publish_ids`), and a server
+reads the newest copy on start and whenever its ids point at deleted accounts (`nessie.pull_ids`).
+So you don't need to commit the file after a reset, and a Render restart finds the current accounts.
 
 `python -m core.profile --diff` compares live with fixture and flags any money difference over $1.
 
@@ -50,6 +52,7 @@ Every transaction we write starts with one of these, and only tagged transaction
 | `[spend]` | day-to-day spending (seed history, and the days fast-forward skips) |
 | `[bill]` | bill payments |
 | `[seed]` | the seeder moving leftover history to savings |
+| `[registry]` | a copy of the ids file on the registry account (not a persona account) |
 
 Don't call `DELETE /data` with the shared key: it wipes every team's data.
 
