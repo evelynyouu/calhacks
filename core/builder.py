@@ -58,6 +58,19 @@ def build(answers: dict) -> Portfolio:
     return p
 
 
+def override_offer(p: Portfolio, answers: dict) -> dict | None:
+    """What the fund card offers: "Your answers pointed to X; we built Y because Z. [Use X instead]", or,
+    after the customer chose X, a way back to our suggestion. None when no limit lowered the mix."""
+    if p.pointed_level:
+        because = " ".join(r.text for r in p.reasons if r.kind in ("horizon", "drop") and r.facts.get("lowered"))
+        return {"use": "answers", "pointed": RISK_LABELS[p.pointed_level], "built": p.risk_label, "because": because}
+    chosen = next((r for r in p.reasons if r.kind == "override"), None)
+    if answers.get("override") and chosen:
+        return {"use": "suggested", "built": p.risk_label,
+                "suggested": RISK_LABELS[chosen.facts["suggested_level"]], "because": chosen.text}
+    return None
+
+
 def _fits_drop(start: int, max_drop: float, themes, stocks) -> int:
     """The highest score <= start whose fund's real worst year is within max_drop; 0 if none is."""
     seen = {}

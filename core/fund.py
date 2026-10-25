@@ -132,6 +132,13 @@ def set_stocks(acct: FundAccount, tickers: list[str]) -> Portfolio:
     return build(acct)
 
 
+def set_override(acct: FundAccount, use_answers: bool) -> Portfolio:
+    """Build what the answers pointed to (True) or our suggestion within the limits (False). Like interests:
+    targets change now, trades follow new money or a rebalance."""
+    acct.answers["override"] = bool(use_answers)
+    return build(acct)
+
+
 def set_invest_pct(acct: FundAccount, pct: float) -> None:
     acct.invest_pct = acct.answers["paycheck_pct"] = max(0.0, min(100.0, float(pct)))
 

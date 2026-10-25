@@ -18,7 +18,7 @@ from agent import claude_agent
 from agent.tools import INDEXES, news_tickers
 from app.routes.auth import auth_disabled, csrf_token
 from app import state
-from core import feed, fund, intake, market, nessie
+from core import builder, feed, fund, intake, market, nessie
 from core.broker import get_broker, values
 from core.intake import QUESTIONS, AnswerError, parse
 from core.market import ETFS
@@ -85,7 +85,8 @@ def _ctx(request: Request, cid: str, **extra) -> dict:
         "activity": nessie.recent_activity(cid), "nessie_mode": nessie.mode(), "nessie_offline": nessie.offline_reason(),
         "etfs": ETFS, "theme_labels": THEME_LABELS, "live_market": market.source("SPY") == "live",
         "fast_forwarded": a.today > market.today(), "claude_on": claude_agent._get_client() is not None,
-        "login_on": not auth_disabled(), **extra,
+        "login_on": not auth_disabled(),
+        "override": builder.override_offer(a.portfolio, a.answers) if a.portfolio else None, **extra,
     }
 
 
@@ -435,6 +436,19 @@ async def settings(request: Request, cid: str):
     except ValueError:
         pass
     return RedirectResponse(f"/p/{cid}/account?saved=notifications#notifications", status_code=303)
+
+
+@router.post("/p/{cid}/override", response_class=HTMLResponse)
+def override(request: Request, cid: str, use: str = Form(...)):
+    """The customer picks the mix their answers pointed to, or goes back to our suggestion."""
+    if use not in ("answers", "suggested"):
+        raise HTTPException(400)
+    s = _need_fund(cid)
+    p = fund.set_override(s.fund, use == "answers")
+    say = (f"Done: your fund is now {p.risk_label}, the mix your answers pointed to. New paychecks steer toward it; "
+           f"nothing is sold unless you confirm a rebalance." if use == "answers" else
+           f"Done: back to our suggestion, {p.risk_label}. New paychecks steer toward it.")
+    return _panels(request, cid, say=say)
 
 
 @router.post("/p/{cid}/interests")
