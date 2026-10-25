@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 from agent.prompts import RUNDOWN_INSTRUCTION, SUGGESTED_PROMPTS, SYSTEM_PROMPT
 from agent.tools import TOOLS, headlines, market_today, news_tickers, run_tool
 from app.state import Session
+from core.followups import HIGH_RISK_LEVEL, HORIZON_LABELS
 from core.intake import QUESTIONS
 from core.market import ETFS
 from core.report import build_report
@@ -43,6 +45,38 @@ def question_text(session: Session) -> str:
     return session.question.prompt if session.question else ""
 
 
+def followup_text(fu) -> str:
+    """A follow-up's question (core/followups.py). Claude may reword it in one sentence; numbers come only
+    from Python, so a rewording that adds or changes a number is dropped. Offline: the Python text."""
+    if _get_client() is None:
+        return fu.text
+    text = explain(fu.facts + [f"Question to ask: {fu.text}"],
+                   "Reword this follow-up question in one short, friendly sentence, keeping it a question. "
+                   "Keep every number exactly as written. No advice, no judgment. Reply with the question only.",
+                   fallback=fu.text)
+    nums = lambda t: set(re.findall(r"\d+(?:[.,]\d+)*", t))
+    return text if text and "\n" not in text and nums(text) <= nums(fu.text) else fu.text
+
+
+_HORIZON_PHRASES = {"under_3": "You expect to need this money in under 3 years.",
+                    "3_7": "You expect to need this money in 3 to 7 years.",
+                    "7_15": "You expect to need this money in 7 to 15 years.",
+                    "15_plus": "You expect to need this money in 15 years or more.",
+                    "not_sure": "You're not sure yet when you'll need this money."}
+
+
+def _followup_facts(answers: dict, level: int) -> list[str]:
+    """What the intake follow-ups changed or learned, in plain words (Python-written)."""
+    facts = list(answers.get("followup_notes", []))
+    h = answers.get("horizon")
+    if h in HORIZON_LABELS:
+        facts.append(_HORIZON_PHRASES.get(h, f"You expect to need this money in: {HORIZON_LABELS[h].lower()}."))
+        if h == "under_3" and level >= HIGH_RISK_LEVEL:
+            facts.append("A growth-leaning fund can be down in any single year, so money needed within 3 years is "
+                         "often kept in steadier funds. It's your call; ask me about it any time.")
+    return facts
+
+
 def fund_ready(session: Session) -> str:
     """The first message after the fund is built: Claude explains it, or a Python summary offline."""
     a, p = session.fund, session.fund.portfolio
@@ -59,6 +93,7 @@ def fund_ready(session: Session) -> str:
     unmatched = a.answers.get("interests", {}).get("unmatched", [])
     if unmatched:
         facts.append("No fund matches these yet, so they were noted but not added: " + ", ".join(unmatched) + ".")
+    facts += _followup_facts(a.answers, p.risk_level)
     offline = (f"Your fund is ready: {p.risk_label.lower()}, with {core}"
                + (f", plus {tilts} for your interests" if tilts else "") + f". The yearly fee is {p.annual_fee_pct:.2f}%. "
                + " ".join(facts[5:]) + " Press “Paycheck arrives” to watch a paycheck invest itself, or ask me anything.")

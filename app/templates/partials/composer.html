@@ -1,13 +1,15 @@
 {# The input under the chat. During the intake it matches the question: text, dollars, slider, scale,
-   multiple choice or chips. After the intake it's a free-text box for Claude. #}
+   multiple choice or chips. A follow-up (core/followups.py) reuses the same inputs plus a "Keep my answer"
+   button, and the progress counter stays on the question it follows. After the intake it's a free-text box. #}
 <div id="composer" {% if swap_oob %}hx-swap-oob="true"{% endif %} class="border-t border-ink/10 px-5 pt-3 pb-4">
-  {% set q = s.question %}
+  {% set fu = s.followup %}
+  {% set q = fu.question if fu else s.question %}
   {% if q %}
   <div class="mb-2 flex items-center justify-between gap-3">
     <div class="flex gap-1" aria-hidden="true">
       {% for _ in questions %}<span class="h-1 w-5 rounded-full {% if loop.index0 < s.step %}bg-moss-500{% elif loop.index0 == s.step %}bg-moss-500/50{% else %}bg-ink/10{% endif %}"></span>{% endfor %}
     </div>
-    <span class="text-xs text-ink/50">Question {{ s.step + 1 }} of {{ questions | length }}</span>
+    <span class="text-xs text-ink/50">Question {{ s.step + 1 }} of {{ questions | length }}{% if fu %} · quick follow-up{% endif %}</span>
   </div>
   {% if q.help %}<p class="mb-2 text-sm text-ink/60">{{ q.help }}</p>{% endif %}
   <form hx-post="/p/{{ cid }}/answer" hx-target="#chat-messages" hx-swap="beforeend" hx-indicator="#typing"
@@ -23,7 +25,7 @@
     <div class="composer-box">
       <span class="pl-1 text-lg text-ink/50">$</span>
       <input name="value" inputmode="decimal" required autofocus placeholder="0" aria-label="{{ q.prompt }} (US dollars)"
-             {% if profile.invested_balance %}value="{{ '%d' % profile.invested_balance }}"{% endif %}>
+             {% if not fu and profile.invested_balance %}value="{{ '%d' % profile.invested_balance }}"{% endif %}>
       <span class="text-xs text-ink/40">USD</span>
       <button class="btn">Send</button>
     </div>
@@ -68,9 +70,18 @@
       </label>
       {% endfor %}
     </div>
+    {% if fu %}
+    <div class="flex justify-end"><button class="btn whitespace-nowrap">Add these</button></div>
+    {% else %}
     <div class="composer-box">
       <input name="other" placeholder="Other: type anything, like “pet care” or “coffee”" aria-label="Other interests">
       <button class="btn whitespace-nowrap">Build my fund</button>
+    </div>
+    {% endif %}
+    {% endif %}
+    {% if fu %}
+    <div class="flex justify-end">
+      <button name="keep" value="1" formnovalidate class="btn-ghost">{{ fu.keep_label }}</button>
     </div>
     {% endif %}
   </form>
