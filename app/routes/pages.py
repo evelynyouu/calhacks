@@ -125,14 +125,17 @@ def dashboard(request: Request, cid: str):
 
 
 def _today(a) -> dict:
-    """Each holding's value and move today, and the fund's dollar move (from each price's day change)."""
+    """Each holding's value and move today, and the fund's dollar move (from each price's day change).
+    The list opens with the TOP_POSITIONS biggest; `rest` is behind "Show all". The dollar move sums every holding."""
     vals = values(a.customer_id, a.today)
     q = market.quotes(list(vals), a.today)
-    rows = [{"ticker": t, "info": market.info(t), "value": v, "quote": q.get(t)}
+    where = {h.ticker: dict(slices.SLICE_LABELS)[a.portfolio.slice_of(h)] for h in a.portfolio.holdings} if a.portfolio else {}
+    rows = [{"ticker": t, "info": market.info(t), "value": v, "quote": q.get(t), "slice": where.get(t, "")}
             for t, v in sorted(vals.items(), key=lambda kv: -kv[1])]
     day = sum(r["value"] * r["quote"]["change_pct"] / (100 + r["quote"]["change_pct"]) for r in rows if r["quote"])
     before = sum(vals.values()) - day
-    return {"rows": rows, "day_change": day, "day_pct": day / before * 100 if before else 0.0}
+    top, rest = slices.top_positions(rows)
+    return {"rows": top, "rest": rest, "day_change": day, "day_pct": day / before * 100 if before else 0.0}
 
 
 @router.get("/p/{cid}/how", response_class=HTMLResponse)

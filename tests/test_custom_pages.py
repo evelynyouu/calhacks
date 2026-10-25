@@ -79,3 +79,44 @@ def test_the_heads_up_and_override_blocks_stay():
     s = make_custom_fund("sam")
     s.fund.portfolio.overlap_warnings = ["A note worth reading."]
     assert "Heads up:" in client.get("/p/sam").text and "A note worth reading." in client.get("/p/sam").text
+
+
+# ---------- the Portfolio tab's list ----------
+
+def test_the_list_shows_the_ten_biggest_with_a_show_all_for_the_rest():
+    from app.routes import pages
+    s = make_custom_fund("sam", 10_000)
+    t = pages._today(s.fund)
+    assert len(t["rows"]) == slices.TOP_POSITIONS == 10 and len(t["rest"]) == 48
+    assert [r["value"] for r in t["rows"]] == sorted((r["value"] for r in t["rows"]), reverse=True)
+    assert min(r["value"] for r in t["rows"]) >= max(r["value"] for r in t["rest"])
+    html = client.get("/p/sam").text
+    assert 'id="all-positions"' in html and "Show all 58 positions" in text(html)
+    assert html.count('href="/p/sam/markets?s=') >= 58
+
+
+def test_the_days_dollar_move_still_sums_every_holding_not_only_the_ten_shown(monkeypatch):
+    from app.routes import pages
+    from core import market
+    s = make_custom_fund("sam", 10_000)
+    quotes = lambda tickers, on=None: {t: {"change_pct": 1.0, "price": 1.0, "source": "sim"} for t in tickers}   # noqa: E731
+    monkeypatch.setattr(market, "quotes", quotes)
+    t = pages._today(s.fund)
+    everything = t["rows"] + t["rest"]
+    total = sum(r["value"] for r in everything)
+    assert t["day_change"] == pytest.approx(total * 0.01 / 1.01, rel=1e-6)           # a flat +1% on all 58 positions
+    shown, hidden = (sum(r["value"] for r in part) * 0.01 / 1.01 for part in (t["rows"], t["rest"]))
+    assert hidden > 0 and t["day_change"] == pytest.approx(shown + hidden)          # the 48 behind "Show all" count too
+
+
+def test_a_small_fund_has_no_show_all():
+    from app.routes import pages
+    from tests.fund_helpers import make_fund
+    s = make_fund("sam")                                           # five or six holdings
+    assert pages._today(s.fund)["rest"] == [] and 'id="all-positions"' not in client.get("/p/sam").text
+
+
+def test_each_position_names_the_slice_it_belongs_to():
+    make_custom_fund("sam")
+    page = text(client.get("/p/sam").text)
+    assert "Target" in page and "Where you spend" in page and "Your US index" in page

@@ -21,6 +21,7 @@ BLURBS = {
     "added": "Companies you added yourself.",
 }
 TOP_POSITIONS = 10        # the Portfolio tab lists this many before "Show all"
+SLICE_LABELS = SLICES
 
 
 def view(p: Portfolio) -> list[dict]:
