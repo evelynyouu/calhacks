@@ -64,7 +64,14 @@ def test_plain_answers_trip_nothing(sam):
 @pytest.mark.parametrize("goal", ["idk", "x", "money", "Not sure!", "??"])
 def test_unclear_goal_fires(goal):
     fu = check(ans(goal=goal), "goal")
-    assert fu.key == "unclear_goal" and ("grow", "Just grow my money") in fu.options
+    assert fu.key == "unclear_goal" and ("wealth", "Growing my wealth") in fu.options
+    fu = check(ans(goal="other", goal_text=goal), "goal")                    # the structured form
+    assert fu and fu.key == "unclear_goal"
+
+
+def test_unclear_goal_never_fires_on_a_card():
+    for v, _ in intake.GOAL_OPTIONS:
+        assert fired(ans(goal=v), "goal") is None, v
 
 
 @pytest.mark.parametrize("goal", ["a car", "money for a house", "Retire at 60", "travel"])
@@ -73,9 +80,9 @@ def test_unclear_goal_near_miss(goal):
 
 
 def test_unclear_goal_choice_sets_the_goal():
-    a = ans(goal="idk")
-    shown = apply(check(a, "goal"), a, "grow")
-    assert shown == "Just grow my money" and a["goal"] == "Just grow my money"
+    a = ans(goal="other", goal_text="idk")
+    shown = apply(check(a, "goal"), a, "wealth")
+    assert shown == "Growing my wealth" and a["goal"] == "wealth" and intake.goal_label(a) == "Growing my wealth"
 
 
 def test_start_over_balance(sam):
@@ -254,7 +261,7 @@ def test_keep_value_is_not_an_option():
 
 # ---------- Through the route ----------
 
-INTAKE = [{"value": "a car"}, {"value": "$2,500"}, {"value": "12"}, {"value": "protect"}, {"value": "medium"},
+INTAKE = [{"value": "", "other": "a car"}, {"value": "$2,500"}, {"value": "12"}, {"value": "protect"}, {"value": "medium"},
           {"value": "45"}, {"value": "3to7"}, {"values": ["tech"], "other": ""}]
 
 
@@ -281,20 +288,21 @@ def test_full_intake_with_a_followup_in_the_middle_builds_the_fund():
 def test_keep_through_the_route_and_bad_followup_answer():
     client.post("/p/sam/link", data={"checking": "checking", "investing": "investing"})
     client.get("/p/sam")
-    client.post("/p/sam/answer", data={"value": "idk"})
+    client.post("/p/sam/answer", data={"value": "", "other": "idk"})
     s = state.get("sam")
     assert s.followup.key == "unclear_goal" and s.step == 0
     r = client.post("/p/sam/answer", data={"value": "nope"})
     assert "Pick one of the options" in r.text and s.followup
     r = client.post("/p/sam/answer", data={"keep": "1", "value": ""})
-    assert "Keep my answer" in r.text and s.fund.answers["goal"] == "idk" and s.step == 1
+    assert "Keep my answer" in r.text and s.fund.answers["goal"] == "other" and s.step == 1
+    assert s.fund.answers["goal_text"] == "idk"
     assert "How much do you want to put in to start?" in r.text
 
 
 def test_money_followup_keep_skips_validation():
     client.post("/p/sam/link", data={"checking": "checking", "investing": "investing"})
     client.get("/p/sam")
-    client.post("/p/sam/answer", data={"value": "A house in 2035"})
+    client.post("/p/sam/answer", data={"value": "home"})
     r = client.post("/p/sam/answer", data={"value": "$50,000"})
     assert "$50,000 is more than the $12,575" in r.text and 'formnovalidate' in r.text
     client.post("/p/sam/answer", data={"keep": "1"})

@@ -24,7 +24,7 @@
           <p class="text-sm text-ink/60">Demo customer · id <code>{{ cid }}</code> · member tier {{ tier.tier }} ({{ tier.balance_range }})</p>
         </div>
       </div>
-      <p class="mt-3 text-sm text-ink/60">Your goal: “{{ a.answers.goal }}”</p>
+      <p class="mt-3 text-sm text-ink/60">Your goal: {{ goal_label(a.answers) }}</p>
     </section>
 
     <section id="linked" class="card scroll-mt-4">

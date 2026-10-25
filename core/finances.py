@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 
+from core.intake import goal_label
 from core.models import FinancialProfile
 from core.readiness import TARGET_CUSHION_MONTHS
 
@@ -73,7 +74,7 @@ def build_finances(profile: FinancialProfile, answers: dict, fund_value: float, 
         "fund_value": round(fund_value, 2), "net_worth": round(net_worth, 2),
         "fund_share_of_net_worth_pct": round(fund_value / net_worth * 100, 1) if net_worth > 0 else None,
         "bond_share": bond_share, "stock_share": round(1 - bond_share, 4), "interest_share": interest_share,
-        "fee_dollars": fee_dollars, "goal": answers.get("goal"), "typical_in_10_years": projection_typical,
+        "fee_dollars": fee_dollars, "goal": goal_label(answers), "typical_in_10_years": projection_typical,
         "crash_pct": CRASH_PCT, "crash_fund_drop_pct": drop, "crash_dollars": round(fund_value * drop / 100, 2),
         "comfort_drop_pct": comfort, "within_comfort": None if comfort is None else drop <= comfort,
     }

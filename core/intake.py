@@ -4,6 +4,7 @@ Each question says what input the chat shows for it:
   text   open-ended, typed            money   a dollar amount, typed
   slider a number in a range          scale   1 to 10
   choice up to 5 options              chips   pick many, plus "Other" (typed)
+A choice can also offer a typed "Something else" box (Question.other); the goal question does.
 
 The risk questions ask what the customer is comfortable with, not what they'd "do" in a test:
 there are no wrong answers. The two preference answers (what matters most, the $1,000 range) map to
@@ -35,6 +36,7 @@ class Question:
     unit: str = ""                       # "%" for sliders
     ends: tuple[str, str] = ("", "")     # labels under a scale's 1 and 10
     risk: bool = False                   # counts toward the risk score
+    other: str = ""                      # choice: label of a typed "Something else" box (empty = none)
 
 
 INTEREST_OPTIONS = sorted(THEME_LABELS.items(), key=lambda kv: kv[1])
@@ -42,9 +44,36 @@ INTEREST_OPTIONS = sorted(THEME_LABELS.items(), key=lambda kv: kv[1])
 STEADIEST_WORST = abs(worst_year(build_portfolio(1, [], bond_share=BOND_MAX).holdings)[1])
 MAX_MONEY = 10_000_000
 
+# The goal is a choice card, or "Something else" typed (stored as "other" plus answers["goal_text"]).
+GOAL_OPTIONS = [("home", "Buying a home"), ("retirement", "Retirement"), ("travel", "Travel"),
+                ("safety", "A safety net"), ("wealth", "Growing my wealth")]
+GOAL_LABELS = dict(GOAL_OPTIONS)
+OTHER_GOAL = "other"
+# Typed goals that clearly mean exactly one card ("a condo", "retire at 55") are stored as that card,
+# with the typed words kept for display. Two matches or none -> "other".
+GOAL_WORDS = {
+    "home": r"house|home|condo|apartment|down ?payment|mortgage",
+    "retirement": r"retire\w*|retirement|pension|401k",
+    "travel": r"travel\w*|trips?|vacations?|backpacking",
+    "safety": r"emergenc\w*|emergency fund|safety net|rainy day|cushion",
+    "wealth": r"grow\w* (?:my )?(?:money|wealth)|wealth|financial freedom",
+}
+_GOAL_RES = {k: re.compile(r"\b(?:" + w + r")\b") for k, w in GOAL_WORDS.items()}
+# The horizon each goal suggests when the customer hasn't said (or isn't sure). It's only a highlighted
+# card on the horizon question; the customer picks. "Growing my wealth" (and "other") suggest none: that
+# goal doesn't imply a date, and a guessed date would cap the mix for no reason the customer gave.
+GOAL_HORIZON = {"safety": "lt3", "home": "3to7", "travel": "3to7", "retirement": "15plus"}
+GOAL_HORIZON_WHY = {
+    "safety": "a safety net should be there on short notice",
+    "home": "a down payment is usually needed within a few years",
+    "travel": "trips are usually a few years out at most",
+    "retirement": "retirement money usually stays invested for decades",
+}
+
 QUESTIONS: list[Question] = [
-    Question("goal", "text", "What are you investing for?",
-             help="A house, retirement, travel, a safety net, or just growing your money. Anything works."),
+    Question("goal", "choice", "What are you investing for?",
+             help="Pick the closest one, or type your own. It shapes how your fund is explained.",
+             options=GOAL_OPTIONS, other="Something else"),
     Question("starting_amount", "money", "How much do you want to put in to start?",
              help="Type an amount in dollars. $0 is fine; your paychecks will build it."),
     Question("paycheck_pct", "slider", "What percent of each paycheck should go into your fund?",
@@ -142,9 +171,12 @@ def parse(q: Question, value: str = "", values: list[str] | None = None, other: 
         return n, f"{n}{q.unit}" if q.kind == "slider" else f"{n} out of {q.max:g}"
     if q.kind == "choice":
         labels = dict(q.options)
-        if value not in labels:
-            raise AnswerError("Pick one of the options.")
-        return value, labels[value]
+        if value in labels:
+            return value, labels[value]
+        typed = (other or "").strip()[:300]
+        if q.other and typed:
+            return OTHER_GOAL, typed
+        raise AnswerError("Pick one of the options, or type your own." if q.other else "Pick one of the options.")
     if q.kind == "chips":
         labels = dict(q.options)
         picked = [v for v in dict.fromkeys(values or []) if v in labels]
@@ -153,6 +185,65 @@ def parse(q: Question, value: str = "", values: list[str] | None = None, other: 
         shown = [labels[t] for t in picked] + [f"“{u}”" for u in unmatched]
         return {"themes": picked, "unmatched": unmatched}, ", ".join(shown) or "None, keep it broad"
     raise AnswerError(f"Unknown question type {q.kind}")
+
+
+def record(answers: dict, q: Question, value: str = "", values: list[str] | None = None, other: str = "") -> str:
+    """Parse one intake answer and write it into `answers`; returns what the chat shows as the user's message.
+    The goal also keeps typed words in answers["goal_text"] (and drops stale ones when a card is picked)."""
+    stored, shown = parse(q, value, values, other)
+    if q.key == "goal":
+        answers.pop("goal_text", None)
+        if stored == OTHER_GOAL:
+            stored = goal_from_text(shown)
+            answers["goal_text"] = shown
+    answers[q.key] = stored
+    return shown
+
+
+def goal_from_text(text: str) -> str:
+    """Typed goal -> the card it clearly means, else "other"."""
+    t = (text or "").lower()
+    hits = [k for k, rx in _GOAL_RES.items() if rx.search(t)]
+    return hits[0] if len(hits) == 1 else OTHER_GOAL
+
+
+def goal_key(answers: dict) -> str | None:
+    """The structured goal ("home" ... "wealth", or "other"); None if not answered. An older free-text goal
+    (a string that isn't a key, e.g. "Retire early") is read through goal_from_text."""
+    g = str(answers.get("goal") or "").strip()
+    if not g:
+        return None
+    return g if g in GOAL_LABELS or g == OTHER_GOAL else goal_from_text(g)
+
+
+def goal_text(answers: dict) -> str:
+    """The customer's own words for the goal, if they typed any; "" otherwise."""
+    typed = str(answers.get("goal_text") or "").strip()
+    if typed:
+        return typed
+    g = str(answers.get("goal") or "").strip()
+    return "" if g in GOAL_LABELS or g == OTHER_GOAL else g
+
+
+def goal_label(answers: dict) -> str:
+    """How the goal reads on screen: their own words if typed, else the card ("Buying a home"); "" if none."""
+    return goal_text(answers) or GOAL_LABELS.get(str(answers.get("goal") or ""), "")
+
+
+def suggested_horizon(answers: dict) -> tuple[str, str] | None:
+    """(horizon key, the line shown above the cards) that the goal suggests while the horizon is unanswered
+    or "unsure"; else None. A typed goal that already says when ("a house in 2035") suggests nothing."""
+    if answers.get("horizon") not in (None, "unsure"):
+        return None
+    g = goal_key(answers)
+    if g not in GOAL_HORIZON:
+        return None
+    from core.followups import timeline   # late import: core.followups imports this module
+    typed = goal_text(answers)
+    if timeline(typed) is not None:
+        return None
+    goal = f"“{typed[:60]}”" if typed else GOAL_LABELS[g][0].lower() + GOAL_LABELS[g][1:]
+    return GOAL_HORIZON[g], f"Suggested because your goal is {goal}: {GOAL_HORIZON_WHY[g]}. Pick whichever fits you."
 
 
 def parse_money(text: str) -> float:
@@ -208,6 +299,8 @@ def risk_level(score: int) -> int:
 def answer_label(key: str, answers: dict) -> str:
     """How an answer reads on screen ("Steady growth with small dips", "15%")."""
     q, v = BY_KEY[key], answers.get(key)
+    if key == "goal":
+        return goal_label(answers)
     if q.kind == "choice":
         return dict(q.options).get(v, "")
     if q.kind == "slider":

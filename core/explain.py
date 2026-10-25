@@ -58,14 +58,14 @@ def intro_facts(acct: FundAccount) -> list[str]:
     bonds = next((h.weight for h in p.holdings if h.ticker == "BND"), 0.0)
     labels = dict(intake.BY_KEY["interests"].options)
     themes = [labels.get(t, t) for t in intake.interests(a)]
-    return [f"Goal: {a.get('goal', '')}.",
+    return [f"Goal: {intake.goal_label(a)}.",
             f"Mix: {p.risk_label}, {bonds:.0%} bonds and {1 - bonds:.0%} stocks.",
             f"Interests: {', '.join(themes)}." if themes else "Interests: none, the fund stays broad.",
             f"When they need the money: {intake.answer_label('horizon', a) or 'not answered'}."]
 
 
 def fallback_intro(acct: FundAccount) -> str:
-    goal = (acct.answers.get("goal") or "").strip()
+    goal = intake.goal_label(acct.answers)
     lead = f"You're investing for “{goal}”." if goal else "Here's your fund."
     return f"{lead} Below is how we turned your answers into this mix, and why each piece is there."
 

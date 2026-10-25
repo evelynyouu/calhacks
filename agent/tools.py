@@ -146,7 +146,7 @@ def fund_summary(session: Session) -> dict:
         "risk_label": p.risk_label, "risk_level": p.risk_level, "risk_score_out_of_100": a.risk_score,
         "risk_score_used": p.score,
         "limits": [r.text for r in p.reasons if r.kind in ("contradiction", "horizon", "drop", "override")],
-        "paycheck_percent": a.invest_pct, "goal": a.answers.get("goal"),
+        "paycheck_percent": a.invest_pct, "goal": intake.goal_label(a.answers),
         "interests": [THEMES[t] + " " + ETFS[THEMES[t]]["label"] for t in intake.interests(a.answers)],
         "interests_without_a_fund": a.answers.get("interests", {}).get("unmatched", []),
         "single_companies": intake.stocks(a.answers),

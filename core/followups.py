@@ -208,19 +208,20 @@ def _horizon(key: str, after: str, text: str, help: str, facts: list[str]) -> Fo
 # ---------- Rules (each returns a FollowUp or None) ----------
 
 def unclear_goal(answers, after, profile, asked):
-    """Goal text too short or too vague to explain the fund against: offer common goals, never block."""
-    if after != "goal" or "goal" not in answers:
+    """A typed "Something else" goal too short or too vague to explain the fund against ("idk", "x"):
+    offer the goal cards again, never block. A picked card can't be unclear, so only "other" is checked."""
+    if after != "goal" or intake.goal_key(answers) != intake.OTHER_GOAL:
         return None
-    raw = str(answers["goal"]).strip().lower()
+    typed = intake.goal_text(answers)
+    raw = typed.strip().lower()
     t = re.sub(r"[^a-z' /?]", "", raw).strip(" ./")
     if len(re.sub(r"[^a-z]", "", raw)) >= MIN_GOAL_LETTERS and t not in VAGUE_GOALS:
         return None
-    opts = [("retirement", "Retirement"), ("home", "A home"), ("safety", "A safety net"),
-            ("grow", "Just grow my money")]
+    opts = [(v, intake.GOAL_LABELS[v]) for v in ("retirement", "home", "safety", "wealth")]
     return FollowUp("unclear_goal", after, "No problem if you're not sure yet. Is it close to one of these?",
-                    "choice", options=opts, effects={v: {"goal": label} for v, label in opts},
+                    "choice", options=opts, effects={v: {"goal": v, "goal_text": ""} for v, _ in opts},
                     help="Your fund works the same either way; this just helps me explain it.",
-                    facts=[f"The customer typed {answers['goal']!r} as their goal."])
+                    facts=[f"The customer typed {typed!r} as their goal."])
 
 
 def start_over_balance(answers, after, profile, asked):
