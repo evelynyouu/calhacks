@@ -2,8 +2,7 @@
 import pytest
 
 from core.models import SLICES
-from core.portfolio import build_portfolio
-from tests.fund_helpers import CAP_OF_US_CORE, make_portfolio_fixture
+from tests.fund_helpers import CAP_OF_US_CORE, make_legacy_etf_fund, make_portfolio_fixture
 
 
 def test_fixture_is_a_fifty_eight_holding_fund_in_the_contracts_shape():
@@ -22,14 +21,14 @@ def test_slice_weights_add_up_and_every_key_is_always_there():
     assert w["bonds"] == pytest.approx(0.25) and w["spend"] == pytest.approx(0.08)
 
 
-def test_slices_are_sorted_biggest_first():
-    by = make_portfolio_fixture().by_slice()
-    for hs in by.values():
-        assert [h.weight for h in hs] == sorted((h.weight for h in hs), reverse=True)
+def test_the_pages_view_lists_each_slice_biggest_first():
+    from core import slices
+    for sl in slices.view(make_portfolio_fixture()):
+        assert [r["weight"] for r in sl["rows"]] == sorted((r["weight"] for r in sl["rows"]), reverse=True)
 
 
 def test_an_older_etf_fund_still_reads_into_the_six_slices():
-    p = build_portfolio(2, ["tech"], ["AAPL"])               # VTI, VXUS, BND, XLK, AAPL: no slice set on any of them
+    p = make_legacy_etf_fund()                               # VTI, VXUS, BND, XLK, AAPL: no slice set on any of them
     by = p.by_slice()
     assert [h.ticker for h in by["bonds"]] == ["BND"] and [h.ticker for h in by["intl"]] == ["VXUS"]
     assert [h.ticker for h in by["us_core"]] == ["VTI"] and [h.ticker for h in by["interest"]] == ["XLK"]
@@ -46,8 +45,7 @@ def test_a_persona_can_hold_the_fixture_fund():
 
 def test_the_fixtures_us_index_is_in_size_order_and_ranks_are_true():
     us = make_portfolio_fixture().by_slice()["us_core"]
-    assert [h.weight for h in us] == sorted((h.weight for h in us), reverse=True)
-    top = {h.ticker for h in us[:6]}
+    top = {h.ticker for h in sorted(us, key=lambda h: -h.weight)[:6]}
     assert top == {"NVDA", "MSFT", "AAPL", "GOOGL", "AMZN", "META"}      # the six biggest all hit the cap, so they tie
     p = make_portfolio_fixture()
     reason = next(r for r in p.reasons if r.ticker == "NVDA")

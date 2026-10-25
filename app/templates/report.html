@@ -232,7 +232,7 @@
       <summary class="cursor-pointer text-ink/70">The assumptions behind this range</summary>
       <p class="mt-2 text-xs text-ink/65">Built from your fund's own holdings: about {{ pin.return_pct }}% a year on average after the {{ pin.fee_pct }}% yearly fee, swinging about {{ pin.vol_pct }}% a year. Deposits are ${{ pin.per_paycheck }} per paycheck, {{ pin.paychecks_per_year }} paychecks a year (paid every 14 days), about {{ pin.monthly | money2 }} a month. Stocks and bonds are assumed to move together only weakly. These are rounded planning figures, not predictions, and real results can fall outside the range.</p>
       <table class="mt-2 w-full text-xs"><thead class="text-ink/50 text-left"><tr><th class="py-1 font-medium">Fund</th><th class="text-right font-medium">Weight</th><th class="text-right font-medium">Assumed return</th><th class="text-right font-medium">Assumed swing</th></tr></thead>
-        <tbody>{% for x in pin.rows %}<tr class="border-t border-ink/10"><td class="py-1">{{ x.ticker }}</td><td class="text-right tabular-nums">{{ x.weight | pct(1) }}</td><td class="text-right tabular-nums">{{ x.mean | pct(1) }}</td><td class="text-right tabular-nums">{{ x.vol | pct(1) }}</td></tr>{% endfor %}</tbody></table>
+        <tbody>{% for x in pin.rows %}<tr class="border-t border-ink/10"><td class="py-1">{{ x.label }}</td><td class="text-right tabular-nums">{{ x.weight | pct(1) }}</td><td class="text-right tabular-nums">{{ x.mean | pct(1) }}</td><td class="text-right tabular-nums">{{ x.vol | pct(1) }}</td></tr>{% endfor %}</tbody></table>
     </details>
   </section>
 

@@ -80,9 +80,24 @@ def portfolio_assumptions(p: Portfolio) -> dict:
     w = _positions(p)
     mean = sum(x * assumption(t)["mean"] for t, x in w.items()) - p.annual_fee_pct / 100
     var = sum(w[a] * w[b] * _correlation(a, b) * assumption(a)["vol"] * assumption(b)["vol"] for a in w for b in w)
-    return {"mean": mean, "vol": math.sqrt(var),
-            "rows": [{"ticker": t, "weight": x, "mean": assumption(t)["mean"], "vol": assumption(t)["vol"]}
-                     for t, x in w.items()]}
+    return {"mean": mean, "vol": math.sqrt(var), "rows": _rows(p, w)}
+
+
+def _rows(p: Portfolio, w: dict[str, float]) -> list[dict]:
+    """The assumptions table the report shows: the funds one by one, the US index as one basket, and the single
+    companies together (they share one row of assumptions)."""
+    names = {h.ticker: h.name for h in p.holdings}
+    rows, companies = [], 0.0
+    for t, x in w.items():
+        if t not in ASSUMPTIONS and t != US_INDEX:
+            companies += x
+            continue
+        label = "Your US index (as one US basket)" if t == US_INDEX and any(h.sector for h in p.holdings) else names.get(t, t)
+        rows.append({"ticker": t, "label": label, "weight": x, "mean": assumption(t)["mean"], "vol": assumption(t)["vol"]})
+    if companies:
+        rows.append({"ticker": "company", "label": "Single companies (spend, interest, added)", "weight": companies,
+                     "mean": assumption("company")["mean"], "vol": assumption("company")["vol"]})
+    return rows
 
 
 def simulate(p: Portfolio, start: float, monthly: float, years: int = 10) -> SimResult:

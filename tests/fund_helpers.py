@@ -96,7 +96,10 @@ def make_portfolio_fixture() -> Portfolio:
     add("PYPL", "PayPal", _ADDED, "stock", "added", "Financials", "stock", "You added PayPal.")
     total = sum(x.weight for x in h)
     h[2].weight = round(h[2].weight + 1 - total, 6)      # the largest company absorbs rounding, so weights sum to 1
-    return Portfolio(3, "Growth", h, 0.02, 2022, -17.0, [], why, score=60)
+    parts: dict[str, dict[str, float]] = {}                  # the contract's exact shares: slice -> {ticker: weight}
+    for x in h:
+        parts.setdefault(x.slice, {})[x.ticker] = x.weight
+    return Portfolio(3, "Growth", h, 0.02, 2022, -17.0, [], why, parts=parts, score=60)
 
 
 def _ordinal(n: int) -> str:
@@ -131,3 +134,13 @@ def make_custom_fund(cid: str = "sam", amount: float = 10_000, **answers) -> sta
     s.step = len(QUESTIONS)
     s.say("Your fund is ready.")
     return s
+
+
+def make_legacy_etf_fund() -> Portfolio:
+    """An older three-fund fund (VTI/VXUS/BND plus an interest fund and an added company), with no slice, sector or
+    parts set: what a fund built before the custom index looks like. Pages must still read it."""
+    from core.models import Holding, Portfolio
+    h = [Holding("VTI", "Vanguard Total Stock Market", 0.28, "core", 0.03), Holding("VXUS", "Vanguard Total International Stock", 0.12, "core", 0.05),
+         Holding("BND", "Vanguard Total Bond Market", 0.45, "core", 0.03), Holding("XLK", "Technology Select Sector SPDR", 0.10, "tilt", 0.08),
+         Holding("AAPL", "Apple", 0.05, "stock", 0.0)]
+    return Portfolio(2, "Moderate", h, 0.04, 2022, -15.6, [], [], score=40)
