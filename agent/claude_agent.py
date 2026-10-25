@@ -13,6 +13,7 @@ import os
 from agent.prompts import RUNDOWN_INSTRUCTION, SUGGESTED_PROMPTS, SYSTEM_PROMPT
 from agent.tools import TOOLS, headlines, market_today, news_tickers, run_tool
 from app.state import Session
+from core.explain import fallback_intro, intro_facts
 from core.intake import QUESTIONS
 from core.market import ETFS
 from core.report import build_report
@@ -65,6 +66,13 @@ def fund_ready(session: Session) -> str:
     return explain(facts, f"The customer's goal: {a.answers.get('goal', '')!r}. In 3 to 4 short sentences, explain "
                           "their new fund: what the core does, what the interest slice adds, and one thing to "
                           "know about their risk level. End by inviting questions.", fallback=offline)
+
+
+def fund_intro(session: Session) -> str:
+    """At most 2-3 sentences on top of "How your fund was built", tied to the goal. Python facts only."""
+    a = session.fund
+    return explain(intro_facts(a), "In 2 to 3 short sentences, tie this fund to the customer's goal. Don't list "
+                   "numbers; the page below shows them.", fallback=fallback_intro(a))
 
 
 # ---------- Chat after the intake ----------

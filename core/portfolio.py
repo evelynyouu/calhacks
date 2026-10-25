@@ -107,6 +107,16 @@ def build_portfolio(risk_level: int, interests: list[str] | None = None, stocks:
                      warnings_from(reasons), reasons, score)
 
 
+def share(w: float) -> str:
+    """A weight as reasons write it: one decimal, like the fund card ("7.4%", "40%")."""
+    return f"{w * 100:.1f}".removesuffix(".0") + "%"
+
+
+def _lower_first(label: str) -> str:
+    """"US stocks" stays as is; "Bonds" -> "bonds" (mid-sentence)."""
+    return label if label[:2].isupper() else label[:1].lower() + label[1:]
+
+
 def warnings_from(reasons: list[Reason]) -> list[str]:
     return [r.text for r in reasons if r.kind in WARNING_KINDS or r.facts.get("warn")]
 
@@ -114,19 +124,19 @@ def warnings_from(reasons: list[Reason]) -> list[str]:
 def _holding_reasons(holdings: list[Holding], kind: str, score: int | None, overlaps: dict) -> list[Reason]:
     out = []
     for h in holdings:
-        pct = f"{h.weight:.0%}"
+        pct = share(h.weight)
         if h.ticker == "BND":
             why = (f"A risk score of {score} out of 100 sets it: the share goes from 65% at 0 down to 10% at 100."
                    if score is not None else f"That's the bond share for a {kind} fund.")
             out.append(Reason("bonds", f"{pct} in bonds (BND). Bonds usually hold steady when stocks fall, so they "
                                        f"cushion drops. {why}", "BND", {"bond_share": h.weight, "score": score}))
         elif h.role == "core":
-            out.append(Reason("core", f"{pct} in {ETFS[h.ticker]['label'].lower()} ({h.ticker}): "
-                                      f"{ETFS[h.ticker]['about'].lower()}. Owning the whole market means no single "
+            out.append(Reason("core", f"{pct} in {_lower_first(ETFS[h.ticker]['label'])} ({h.ticker}). "
+                                      f"{ETFS[h.ticker]['about']}. Owning the whole market means no single "
                                       f"company can sink you.", h.ticker, {"weight": h.weight}))
         elif h.role == "tilt":
-            out.append(Reason("tilt", f"{pct} in {h.ticker} because you picked {ETFS[h.ticker]['label']}: "
-                                      f"{ETFS[h.ticker]['about'].lower()}.", h.ticker,
+            out.append(Reason("tilt", f"{pct} in {h.ticker} because you picked {ETFS[h.ticker]['label']}. "
+                                      f"{ETFS[h.ticker]['about']}.", h.ticker,
                               {"weight": h.weight, "overlap": overlaps.get(h.ticker, 0.0)}))
         else:
             out.append(Reason("stock", f"{pct} in {h.name} ({h.ticker}) because you added it. One company can swing "

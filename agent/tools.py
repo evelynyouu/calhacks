@@ -5,6 +5,7 @@ from app.state import Session
 from core import feed, fund, intake, market
 from core.market import ETFS
 from core.portfolio import THEMES
+from core.explain import explain_for_chat
 from core.report import build_report
 
 INDEXES = ["SPY", "QQQ", "DIA"]
@@ -17,6 +18,13 @@ TOOLS = [
         "description": "The customer's fund: each holding with its target weight and what it is, the risk level "
                        "and score, their interests, any overlap notes, the yearly fee, and their paycheck percent.",
         "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_fund_explanation",
+        "description": "Why the fund is built the way it is: the builder's own reasons for the risk score, the "
+                       "bond share, each holding, and anything it capped, shrank, dropped or flagged. Pass a ticker "
+                       "to answer \"why do I own X?\". Same text as the How your fund was built page.",
+        "input_schema": {"type": "object", "properties": {"ticker": {"type": "string"}}},
     },
     {
         "name": "get_report",
@@ -128,6 +136,8 @@ def run_tool(session: Session, name: str, args: dict) -> tuple[dict, list[str]]:
         return {"error": "No fund yet; the customer is still answering the intake questions."}, []
     if name == "get_fund":
         return fund_summary(session), []
+    if name == "get_fund_explanation":
+        return explain_for_chat(session.fund.portfolio, args.get("ticker") or None), []
     if name == "get_report":
         return report_summary(session), []
     if name == "update_interests":

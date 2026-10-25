@@ -18,7 +18,7 @@ from agent import claude_agent
 from agent.tools import INDEXES, news_tickers
 from app.routes.auth import auth_disabled, csrf_token
 from app import state
-from core import builder, feed, fund, intake, market, nessie
+from core import builder, explain, feed, fund, intake, market, nessie
 from core.broker import get_broker, values
 from core.intake import QUESTIONS, AnswerError, parse
 from core.market import ETFS
@@ -137,6 +137,14 @@ def _today(a) -> dict:
     return {"rows": rows, "day_change": day, "day_pct": day / before * 100 if before else 0.0}
 
 
+@router.get("/p/{cid}/how", response_class=HTMLResponse)
+def how_built(request: Request, cid: str, full: bool = False):
+    """How your fund was built: every number and reason comes from core/explain.py. ?full=1 opens the full version."""
+    s = _need_fund(cid)
+    return _render("how_built.html", _ctx(request, cid, tab="portfolio", how=explain.build(s.fund),
+                                          intro=claude_agent.fund_intro(s), full=full))
+
+
 @router.get("/p/{cid}/chat", response_class=HTMLResponse)
 def chat_page(request: Request, cid: str, ask: str = ""):
     s = _session(cid)
@@ -193,7 +201,7 @@ def answer(request: Request, cid: str, value: str = Form(""), values: list[str] 
     oob = {"composer"}
     if s.done:
         fund.start(s.fund)
-        new.append(s.say(claude_agent.fund_ready(s)))
+        new.append(s.say(claude_agent.fund_ready(s), link={"href": f"/p/{cid}/how", "label": "How your fund was built →"}))
         oob |= {"fund", "account", "tier", "nav"}
     else:
         new.append(s.say(claude_agent.question_text(s)))
