@@ -24,6 +24,7 @@ class Session:
     followup: object = None                                    # core.followups.FollowUp waiting for an answer
     followups_asked: list[str] = field(default_factory=list)   # follow-up rule keys asked this intake (max 2)
     pending_ask: str | None = None   # a suggested prompt tapped on another tab, sent once by the Chat tab
+    robinhood_connected: bool = False  # demo: Robinhood agentic trading UI
 
     def __post_init__(self):
         if self.fund is None:

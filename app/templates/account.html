@@ -5,8 +5,10 @@
 <div class="grid lg:grid-cols-12 gap-5">
   <aside class="hidden lg:block lg:col-span-3">
     <nav class="card sticky top-4 p-3 text-sm" aria-label="Account sections">
-      {% for id, label in [('profile', 'Profile'), ('linked', 'Linked accounts'), ('investing', 'Investing'), ('notifications', 'Notifications'),
-                           ('security', 'Security'), ('shares', 'Partial shares'), ('privacy', 'Data & privacy')] %}
+      {% for id, label in [('profile', 'Profile'), ('linked', 'Linked accounts')]
+                          + ([('agentic', 'Agentic trading')] if robinhood_connected else [])
+                          + [('investing', 'Investing'), ('notifications', 'Notifications'),
+                             ('security', 'Security'), ('shares', 'Partial shares'), ('privacy', 'Data & privacy')] %}
       <a href="#{{ id }}" class="block rounded-lg px-3 py-1.5 hover:bg-paper">{{ label }}</a>
       {% endfor %}
     </nav>
@@ -41,8 +43,30 @@
           </dl>
         </li>
         <li class="py-3">
-          <p class="font-medium">Brokerage: {{ broker_mode }}</p>
-          <p class="text-ink/60">{% if broker_mode == 'simulated' %}Trades fill instantly at market prices in a practice account. Real orders go through Alpaca once it's connected.{% elif 'paper' in broker_mode %}Orders go to an Alpaca paper (practice) account.{% else %}Orders go to a real Alpaca brokerage account.{% endif %}</p>
+          {% if robinhood_connected %}
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="h-5 w-5 rounded-full bg-[#00C805] grid place-items-center text-white text-[.65rem] font-bold shrink-0" aria-hidden="true">✓</span>
+                <p class="font-medium">Robinhood · Agentic trading active</p>
+              </div>
+              <p class="mt-1 text-sm text-ink/60">Claude monitors your fund and places rebalancing trades automatically, without a Confirm step. You can review every decision in the log below.</p>
+            </div>
+            <form method="post" action="/p/{{ cid }}/robinhood/disconnect">
+              <button class="btn-ghost text-sm">Disconnect</button>
+            </form>
+          </div>
+          {% else %}
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p class="font-medium">Brokerage: {{ broker_mode }}</p>
+              <p class="mt-1 text-sm text-ink/60">Trades fill in a practice account. Connect Robinhood to enable agentic trading — Claude monitors your fund and places trades automatically.</p>
+            </div>
+            <form method="post" action="/p/{{ cid }}/robinhood/connect">
+              <button class="btn text-sm whitespace-nowrap">Connect Robinhood</button>
+            </form>
+          </div>
+          {% endif %}
         </li>
         <li class="py-3">
           <p class="font-medium">Market data: {{ 'Nasdaq (delayed quotes, daily closes, news)' if live_market else 'Simulated (no connection to Nasdaq)' }}</p>
@@ -50,6 +74,40 @@
         </li>
       </ul>
     </section>
+
+    {% if robinhood_connected %}
+    <section id="agentic" class="card scroll-mt-4">
+      <div class="flex items-center justify-between gap-3">
+        <p class="eyebrow">Agentic trading log</p>
+        <span class="text-[.7rem] font-semibold tracking-wide uppercase px-2 py-0.5 rounded-full bg-[#00C805]/10 text-[#007A04]">Live via Robinhood</span>
+      </div>
+      <p class="mt-2 text-sm text-ink/60">Claude acts as your trading agent. It reviews your fund against targets after every paycheck, executes rebalancing trades, and logs every decision here.</p>
+
+      <div class="mt-4 rounded-xl bg-paper px-3 py-2.5 text-sm space-y-1.5">
+        <p class="text-xs font-semibold uppercase tracking-wide text-ink/40">What Claude watches</p>
+        <ul class="mt-2 space-y-2 text-sm">
+          <li class="flex gap-2"><span class="mt-0.5 h-4 w-4 shrink-0 rounded-full bg-moss-100 text-moss-700 grid place-items-center text-[.6rem] font-bold">✓</span><span>Drift vs targets — rebalances when a holding is ≥ 5 points off</span></li>
+          <li class="flex gap-2"><span class="mt-0.5 h-4 w-4 shrink-0 rounded-full bg-moss-100 text-moss-700 grid place-items-center text-[.6rem] font-bold">✓</span><span>Each paycheck — invests your chosen % into the most underweight holdings</span></li>
+          <li class="flex gap-2"><span class="mt-0.5 h-4 w-4 shrink-0 rounded-full bg-moss-100 text-moss-700 grid place-items-center text-[.6rem] font-bold">✓</span><span>Market dips — flags opportunities when a position falls ≥ 7% in a month</span></li>
+          <li class="flex gap-2"><span class="mt-0.5 h-4 w-4 shrink-0 rounded-full bg-moss-100 text-moss-700 grid place-items-center text-[.6rem] font-bold">✓</span><span>Concentration risk — alerts when one company exceeds 8% of the fund</span></li>
+        </ul>
+      </div>
+
+      {% if a.log %}
+      <p class="mt-4 text-sm font-medium">Recent decisions</p>
+      <ul class="mt-1 divide-y divide-ink/10 text-xs text-ink/65">
+        {% for e in a.log[:8] %}
+        <li class="py-1.5 flex items-start gap-2">
+          <span class="mt-0.5 h-4 w-4 shrink-0 rounded-full bg-[#00C805]/10 text-[#007A04] grid place-items-center text-[.6rem] font-bold" aria-hidden="true">R</span>
+          <span>{{ e }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="mt-3 text-sm text-ink/55">No trades yet. Press <strong>Paycheck arrives</strong> on the Portfolio tab to watch Claude invest and rebalance automatically.</p>
+      {% endif %}
+    </section>
+    {% endif %}
 
     <section id="investing" class="card scroll-mt-4">
       <p class="eyebrow">Investing</p>
@@ -127,7 +185,7 @@
           (login_on, 'Sign-in and two-factor authentication', 'Email and password with an authenticator-app code and one-time recovery codes, or Sign in with Apple / Google.' if login_on else 'Built but switched off for the demo: anyone with the link can open the app. Turn it on with LOGIN_ENABLED=1.'),
           (login_on, 'Passwords and sessions', 'Passwords are hashed with argon2id. Your session is a signed, HttpOnly cookie that ends after 2 hours idle or 12 hours total, and signing out ends it everywhere.'),
           (login_on, 'Guessing is throttled', 'Repeated wrong passwords or codes lock that account and network out for 15 minutes.'),
-          (True, 'Trades need your confirmation', 'FirstFund and Claude can line trades up, but only your Confirm button places them.'),
+          (True, 'Trade authorization', 'FirstFund and Claude can line trades up, but only your Confirm button places them.' if not robinhood_connected else 'Agentic mode is on: Claude places rebalancing trades automatically via Robinhood. Every execution is logged above.'),
           (True, 'Keys stay on the server', 'Bank, brokerage and Claude keys live in server settings, never in your browser.'),
           (has_hook, 'Secrets blocked from the code', 'A pre-commit check stops API keys from being committed to the repository.' if has_hook else 'The pre-commit check is missing from this copy.'),
           (True, 'Links open safely', 'News links open on the publisher’s site in a new tab, without access to this page.'),
