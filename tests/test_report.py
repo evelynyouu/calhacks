@@ -191,11 +191,13 @@ def test_a_ticker_with_no_real_data_is_flagged_on_its_own_row(monkeypatch):
 
 def test_estimated_income_accrues_daily_and_stays_out_of_the_balance():
     a = account(starting_amount=10_000, started_days_ago=365, interests={"themes": [], "unmatched": []})
-    w = build_report(a)["returns"]["since_start"]
+    rep = build_report(a)
+    w = rep["returns"]["since_start"]
     assert w["start_value"] + w["deposits"] + w["market_gain"] == pytest.approx(w["end_value"], abs=0.02)   # price only
-    # a moderate core: 38% VTI at 1.2%, 17% VXUS at 3.0%, 45% BND at 4.0% = about 2.8% a year
-    assert w["income_estimate"] == pytest.approx(10_000 * 0.0277, rel=0.15)
-    assert w["twr_pct"] - w["twr_price_pct"] == pytest.approx(2.8, abs=0.4)
+    # the fund's yearly income rate is its holdings' yields weighted by what it holds (whatever mix the builder chose)
+    rate = sum(h["target"] * report_module.YIELDS[h["ticker"]] for h in rep["holdings"])
+    assert w["income_estimate"] == pytest.approx(10_000 * rate, rel=0.15)
+    assert w["twr_pct"] - w["twr_price_pct"] == pytest.approx(rate * 100, abs=0.4)
 
 
 # ---------- recommendations ----------
@@ -223,7 +225,7 @@ def fresh() -> None:
     market.clear_shocks()
 
 
-def all_recs() -> list[tuple[str, dict]]:
+def all_recs(monkeypatch=None) -> list[tuple[str, dict]]:
     """A report for each situation that should raise a different recommendation."""
     out = []
     a = account(starting_amount=20_000, started_days_ago=90, interests={"themes": ["ai_chips"], "unmatched": []})
@@ -246,15 +248,17 @@ def all_recs() -> list[tuple[str, dict]]:
     fresh()
     out.append(("hold", build_report(account(interests={"themes": ["healthcare"], "unmatched": []}))))
     fresh()
+    if monkeypatch:   # the builder decides how much tech a fund holds; put the fund-wide line below that so only it fires
+        monkeypatch.setattr(report_module, "TECH_FUND_TRIGGER", 0.05)
     a = account(starting_amount=10_000, interests={"themes": ["tech", "financials"], "unmatched": []},
                 stocks=["NVDA", "AAPL"], risk_priority="max", risk_range="widest", max_drop=50, swing_comfort=10)
     out.append(("explore", build_report(a)))
     return out
 
 
-def test_every_recommendation_shows_the_number_that_triggered_it_and_the_threshold():
+def test_every_recommendation_shows_the_number_that_triggered_it_and_the_threshold(monkeypatch):
     seen = set()
-    for _, rep in all_recs():
+    for _, rep in all_recs(monkeypatch):
         for rec in rep["recommendations"]:
             seen.add(rec["action"])
             assert rec["trigger"], rec["title"]
@@ -274,8 +278,8 @@ def test_every_company_over_the_trigger_is_flagged_not_just_the_biggest(monkeypa
     assert all(any(c["name"] in f for f in rec["facts"]) for c in over)
 
 
-def test_tech_check_counts_the_whole_fund_not_just_the_interest_slice():
-    rep = dict(all_recs())["explore"]
+def test_tech_check_counts_the_whole_fund_not_just_the_interest_slice(monkeypatch):
+    rep = dict(all_recs(monkeypatch))["explore"]
     rec = next(r for r in rep["recommendations"] if r["action"] == "explore")
     assert "whole fund" in rec["facts"][0] and "approximate" in rec["facts"][0]
     assert len(rec["trigger"]) == 1                    # the picks are half tech, below the 60% line: only the fund-wide check fired
