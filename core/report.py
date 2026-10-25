@@ -7,6 +7,7 @@ recommendations (some with trades the customer can confirm), and the review sche
 """
 from __future__ import annotations
 
+import csv
 from datetime import date, timedelta
 
 from core import intake, market, returns
@@ -20,6 +21,10 @@ from core.rebalance import drift as drift_of, rebalance_trades
 from core.sim import simulate
 
 QUARTER_DAYS = 91
+# Approximate yearly income (distributions) per fund, from data/yields.csv. The price feed has no adjusted
+# closes, so income is estimated, accrued daily, and kept apart from the balance. Single companies count as 0.
+with (market.DATA / "yields.csv").open() as _f:
+    YIELDS = {r["ticker"]: float(r["yield_pct"]) / 100 for r in csv.DictReader(_f)}
 BENCHMARK = "SPY"               # "the market" line
 US_SHARE_OF_STOCKS = 0.70       # VTI's share of VTI+VXUS when the fund has neither to read it from
 NOT_STOCKS = {"BND", "GLD"}
@@ -56,10 +61,11 @@ def build_report(acct: FundAccount) -> dict:
     period_pct = period["twr_pct"] if period and period["twr_pct"] is not None else 0.0
     summary = {
         "value": round(total, 2), "contributed": round(contributed, 2), "gain": round(gain, 2),
-        "gain_pct": since["mwr_pct"] if since and since["mwr_pct"] is not None
+        "gain_pct": since["mwr_price_pct"] if since and since["mwr_price_pct"] is not None
         else round(gain / contributed * 100, 2) if contributed else 0.0,
         "period_pct": period_pct, "market_period_pct": mkt["m1"],
         "vs_market_pts": round(period_pct - mkt["m1"], 2),
+        "income_estimate": since["income_estimate"] if since else 0.0,
         "benchmark_period_pct": period["benchmark_pct"] if period else None,
         "vs_benchmark_pts": period["vs_benchmark_pts"] if period else None,
         "invest_pct": acct.invest_pct, "fee_pct": p.annual_fee_pct,
@@ -83,8 +89,29 @@ def build_report(acct: FundAccount) -> dict:
                      "auto_on": acct.auto_trade, "next_review": next_review},
         "broker_mode": get_broker().mode,
     }
+    rep["data_notes"] = _data_notes(acct, holdings)
     rep["facts"] = _facts(rep)
     return rep
+
+
+def _data_notes(acct: FundAccount, holdings: list[dict]) -> dict:
+    """Where the numbers come from, so the page can say it plainly: real or simulated prices, and what is approximate."""
+    today, tickers = acct.today, [h["ticker"] for h in holdings]
+    last_real = market.last_real_date(BENCHMARK)
+    always = [t for t in tickers if market.last_real_date(t) is None]
+    if last_real is None:
+        price = "All prices here are simulated: real market data isn't available right now."
+    elif today > last_real:
+        price = (f"Prices after {last_real.strftime('%b')} {last_real.day} are simulated: the demo has moved past the "
+                 f"last real closing prices, so anything dated later is a simulation, not the market.")
+    else:
+        price = "Prices are real Nasdaq closing prices."
+    if last_real is not None and always:
+        price += f" {', '.join(always)} {'has' if len(always) == 1 else 'have'} no real price data, so always simulated."
+    return {"price": price, "last_real_date": last_real, "simulated_tickers": [h["ticker"] for h in holdings if h["simulated"]],
+            "income": "Income (fund distributions) is estimated from approximate yearly yields and isn't in your balance; "
+                      "returns marked \"price only\" leave it out.",
+            "look_through": "Company and sector shares inside your funds are approximate: they use each fund's biggest holdings."}
 
 
 def _returns(acct: FundAccount, tier) -> dict:
@@ -122,18 +149,24 @@ def _window(orders: list[dict], first: date, end: date, start: date | None, benc
     same days, so "vs benchmark" is only the customer's choices (interests, companies, drift)."""
     px, from_start = market.raw_price, start is None
     begin = returns.day_before(first) if from_start else start
-    r = returns.replay(orders, px, begin, end)
+    r = returns.replay(orders, px, begin, end, YIELDS)
     flows = returns.net_flows(orders, px)
-    blend = returns.replay(returns.shadow_orders(flows, bench, px), px, begin, end)
-    spy = returns.replay(returns.shadow_orders(flows, {BENCHMARK: 1.0}, px), px, begin, end)
-    twr, mwr, b_twr, s_twr = returns.twr(r), returns.money_weighted(r), returns.twr(blend), returns.twr(spy)
+    blend = returns.replay(returns.shadow_orders(flows, bench, px), px, begin, end, YIELDS)
+    spy = returns.replay(returns.shadow_orders(flows, {BENCHMARK: 1.0}, px), px, begin, end, YIELDS)
+    inc = True   # headline returns include estimated income; the *_price_pct twins leave it out
+    twr, mwr, b_twr, s_twr = (returns.twr(r, inc), returns.money_weighted(r, inc), returns.twr(blend, inc),
+                              returns.twr(spy, inc))
     pct = lambda x: None if x is None else round(x * 100, 2)   # noqa: E731
     gap = lambda a, b: None if a is None or b is None else round((a - b) * 100, 2)   # noqa: E731
     return {
         "start": first if from_start else start, "end": end, "days": (end - (first if from_start else start)).days,
         "from_start": from_start, "start_value": round(r.start_value, 2), "deposits": round(r.deposits, 2),
         "market_gain": round(r.market_gain, 2), "end_value": round(r.end_value, 2),
+        "income_estimate": round(r.income, 2),
         "twr_pct": pct(twr), "mwr_pct": pct(mwr),
+        "twr_price_pct": pct(returns.twr(r)), "mwr_price_pct": pct(returns.money_weighted(r)),
+        "benchmark_price_pct": pct(returns.twr(blend)), "spy_price_pct": pct(returns.twr(spy)),
+        "uses_simulated_prices": any(market.simulated_on(t, end) for t in {*bench, BENCHMARK, *(o["symbol"] for o in orders)}),
         "benchmark_pct": pct(b_twr), "benchmark_value": round(blend.end_value, 2), "vs_benchmark_pts": gap(twr, b_twr),
         "spy_pct": pct(s_twr), "vs_spy_pts": gap(twr, s_twr),
         "attribution": _attribution(r, p), "picks": _picks(r, p, bench, px),
@@ -185,6 +218,7 @@ def _holdings(acct, vals, total, month_ago) -> list[dict]:
             "price": market.price(t, today), "value": round(v, 2),
             "weight": round(v / total, 4) if total else 0.0, "target": targets.get(t, 0.0),
             "drift": drifts.get(t, 0.0), "period_pct": market.change_pct(t, month_ago, today),
+            "simulated": market.simulated_on(t, today),
             "gain_pct": round((v / cost[t] - 1) * 100, 2) if cost.get(t) else None,
         })
     return rows

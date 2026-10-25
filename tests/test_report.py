@@ -141,3 +141,57 @@ def test_each_pick_is_compared_with_the_core_it_replaced():
     pick = build_report(a)["returns"]["since_start"]["picks"][0]
     assert pick["ticker"] == "SMH" and pick["vs_core_pts"] == pytest.approx(pick["move_pct"] - pick["core_pct"], abs=0.01)
     assert pick["vs_core_pts"] > 0 and pick["vs_core_dollars"] > 0 and pick["dollars"] > pick["vs_core_dollars"]
+
+
+# ---------- price sources and income ----------
+
+from core.state import SIM_START   # noqa: E402
+
+
+def real_closes_through(monkeypatch, last, skip=()):
+    """Pretend the feed has real closes up to `last` for every ticker except `skip`."""
+    days = [last - timedelta(days=n) for n in range(30, -1, -1)]
+
+    def fake(t):
+        return None if t in skip else (days, [100.0] * len(days))
+    monkeypatch.setattr(market, "_real_closes", fake)
+
+
+def test_label_says_everything_is_simulated_with_no_real_data():
+    rep = build_report(account(starting_amount=3_000))
+    assert rep["data_notes"]["price"].startswith("All prices here are simulated")
+    assert all(h["simulated"] for h in rep["holdings"]) and rep["returns"]["since_start"]["uses_simulated_prices"]
+
+
+def test_label_names_the_last_real_close_once_the_clock_is_past_it(monkeypatch):
+    real_closes_through(monkeypatch, SIM_START - timedelta(days=3))
+    a = account(starting_amount=3_000)
+    a.today = SIM_START                                                  # the demo has moved 3 days past the last real close
+    rep = build_report(a)
+    assert rep["data_notes"]["price"].startswith("Prices after Oct 20 are simulated")
+    assert rep["returns"]["since_start"]["uses_simulated_prices"] and all(h["simulated"] for h in rep["holdings"])
+
+
+def test_no_simulated_label_while_the_clock_is_on_real_prices(monkeypatch):
+    real_closes_through(monkeypatch, SIM_START + timedelta(days=5))
+    rep = build_report(account(starting_amount=3_000))
+    assert rep["data_notes"]["price"] == "Prices are real Nasdaq closing prices."
+    assert not any(h["simulated"] for h in rep["holdings"]) and not rep["returns"]["since_start"]["uses_simulated_prices"]
+
+
+def test_a_ticker_with_no_real_data_is_flagged_on_its_own_row(monkeypatch):
+    real_closes_through(monkeypatch, SIM_START + timedelta(days=5), skip={"NTDOY"})
+    a = account(starting_amount=3_000, stocks=["NTDOY"])
+    rep = build_report(a)
+    rows = {h["ticker"]: h["simulated"] for h in rep["holdings"]}
+    assert rows["NTDOY"] and not rows["VTI"]
+    assert "NTDOY has no real price data" in rep["data_notes"]["price"]
+
+
+def test_estimated_income_accrues_daily_and_stays_out_of_the_balance():
+    a = account(starting_amount=10_000, started_days_ago=365, interests={"themes": [], "unmatched": []})
+    w = build_report(a)["returns"]["since_start"]
+    assert w["start_value"] + w["deposits"] + w["market_gain"] == pytest.approx(w["end_value"], abs=0.02)   # price only
+    # a moderate core: 38% VTI at 1.2%, 17% VXUS at 3.0%, 45% BND at 4.0% = about 2.8% a year
+    assert w["income_estimate"] == pytest.approx(10_000 * 0.0277, rel=0.15)
+    assert w["twr_pct"] - w["twr_price_pct"] == pytest.approx(2.8, abs=0.4)
