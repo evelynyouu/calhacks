@@ -14,24 +14,21 @@ Team: Evelyn (bank / Nessie, fund builder), Saahil (portfolio engine, backtest),
 onboarding), Ethan (web app, Claude agent, report). The user of this repo's Claude sessions is usually **Lance**
 (GitHub `lance06kaye-cloud`).
 
-## Where things stand (2026-10-24, night)
+## Where things stand (2026-10-24, late night)
 
-- **`main`** (`6e3168c`) = the pivot + Ethan's report-accuracy PR #4, his demo script and Render `SESSION_SECRET`, and
-  Saahil's backtest / spending insights / Tier 4+ auto-execution, plus `257658d` (Saahil, 2026-10-24 19:49): a
-  spending-driven fund (Nessie merchants → single stocks, e.g. Costco → COST) **made the default**, and the same backtest
-  `{% endif %}` fix.
-- **`origin/lance/fund-builder`** (`d9e4f6d`) = the pivot + Evelyn's fund builder (PR #5: horizon question, max drop as a
-  ceiling, smooth bond share, interest sizing, override, "How your fund was built" page). **`main` doesn't have PR #5,
-  and `lance/fund-builder` doesn't have Saahil's or Ethan's latest: the two have diverged.**
-- **`lance/polish`** (local, not pushed) = `lance/onboarding` + `257658d` merged (`445b8b6`), then the polish round
-  (six parallel agents, one branch each, merged here; 677 tests pass in both Nessie modes). Screenshots of the merged
-  app: `~/calhacks-shots/final/` (1280 and 500px). Merge decision: Evelyn's answer-driven builder stays the default;
-  Saahil's `build_spending_portfolio` / `build_custom_portfolio` are opt-in via `answers["spending_mode"]` /
-  `answers["custom_mode"]` (`etf_mode` dropped). The team should confirm.
-- **`lance/onboarding`** (local only, **not pushed**) = both of the above merged, plus the onboarding round: new
-  customers + demo bank link, left sidebar + Money tab, intake follow-up questions, the dark ticker with the real
-  Nasdaq Composite, one shared price label. 533 tests pass in both Nessie modes. Pushing it (or opening a PR into
-  `main`) would also bring PR #5 to `main`. Ask Lance first.
+- **`main`** (`30880c1`) = the pivot, Ethan's report work, Saahil's backtest / spending insights / Tier 4+
+  auto-execution, PR #5 (Evelyn's fund builder), and **Evelyn's custom index** (PRs #6, #7) with Ethan's UI for it:
+  a fund in six slices (bonds, international, a ~55-company US index, where you spend, interests, companies added),
+  ~58 positions, grouped by slice on every page. Saahil's spending-driven single-stock default (`257658d`) was
+  replaced by it. `docs/TEAM_INTEGRATION.md` asks everyone to stop adding Claude as commit co-author; that clashes
+  with the commit rule below, so Lance should decide.
+- **`lance/polish`** (local, not pushed) = `lance/onboarding` + `main` (custom index merged in `5c17ed1`) + the
+  polish round (six parallel agents): goal cards, adaptive targets, holdings-only ticker, Claude account snapshot and
+  chat fixes, sidebar states, one return helper, one disclosure line. 787 tests pass in both Nessie modes.
+  Screenshots: `~/calhacks-shots/final/`. Opening a PR from it into `main` brings the onboarding round and the polish
+  round to `main`. Ask Lance first.
+- **`lance/onboarding`** (local, not pushed) = the onboarding round (bank link, sidebar, Money tab, follow-ups);
+  fully contained in `lance/polish`.
 - Leftover agent worktrees under `.claude/worktrees/` (nine, all merged: three onboarding, six polish) can be removed.
 - Local `main` is stale (old unpushed `db94d83`, already contained upstream). `stash@{0}` ("lance: readiness, tilt
   caps, prompt") is old; don't drop it without asking. `refs/snapshots/pre-fanout` is a safety snapshot.
@@ -109,9 +106,11 @@ default, `sim`), `BROKER` (`sim` default, `alpaca`), `ALPACA_API_KEY` / `ALPACA_
 - **Risk:** score = average of the two preference answers (0–100). Limits can lower it: horizon (max level 1/2/3/4 for
   lt3/3to7/7to15/15plus) and max drop (riskiest mix whose real 2008/2022 worst year fits). Big disagreement → note and
   lean careful. The customer can override a limit (`answers["override"]`); it's advice, not a gate.
-- **Fund:** bond share follows the score smoothly (65% → 10%), stocks ~70/30 US/international. Interests: up to 8%
-  each, less for funds that swing more (never under 2%), total capped 10/15/20/25% by level. Single companies 5% each,
-  total cap 5/8/10/15%. Look-through notes for one company ≥ 8% or a sector far above the market.
+- **Fund (custom index, `core/portfolio.py` docstring is the source of truth):** six slices (`core/models.SLICES`):
+  bonds (BND, share follows the score 65% → 10%), international (VXUS), the customer's own US index (~55 big
+  companies by size, `core/universe.py`), where they spend (`core/spending.py`, by dollars, capped by level), their
+  interests (each theme's biggest companies), companies they added (capped). One position per ticker, none past
+  `COMPANY_CAP`. Spending picks are personalization, not predictions; Claude never endorses a company.
 - **Paycheck:** floor(paycheck × %) moves checking → investing via Nessie and buys the most underweight holdings.
 - **Targets follow the customer, never prices** (`core/targets.py`, every threshold a named constant): goal date =
   horizon bucket midpoint from the fund start (15plus assumed 20 yrs); inside the last 7 years bonds glide 30% → 65%,
@@ -149,8 +148,8 @@ default, `sim`), `BROKER` (`sim` default, `alpaca`), `ALPACA_API_KEY` / `ALPACA_
   bank activity, investing summary), Markets, News, Chat, Report, Backtest, Account. "How your fund was built"
   (`/p/<cid>/how`) is linked from the fund-ready message and the Portfolio tab.
 - **Ticker:** dark Yahoo-style strip pinned above everything (`base.html` block `tape`, `.tape-dock`), 52px, scrolling
-  loop that pauses on hover, sparklines. On a customer's pages it shows only what they hold: the fund's holdings in
-  weight order (single companies included), then any other broker positions by value. No default stocks, watchlist or
+  loop that pauses on hover, sparklines. On a customer's pages it shows only what they hold: the fund's `TAPE_HOLDINGS`
+  (10) biggest positions in weight order, then anything the broker holds outside the targets, by value. No default stocks, watchlist or
   BND/GLD. Before a fund is built, and on the landing page, it shows the major indexes: S&P 500 (SPY), Nasdaq (the real
   Nasdaq Composite, COMP, which opens QQQ; QQQ itself offline) and Dow (DIA). Each scrolling copy repeats its cards to
   at least `TAPE_MIN_CARDS` (14) so a short list fills the width (repeats hidden from screen readers, skipped by Tab;
@@ -208,9 +207,6 @@ While off, `/login` etc. return 404. Redirect URIs: `{PUBLIC_BASE_URL}/auth/goog
 
 - Decide how `lance/onboarding` reaches `main` (PR), so `main` gets Evelyn's PR #5 and the onboarding round.
 - Confirm Tier 4+ auto-execution is intended (it skips Confirm).
-- Decide the default fund: answer-driven (CLAUDE.md rules, current `lance/polish`) or Saahil's spending-driven single
-  stocks (his `257658d` on `main`). Spending mode picks individual companies by default, which sits awkwardly with
-  "doesn't tell customers which stocks to buy" and the 5%-per-company / level caps.
 - Ethan: one-page fund PDF (`/p/<cid>/fund.pdf`, pure-Python library) per the prompt Lance sent.
 - Polish round leftovers: changing risk answers from chat (a tool calling `targets.propose_answers`); a "skip ahead a
   year" demo control so a glide step can be shown; quick-pick boxes for the starting amount; whether "Growing my
