@@ -26,6 +26,7 @@ def sandbox(monkeypatch, tmp_path):
     monkeypatch.setattr(nessie, "_registry", {"account": None, "pulled": False})
     nessie.clear_cache()
     nessie.go_online()   # a test that simulated an outage must not leave the app "offline"
+    nessie.forget_new_customers()   # customers made with "Start as a new customer"
     nessie.reset()
     app_state._SESSIONS.clear()   # chat sessions, simulated trades and market shocks are in memory too
     get_broker().reset()
@@ -34,4 +35,5 @@ def sandbox(monkeypatch, tmp_path):
     seed.PAUSE_BACKGROUND = False
     seed.wait_for_background()   # a background rebuild must finish inside the test that started it
     nessie.go_online()
+    nessie.forget_new_customers()
     nessie.reset()

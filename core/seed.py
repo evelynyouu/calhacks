@@ -40,9 +40,22 @@ MERCHANTS = {   # key -> (name, category); created once, shared by every persona
 
 def plan_persona(cid: str) -> dict:
     """Everything the seeder will write for a persona, with opening balances solved. No I/O."""
-    p = nessie.persona_seed(cid)
-    last_payday = SIM_START + timedelta(days=p["days_to_payday"] - PAY_PERIOD_DAYS)
-    paydays = [last_payday - timedelta(days=PAY_PERIOD_DAYS * k) for k in range(PAYCHECKS - 1, -1, -1)]
+    return plan_from(nessie.persona_seed(cid), cid)
+
+
+def paychecks_in_history(period_days: int) -> int:
+    """How many past paychecks the history holds: about two months' worth (PAYCHECKS for every 2 weeks)."""
+    return max(2, round(7 * PURCHASES / period_days))
+
+
+def plan_from(p: dict, label: str | None = None, check: bool = True) -> dict:
+    """plan_persona for any starting numbers (personas.json-shaped, with Other bills added).
+    Customers made in the app (core/onboarding.py) can be paid weekly to monthly: "pay_period_days"
+    (default every 2 weeks). check=False skips the opening-balance check (for solving the numbers)."""
+    period = p.get("pay_period_days", PAY_PERIOD_DAYS)
+    count = paychecks_in_history(period)
+    last_payday = SIM_START + timedelta(days=p["days_to_payday"] - period)
+    paydays = [last_payday - timedelta(days=period * k) for k in range(count - 1, -1, -1)]
     history_start = min(paydays[0], SIM_START - timedelta(days=7 * PURCHASES))
 
     # Two months of spending in whole dollars (Nessie amounts are integers), spread as evenly as possible.
@@ -50,14 +63,14 @@ def plan_persona(cid: str) -> dict:
     base, extra = divmod(total_spend, PURCHASES)
     purchases = [{"merchant": SPEND_MERCHANTS[i % len(SPEND_MERCHANTS)],
                   "on": SIM_START - timedelta(days=7 * (PURCHASES - i)),
-                  "amount": float(base + (i < extra))} for i in range(PURCHASES)]
+                  "amount": float(base + (i < extra))} for i in range(PURCHASES) if base + (i < extra) > 0]
 
     bills = [{"name": b["name"], "amount": b["amount"],
               "recurring_date": (SIM_START + timedelta(days=b["due_in_days"])).day} for b in p["upcoming_bills"]]
     bill_payments = [{"name": b["name"], "amount": b["amount"], "on": d}
                      for b in bills for d in occurrences(b["recurring_date"], history_start, SIM_START)]
 
-    pay_total = p["paycheck_amount"] * PAYCHECKS
+    pay_total = p["paycheck_amount"] * count
     out_total = sum(x["amount"] for x in purchases) + sum(x["amount"] for x in bill_payments)
     to_savings = round(pay_total - out_total, 2)   # leftover the persona "saved"; negative = drew on savings
     opening = {
@@ -67,8 +80,8 @@ def plan_persona(cid: str) -> dict:
         "card": round(p["card_debt"], 2),
     }
     for k, v in opening.items():
-        if v < 0 or v != round(v):
-            raise ValueError(f"{cid}: opening {k} balance {v} must be a whole, non-negative dollar amount")
+        if check and (v < 0 or v != round(v)):
+            raise ValueError(f"{label or p['name']}: opening {k} balance {v} must be a whole, non-negative dollar amount")
     return {"persona": p, "paydays": paydays, "purchases": purchases, "bills": bills,
             "bill_payments": bill_payments, "to_savings": to_savings, "opening": opening}
 
@@ -166,7 +179,7 @@ def seed(personas: list[str] | None = None, reset: str | None = None, save: bool
     With `spares`, each persona also gets a pre-built spare copy for the fast reset."""
     merchants = {}
     _update_ids(lambda ids: merchants.update(ensure_merchants(ids)), save)
-    todo = list(personas or nessie._SEED)
+    todo = list(personas or [c for c in nessie._SEED if not nessie.is_new_customer(c)])
     if reset and reset not in todo:
         todo.append(reset)
     for cid in todo:
@@ -211,6 +224,9 @@ def reset_persona(cid: str) -> None:
     """The app's reset button. Swaps in the pre-built spare (no Nessie writes on the click), then
     deletes the old accounts and builds the next spare in the background. Without a spare (two
     resets in a row) it rebuilds the persona the slow way."""
+    if nessie.is_new_customer(cid):   # made in the app: rebuilt from its starting numbers, no spare copies
+        seed_new_customer(cid)
+        return
     taken = []
 
     def swap(ids):
@@ -228,6 +244,22 @@ def reset_persona(cid: str) -> None:
         return
     seed([cid], reset=cid, spares=False)
     _in_background(ensure_spares, [cid])
+
+
+def seed_new_customer(cid: str) -> dict:
+    """Live mode: write a customer made in the app (already registered with nessie.register_customer)
+    to Nessie, exactly as a persona is seeded (no spare copy). Their starting numbers go into the ids
+    entry too, so a restarted server (or another machine, via the registry) can find them. Run again
+    (reset), it builds fresh accounts first and only then deletes the old ones."""
+    merchants = {}
+    _update_ids(lambda ids: merchants.update(ensure_merchants(ids)))
+    entry = {**seed_persona(cid, merchants), "persona": nessie.persona_seed(cid)}
+    old = []
+    _update_ids(lambda ids: (old.append(ids.get(cid)), ids.__setitem__(cid, entry)))
+    if old[0]:
+        _delete_accounts(old[0]["accounts"].values())
+        state.clear(cid)
+    return entry
 
 
 def _retire_and_rebuild(cid: str, old: dict | None) -> None:
