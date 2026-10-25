@@ -62,11 +62,11 @@ def test_a_company_held_for_two_reasons_is_one_position_and_says_so():
 def test_single_companies_are_capped_and_come_out_of_stocks():
     p = build_portfolio(2, ["tech"], ["aapl", "NVDA", "MSFT", "AMZN", "META"])
     added = p.parts["added"]                      # the added part only; these companies are also in the US index
-    assert list(added) == ["AAPL", "NVDA", "MSFT", "AMZN"]                    # moderate: 8% room, 2% each
+    assert set(added) == {"AAPL", "NVDA", "MSFT", "AMZN", "META"}             # no count cap; all five included
     assert sum(added.values()) == pytest.approx(0.08, abs=1e-3)
     assert next(h for h in p.holdings if h.ticker == "BND").weight == 0.45      # bonds untouched
     held = {h.ticker: h for h in p.holdings}
-    assert all(held[t].expense_ratio == 0 for t in added) and any("left out: META" in w for w in p.overlap_warnings)
+    assert all(held[t].expense_ratio == 0 for t in added)
 
 
 def test_one_company_gets_at_most_5_percent():

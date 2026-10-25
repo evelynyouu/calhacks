@@ -139,11 +139,6 @@ def _compose(risk_level: int, interests, stocks, bond_share: float, spending, re
 
     picks = [t for t in dict.fromkeys(s.upper() for s in stocks or []) if t not in ETFS]
     stock_cap = STOCK_CAP_BY_RISK[risk_level]
-    room = int(round(stock_cap / MIN_TILT))
-    for t in picks[room:]:
-        reasons.append(Reason("dropped", f"A {kind} fund has room for {room} single companies, so this one was "
-                                         f"left out: {t}.", t, {"room": room}))
-    picks = picks[:room]
     each = min(STOCK_EACH, stock_cap / len(picks)) if picks else 0.0
     parts["added"] = {t: each for t in picks}
 
