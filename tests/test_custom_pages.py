@@ -360,3 +360,14 @@ def test_the_first_message_describes_the_parts_not_the_tickers(monkeypatch):
     msg = claude_agent.fund_ready(make_custom_fund("sam"))
     assert msg.startswith("Your fund is ready: growth.") and "Your US index: 35.5%, 50 companies" in msg
     assert "isn't a prediction" in msg and msg.count("(") < 14                                  # the biggest few, not all 58
+
+
+def test_what_moved_your_fund_opens_with_the_ten_biggest_and_a_show_all():
+    from datetime import timedelta
+    s, _ = custom_report()
+    s.fund.today += timedelta(days=40)
+    html = client.get("/p/sam/report").text
+    movers = html[html.index('id="movers"'):html.index('id="all-movers"')]
+    assert movers.count("<li") == 10 and "Show all 58 holdings" in text(html)
+    rep = build_report(s.fund)["returns"]["period"]
+    assert sum(x["dollars"] for x in rep["attribution"]) == pytest.approx(rep["market_gain"], abs=0.05)    # all 58 add up

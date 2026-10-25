@@ -20,7 +20,8 @@ from core.models import SLICES
 from core.policy import tier_for
 from core.portfolio import THEME_LABELS, THEMES, plain_index
 from core.profile import PAY_PERIOD_DAYS, get_profile
-from core.rebalance import targets as rebalance_targets, band, drift as drift_of, off_target, rebalance_trades
+from core.rebalance import band, drift as drift_of, limited_rebalance, off_target
+from core.rebalance import targets as rebalance_targets
 from core.sim import portfolio_assumptions, simulate
 
 QUARTER_DAYS = 91
@@ -395,7 +396,7 @@ def _recommendations(acct, vals, total, holdings, companies, interests, mkt, tie
                          "threshold_text": limit})
         if tier.auto_trades:
             trades = [{"symbol": t, "side": "buy" if d > 0 else "sell", "notional": abs(d)}
-                      for t, d in sorted(rebalance_trades(acct.portfolio, vals).items(), key=lambda kv: kv[1])]
+                      for t, d in sorted(limited_rebalance(acct.portfolio, vals).items(), key=lambda kv: kv[1])]
             recs.append(_rec("rebalance", "Rebalance back to your targets",
                              facts + ["Selling what ran ahead and buying what fell behind keeps your risk where you chose it."],
                              trades=trades, trigger=trig))

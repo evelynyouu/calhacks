@@ -4,7 +4,8 @@ import pytest
 from core import fund
 from core.broker import get_broker, values
 from core.fund import FundAccount
-from core.rebalance import MIN_TRADE, NEW_MONEY_PICKS, allocate_new_money, drift
+from core.rebalance import (MIN_TRADE, NEW_MONEY_PICKS, REBALANCE_MAX_TRADES, allocate_new_money, drift, limited_rebalance,
+                            rebalance_trades)
 from core.state import SIM_START
 from tests.fund_helpers import ANSWERS, make_custom_fund, make_legacy_etf_fund, make_portfolio_fixture
 
@@ -87,3 +88,53 @@ def test_weights_converge_to_target_over_26_paychecks_with_no_order_under_a_doll
     assert worst[0] > 0.05 and worst[-1] < 0.01                 # from 5+ points off target to under one point
     assert worst[-1] < worst[len(worst) // 2] < worst[0]
     assert len(get_broker().orders("sam")) <= 26 * NEW_MONEY_PICKS          # not 26 x 58
+
+
+# ---------- a rebalance of a 58-holding fund ----------
+
+def drifted(p, amount=20_000.0):
+    """Every holding a little off target, by a deterministic wobble (a year-old fund)."""
+    import math
+    return {h.ticker: amount * h.weight * (1 + 0.35 * math.sin(i * 1.7)) for i, h in enumerate(p.holdings)}
+
+
+def test_a_rebalance_trades_the_fifteen_biggest_mismatches_and_the_sells_pay_for_the_buys():
+    p = make_portfolio_fixture()
+    current = drifted(p)
+    assert len(rebalance_trades(p, current)) > 40                       # the full version is dozens of trades
+    out = limited_rebalance(p, current)
+    assert 0 < len(out) <= REBALANCE_MAX_TRADES == 15 and all(abs(d) >= MIN_TRADE for d in out.values())
+    sells, buys = -sum(d for d in out.values() if d < 0), sum(d for d in out.values() if d > 0)
+    assert sells == pytest.approx(buys, abs=0.1) and sells > 0
+
+
+def test_the_trades_it_keeps_are_the_biggest_ones_and_they_move_the_fund_toward_target():
+    p = make_portfolio_fixture()
+    current = drifted(p)
+    full, out = rebalance_trades(p, current), limited_rebalance(p, current)
+    assert set(out) <= set(full) and all(out[t] * full[t] > 0 for t in out)                  # same direction as the full plan
+    cut = min(abs(full[t]) for t in out)
+    assert sum(abs(d) > cut * 3 for t, d in full.items() if t not in out) == 0               # nothing much bigger was left out
+    after = {t: current[t] + out.get(t, 0.0) for t in current}
+    total, t = sum(current.values()), targets(p)
+    gap = lambda c: sum(abs(c[k] / total - t[k]) for k in t)                                 # noqa: E731
+    assert gap(after) < gap(current)
+
+
+def test_a_small_fund_is_rebalanced_in_full_as_before():
+    p = make_legacy_etf_fund()
+    current = {"VTI": 700.0, "VXUS": 50.0, "BND": 150.0, "XLK": 60.0, "AAPL": 40.0}
+    assert limited_rebalance(p, current) == rebalance_trades(p, current)
+
+
+def test_the_report_offers_at_most_fifteen_trades_for_a_drifted_custom_fund():
+    from datetime import timedelta
+    from core import market
+    from core.report import build_report
+    s = make_custom_fund("sam", 20_000)
+    market.add_shock(s.fund.today + timedelta(days=1), 60)
+    s.fund.today += timedelta(days=30)
+    rec = next(r for r in build_report(s.fund)["recommendations"] if r["action"] == "rebalance")
+    assert 0 < len(rec["trades"]) <= REBALANCE_MAX_TRADES
+    sells = sum(t["notional"] for t in rec["trades"] if t["side"] == "sell")
+    assert sells == pytest.approx(sum(t["notional"] for t in rec["trades"] if t["side"] == "buy"), abs=0.1)

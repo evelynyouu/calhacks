@@ -32,7 +32,7 @@
   </ul>
   {% if rest %}
   <details class="mt-1" id="all-positions">
-    <summary class="cursor-pointer py-2 text-sm font-medium text-moss-600">Show all {{ rows | length + rest | length }} positions</summary>
+    <summary class="chev py-2 text-sm font-medium text-moss-600">Show all {{ rows | length + rest | length }} positions</summary>
     <ul class="divide-y divide-ink/10 border-t border-ink/10">
       {% for r in rest %}{{ position(r) }}{% endfor %}
     </ul>

@@ -80,6 +80,30 @@ def rebalance_trades(p: Portfolio, current: dict[str, float]) -> dict[str, float
     return {t: v for t, v in trades.items() if abs(v) >= MIN_TRADE}
 
 
+REBALANCE_MAX_TRADES = 15   # a rebalance trades the biggest mismatches only; the customer confirms every one of these
+
+
+def limited_rebalance(p: Portfolio, current: dict[str, float], max_trades: int = REBALANCE_MAX_TRADES) -> dict[str, float]:
+    """rebalance_trades, cut to at most `max_trades` of the biggest mismatches and balanced so the sells pay for the
+    buys. A fund small enough to fit is returned as is. A year-old 58-holding fund can be a little off everywhere;
+    asking the customer to confirm 58 trades helps no one, so the rest catch up at the next review or paycheck."""
+    full = rebalance_trades(p, current)
+    if len(full) <= max_trades:
+        return full
+    sells = sorted(((t, d) for t, d in full.items() if d < 0), key=lambda kv: kv[1])
+    buys = sorted(((t, d) for t, d in full.items() if d > 0), key=lambda kv: -kv[1])
+    n_sell = min(len(sells), max(max_trades // 2, max_trades - len(buys)))
+    n_buy = min(len(buys), max_trades - n_sell)
+    n_sell = min(len(sells), max_trades - n_buy)
+    sells, buys = sells[:n_sell], buys[:n_buy]
+    sold, bought = -sum(d for _, d in sells), sum(d for _, d in buys)
+    if not sold or not bought:
+        return {}
+    k_sell, k_buy = min(1.0, bought / sold), min(1.0, sold / bought)          # the bigger side shrinks to match
+    out = {t: round(d * (k_sell if d < 0 else k_buy), 2) for t, d in sells + buys}
+    return {t: d for t, d in out.items() if abs(d) >= MIN_TRADE}
+
+
 def band(target: float) -> float:
     """How far (in weight) a holding may sit from its target before it counts as off target."""
     return min(DRIFT_ABS, DRIFT_REL * target)

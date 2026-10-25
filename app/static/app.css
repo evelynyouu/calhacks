@@ -57,3 +57,9 @@
 .range-btn-active:hover { background:#0b0f0d; }
 .prompt-chip { border:1px solid rgba(11,15,13,.18); border-radius:999px; padding:.3rem .75rem; font-size:.8rem; background:#fff; transition:border-color .15s, background .15s; }
 .prompt-chip:hover { border-color:#0b7a3e; background:#e8f6ee; }
+
+/* A chevron on every <summary> that opens a slice, a sector or "Show all", so it reads as clickable. */
+summary.chev { list-style: none; cursor: pointer; }
+summary.chev::-webkit-details-marker { display: none; }
+summary.chev::before { content: "\25B8"; display: inline-block; width: 1em; color: #0b7a3e; transition: transform .15s; }
+details[open] > summary.chev::before { transform: rotate(90deg); }
