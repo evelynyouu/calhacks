@@ -409,7 +409,9 @@ def _holding_reasons(holdings: list[Holding], parts: dict, kind: str, score: int
 
 def swing(ticker: str) -> float:
     """How much a fund moves in a typical year: its share of the market's moves plus its own."""
-    r = ETFS[ticker]
+    r = ETFS.get(ticker)
+    if r is None:   # a single company: its sector's share of the market's moves plus single-company noise
+        return math.hypot(market.beta(ticker) * market.MARKET_VOL, market.COMPANY_RESID_VOL)
     return math.hypot(float(r["beta"]) * market.MARKET_VOL, float(r["resid_vol"]))
 
 

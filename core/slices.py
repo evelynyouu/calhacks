@@ -69,3 +69,19 @@ def top_positions(rows: list[dict], n: int = TOP_POSITIONS) -> tuple[list[dict],
     """The n biggest rows (by value) and the rest, for a list that opens with its top n."""
     ranked = sorted(rows, key=lambda r: -r["value"])
     return ranked[:n], ranked[n:]
+
+
+def explained(p: Portfolio, hidden_kinds: tuple[str, ...] = ()) -> list[dict]:
+    """The "How your fund was built" shape from the plan's Contract (explain.build(acct)["slices"]): per slice,
+    its holdings with their reasons as `texts`. Reasons of a kind in `hidden_kinds` (the "what we adjusted" ones,
+    which the page lists separately) are left out. Only slices with holdings are returned, in SLICES order.
+    core/explain.py supplies its own; this is what the page uses until it does."""
+    out = []
+    for sl in view(p):
+        holdings = [{"ticker": r["ticker"], "name": r["name"], "weight": r["weight"], "sector": r["sector"],
+                     "texts": [x.text for x in p.reasons if x.ticker == r["ticker"] and x.kind not in hidden_kinds]}
+                    for r in sl["rows"]]
+        out.append({"key": sl["key"], "label": sl["label"], "weight": sl["weight"], "blurb": sl["blurb"],
+                    "personalized": sl["personalized"], "holdings": holdings,
+                    "sectors": sector_groups(holdings) if sl["key"] == "us_core" else None})
+    return out

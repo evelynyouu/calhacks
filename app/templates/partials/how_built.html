@@ -24,22 +24,46 @@
 
   <section class="card">
     <p class="eyebrow">3 · Your mix</p>
-    <p class="mt-2 text-sm text-ink/75">{{ how.mix.stocks | pct }} stocks and {{ how.mix.bonds | pct }} bonds, across {{ how.mix.holdings }} holdings.</p>
-    <div class="mt-4 grid sm:grid-cols-5 gap-5 items-start">
-      <div class="sm:col-span-2 max-w-[11rem] mx-auto w-full">
-        <canvas data-chart="pie" data-payload='{{ pie_data | tojson }}' aria-label="Fund mix"></canvas>
+    <p class="mt-2 text-sm text-ink/75">{{ how.mix.stocks | pct }} stocks and {{ how.mix.bonds | pct }} bonds, across {{ how.mix.holdings }} holdings in {{ how.slices | length }} parts.</p>
+    <div class="mt-4 max-w-[11rem] mx-auto w-full">
+      <canvas data-chart="pie" data-payload='{{ pie_data | tojson }}' aria-label="Fund mix by part"></canvas>
+    </div>
+    <div class="mt-4 space-y-3" id="how-slices">
+      {% for sl in how.slices %}
+      <div class="rounded-xl border border-ink/10 p-4" data-slice="{{ sl.key }}">
+        <div class="flex items-baseline justify-between gap-3">
+          <p class="font-semibold"><span class="inline-block h-2 w-2 rounded-sm mr-1 align-middle" data-swatch="{{ loop.index0 }}"></span>{{ sl.label }}</p>
+          <p class="tabular-nums font-medium">{{ sl.weight | pct(1) }}</p>
+        </div>
+        <p class="mt-1 text-xs text-ink/60 leading-relaxed">{{ sl.blurb }}</p>
+        {% if sl.sectors %}
+        <div class="mt-2 space-y-1.5">
+          {% for g in sl.sectors %}
+          <details class="rounded-lg bg-paper/60 px-3 py-1.5" data-sector="{{ g.sector }}">
+            <summary class="flex cursor-pointer list-none justify-between text-sm font-medium"><span>{{ g.sector }} <span class="font-normal text-ink/50">{{ g.count }}</span></span><span class="tabular-nums">{{ g.weight | pct(1) }}</span></summary>
+            <ul class="mt-1 divide-y divide-ink/10">
+              {% for h in g.rows %}
+              <li class="py-1.5 text-sm" data-holding="{{ h.ticker }}" data-weight="{{ '%.4f' % h.weight }}">
+                <div class="flex justify-between gap-3"><span><strong>{{ h.ticker }}</strong> {{ h.name }}</span><span class="tabular-nums">{{ h.weight | pct(1) }}</span></div>
+                {% for t in h.texts %}<p class="text-xs text-ink/60 mt-0.5 leading-relaxed">{{ t }}</p>{% endfor %}
+              </li>
+              {% endfor %}
+            </ul>
+          </details>
+          {% endfor %}
+        </div>
+        {% else %}
+        <ul class="mt-2 divide-y divide-ink/10 text-sm">
+          {% for h in sl.holdings %}
+          <li class="py-2" data-holding="{{ h.ticker }}" data-weight="{{ '%.4f' % h.weight }}">
+            <div class="flex justify-between gap-3"><span><strong>{{ h.ticker }}</strong> {{ h.name }}</span><span class="tabular-nums font-medium">{{ h.weight | pct(1) }}</span></div>
+            {% for t in h.texts %}<p class="text-xs text-ink/60 mt-1 leading-relaxed">{{ t }}</p>{% endfor %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% endif %}
       </div>
-      <ul class="sm:col-span-3 divide-y divide-ink/10 text-sm">
-        {% for h in how.holdings %}
-        <li class="py-2.5" data-holding="{{ h.ticker }}" data-weight="{{ '%.4f' % h.weight }}">
-          <div class="flex justify-between gap-3">
-            <span><span class="inline-block h-2 w-2 rounded-sm mr-1 align-middle" data-swatch="{{ loop.index0 }}"></span><strong>{{ h.ticker }}</strong> {{ h.name }}</span>
-            <span class="tabular-nums font-medium">{{ h.weight | pct(1) }}</span>
-          </div>
-          {% for t in h.texts %}<p class="text-xs text-ink/60 mt-1 leading-relaxed">{{ t }}</p>{% endfor %}
-        </li>
-        {% endfor %}
-      </ul>
+      {% endfor %}
     </div>
   </section>
 

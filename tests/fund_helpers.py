@@ -74,8 +74,8 @@ def make_portfolio_fixture() -> Portfolio:
     Weights sum to 1, every holding has a sector (companies) or "" (funds), a slice, and at least one reason."""
     from core.models import Holding, Portfolio, Reason
     us_total = round(1 - _BONDS - _INTL - _SPEND - _INTEREST - _ADDED, 6)
-    caps = [c for *_, c in _US_CORE]
-    weights = _capped(caps, CAP_OF_US_CORE)
+    core = sorted(_US_CORE, key=lambda c: -c[3])            # biggest first, so a company's rank in its reason is true
+    weights = _capped([c for *_, c in core], CAP_OF_US_CORE)
     h, why = [], []
 
     def add(ticker, name, w, role, slice_, sector, kind, text):
@@ -84,9 +84,9 @@ def make_portfolio_fixture() -> Portfolio:
 
     add("BND", "Vanguard Total Bond Market", _BONDS, "core", "bonds", "", "bonds", "Bonds soften the dips.")
     add("VXUS", "Vanguard Total International Stock", _INTL, "core", "intl", "", "core", "Companies outside the US.")
-    for i, ((t, name, sector, _), w) in enumerate(zip(_US_CORE, weights), 1):
+    for i, ((t, name, sector, _), w) in enumerate(zip(core, weights), 1):
         add(t, name, w * us_total, "core", "us_core", sector, "core",
-            f"{name} ({t}): the {i}th biggest US company we hold, in {sector}.")
+            f"{name} ({t}): the {_ordinal(i)} biggest US company we hold, in {sector}.")
     for (t, name, sector), w in zip((("TGT", "Target", "Consumer"), ("SBUX", "Starbucks", "Consumer"),
                                      ("COST", "Costco", "Everyday essentials")), (0.04, 0.025, 0.015)):
         add(t, name, w, "spend", "spend", sector, "spend",
@@ -97,6 +97,10 @@ def make_portfolio_fixture() -> Portfolio:
     total = sum(x.weight for x in h)
     h[2].weight = round(h[2].weight + 1 - total, 6)      # the largest company absorbs rounding, so weights sum to 1
     return Portfolio(3, "Growth", h, 0.02, 2022, -17.0, [], why, score=60)
+
+
+def _ordinal(n: int) -> str:
+    return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
 
 
 def _capped(sizes: list[float], cap: float) -> list[float]:

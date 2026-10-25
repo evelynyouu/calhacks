@@ -42,3 +42,13 @@ def test_a_persona_can_hold_the_fixture_fund():
     from tests.fund_helpers import make_custom_fund
     s = make_custom_fund("sam", 10_000)
     assert len(s.fund.portfolio.holdings) == 58 and fund.value(s.fund) == pytest.approx(10_000, abs=0.5)
+
+
+def test_the_fixtures_us_index_is_in_size_order_and_ranks_are_true():
+    us = make_portfolio_fixture().by_slice()["us_core"]
+    assert [h.weight for h in us] == sorted((h.weight for h in us), reverse=True)
+    top = {h.ticker for h in us[:6]}
+    assert top == {"NVDA", "MSFT", "AAPL", "GOOGL", "AMZN", "META"}      # the six biggest all hit the cap, so they tie
+    p = make_portfolio_fixture()
+    reason = next(r for r in p.reasons if r.ticker == "NVDA")
+    assert "1st biggest" in reason.text and "2nd biggest" in next(r for r in p.reasons if r.ticker == "MSFT").text

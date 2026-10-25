@@ -120,3 +120,48 @@ def test_each_position_names_the_slice_it_belongs_to():
     make_custom_fund("sam")
     page = text(client.get("/p/sam").text)
     assert "Target" in page and "Where you spend" in page and "Your US index" in page
+
+
+# ---------- "How your fund was built" ----------
+
+def test_the_how_page_groups_the_fund_by_slice_with_each_holdings_reasons():
+    make_custom_fund("sam")
+    r = client.get("/p/sam/how")
+    assert r.status_code == 200
+    html = r.text
+    assert [m for m in re.findall(r'data-slice="(\w+)"', html)] == [k for k, _ in SLICES]
+    assert len(re.findall(r'data-holding="', html)) == 58
+    assert pie_payload(html)["labels"] == [label for _, label in SLICES]
+    t = text(html)
+    assert "NVIDIA (NVDA): the 1st biggest US company we hold, in Technology." in t
+    assert "You spent $300 at Target" in t and "This personalizes your fund; it isn't a prediction" in t.replace("&#39;", "'")
+
+
+def test_the_us_index_collapses_to_sectors_on_the_how_page():
+    make_custom_fund("sam")
+    html = client.get("/p/sam/how").text
+    sectors = re.findall(r'data-sector="([^"]+)"', html)
+    assert len(sectors) == 11 and "Technology" in sectors
+    us = html[html.index('data-slice="us_core"'):html.index('data-slice="spend"')]
+    assert us.count("<details") == 11 and us.count('data-holding="') == 50
+
+
+def test_the_how_page_still_works_for_an_older_etf_fund():
+    from tests.fund_helpers import make_fund
+    make_fund("sam")
+    html = client.get("/p/sam/how").text
+    assert [m for m in re.findall(r'data-slice="(\w+)"', html)][:3] == ["bonds", "intl", "us_core"]
+    assert 'data-holding="VTI"' in html and 'data-sector=' not in html
+
+
+def test_explains_own_slices_win_over_the_fallback(monkeypatch):
+    from core import explain
+    real = explain.build
+    def with_slices(acct):
+        how = real(acct)
+        how["slices"] = [{"key": "bonds", "label": "Bonds (from explain.py)", "weight": 1.0, "blurb": "b", "personalized": False,
+                          "holdings": [], "sectors": None}]
+        return how
+    monkeypatch.setattr(explain, "build", with_slices)
+    make_custom_fund("sam")
+    assert "Bonds (from explain.py)" in client.get("/p/sam/how").text
