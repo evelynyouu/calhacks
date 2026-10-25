@@ -7,14 +7,14 @@
   <aside class="lg:col-span-4 card p-0 overflow-hidden self-start">
     <div class="p-3 border-b border-line">
       <label class="composer-box py-1" for="mk-search">
-        <svg aria-hidden="true" class="h-4 w-4 text-muted self-center" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="9" r="6"/><path d="m14 14 4 4"/></svg>
+        <svg aria-hidden="true" class="h-4 w-4 text-muted self-center" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="9" cy="9" r="6"/><path d="m14 14 4 4"/></svg>
         <input id="mk-search" name="q" placeholder="Search a company or ticker" autocomplete="off"
                hx-get="/p/{{ cid }}/search" hx-trigger="input changed delay:300ms, search" hx-target="#search-results">
       </label>
       <div id="search-results"></div>
     </div>
     {% for title, symbols in groups if symbols %}
-    <p class="eyebrow px-4 pt-3 pb-1">{{ title }}</p>
+    <h2 class="px-4 pt-4 pb-1 text-xs font-medium text-muted">{{ title }}</h2>
     <ul>
       {% for t in symbols if t in quotes %}{% set q = quotes[t] %}{% set i = info(t) %}
       <li>
@@ -24,7 +24,7 @@
             <span class="block truncate text-xs text-muted">{{ t if i.role == 'benchmark' else i.name }}</span>
           </span>
           <span class="text-right shrink-0">
-            <span class="block tabular-nums text-sm">{{ '%.2f' % q.price }}</span>
+            <span class="block text-sm">{{ '%.2f' % q.price }}</span>
             <span class="pill {{ 'pill-up' if q.change_pct >= 0 else 'pill-down' }}">{{ q.change_pct | signed(2) }}</span>
           </span>
         </a>
@@ -39,16 +39,16 @@
     <div class="card">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p class="eyebrow">{{ d.info.kind == 'stock' and 'Single company' or (d.info.role == 'benchmark' and 'Market index' or 'Fund') }} · {{ d.symbol }}</p>
-          <h1 class=" text-xl font-semibold mt-1">{{ d.info.name }}</h1>
-          <p class="text-sm text-muted">{{ d.info.about }}</p>
+          <p class="text-xs text-muted">{{ d.info.kind == 'stock' and 'Single company' or (d.info.role == 'benchmark' and 'Market index' or 'Fund') }} · {{ d.symbol }}</p>
+          <h1 class="text-lg font-semibold mt-1">{{ d.info.name }}</h1>
+          <p class="mt-1 text-sm text-muted">{{ d.info.about }}</p>
         </div>
         {# Inline only when this price's source differs from the rest (e.g. a ticker Nasdaq doesn't cover); the usual source is in the disclosure line. #}
         {% if price_label(a.today, d.symbol) != price_label(a.today) %}
         <span class="text-xs text-muted">{{ price_label(a.today, d.symbol) }}</span>
         {% endif %}
       </div>
-      <p class="mt-4 text-xl font-semibold tabular-nums">{{ q.price | money2 }}</p>
+      <p class="mt-4 text-xl font-semibold">{{ q.price | money2 }}</p>
       <p class="text-sm font-medium {{ 'text-moss-600' if q.change >= 0 else 'text-clay-500' }}">
         {{ '+' if q.change >= 0 else '−' }}{{ '%.2f' % (q.change | abs) }} ({{ q.change_pct | signed(2) }}) today
       </p>
@@ -59,7 +59,7 @@
       </div>
       <div class="h-64 mt-2"><canvas data-chart="price" data-payload='{{ dict(d.chart, up=up) | tojson }}' aria-label="{{ d.symbol }} price, {{ d.range }}"></canvas></div>
 
-      <dl class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+      <dl class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-4 border-t border-line pt-4">
         <div class="stat"><dt>Previous close</dt><dd>{{ q.prev_close | money2 if q.prev_close else '–' }}</dd></div>
         <div class="stat"><dt>52-week high</dt><dd>{{ d.high | money2 }}</dd></div>
         <div class="stat"><dt>52-week low</dt><dd>{{ d.low | money2 }}</dd></div>
@@ -67,7 +67,7 @@
       </dl>
 
       {% if d.shares %}
-      <div class="mt-4 rounded-lg bg-moss-50 px-4 py-3 text-sm">
+      <div class="mt-4 notice">
         <p class="font-medium">You own {{ '%.4f' % d.shares }} shares, worth {{ d.value | money2 }}</p>
         <p class="text-muted" title="{{ defs.since_bought }}">You paid {{ d.cost | money2 }}; <span class="{{ 'text-moss-600' if d.gain >= 0 else 'text-clay-500' }}">{{ '+' if d.gain >= 0 else '−' }}{{ d.gain | abs | money2 }}{% if d.gain_pct is not none %} ({{ d.gain_pct | signed(2) }}){% endif %}</span> since you bought.</p>
       </div>
@@ -75,7 +75,7 @@
 
       <div class="mt-4 flex flex-wrap gap-2">
         <form method="post" action="/p/{{ cid }}/watch"><input type="hidden" name="symbol" value="{{ d.symbol }}"><input type="hidden" name="op" value="{{ 'remove' if d.watching else 'add' }}">
-          <button class="btn-ghost">{{ 'Remove from watchlist' if d.watching else '☆ Add to watchlist' }}</button></form>
+          <button class="btn-ghost">{{ 'Remove from watchlist' if d.watching else 'Add to watchlist' }}</button></form>
         {% if d.is_stock %}
         <form method="post" action="/p/{{ cid }}/stocks"><input type="hidden" name="symbol" value="{{ d.symbol }}"><input type="hidden" name="op" value="remove"><button class="btn-ghost">Remove from my fund</button></form>
         {% elif d.can_add_stock %}{# you may already own a little through your US index; adding it is a separate, personal pick #}
@@ -90,11 +90,11 @@
     </div>
 
     <div class="card">
-      <p class="eyebrow">News about {{ d.symbol }}</p>
+      <h2 class="eyebrow">News about {{ d.symbol }}</h2>
       {% if d.news %}
       <ul class="mt-2 divide-y divide-line">
         {% for n in d.news %}
-        <li class="py-3"><a href="{{ n.link }}" target="_blank" rel="noopener noreferrer" class="font-medium hover:underline">{{ n.title }} <span aria-hidden="true">↗</span></a>
+        <li class="py-3"><a href="{{ n.link }}" target="_blank" rel="noopener noreferrer" class="font-medium hover:underline">{{ n.title }} <svg aria-hidden="true" class="inline h-3 w-3 align-baseline text-muted" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4H4v12h12v-4"/><path d="M11 3h6v6"/><path d="M17 3 9 11"/></svg><span class="sr-only">(opens in a new tab)</span></a>
           <p class="text-xs text-muted">{{ n.source }} · {{ n.published | ago }}</p></li>
         {% endfor %}
       </ul>

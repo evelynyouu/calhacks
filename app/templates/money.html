@@ -5,31 +5,28 @@
 {# Bank and investing together. Every number comes from app/routes/money.py; this file only formats them. #}
 {% macro signed_money(v) %}{{ '+' if v >= 0 else '−' }}{{ v | abs | money2 }}{% endmacro %}
 
-<div class="flex flex-wrap items-end justify-between gap-2 mb-4">
-  <div>
-    <p class="eyebrow">Money</p>
-    <h1 class=" text-xl font-semibold">Your bank and your fund</h1>
-    <p class="text-sm text-muted">A mock bank (Capital One's Nessie sandbox): pretend money, real arithmetic.</p>
-  </div>
+<div class="mb-6">
+  <h1 class="text-lg font-semibold">Money</h1>
+  <p class="mt-1 text-sm text-muted">Your bank and your fund together. The bank is a mock (Capital One's Nessie sandbox): pretend money, real arithmetic.</p>
 </div>
 
 {% if not has_fund %}
-<div class="mb-6 rounded-lg border border-line bg-paper px-4 py-3 text-sm" role="status">
+<div class="mb-6 notice" role="status">
   <strong>Your fund isn't built yet:</strong> finish the questions and this page shows your investing next to your bank.
-  <a href="/p/{{ cid }}" class="ml-1 font-medium text-moss-600 hover:underline">Back to the questions →</a>
+  <a href="/p/{{ cid }}" class="ml-1 link">Back to the questions</a>
 </div>
 {% endif %}
 
 <section aria-labelledby="accounts-h">
   <h2 id="accounts-h" class="sr-only">Accounts</h2>
-  <ul class="grid grid-cols-1 min-[420px]:grid-cols-2 lg:grid-cols-4 gap-3">
+  <ul class="card p-0 grid grid-cols-1 min-[420px]:grid-cols-2 lg:grid-cols-4 divide-y min-[420px]:divide-y-0 divide-line overflow-hidden">
     {% for acc in accounts %}
-    <li class="card p-4 {{ 'border-moss-600/40' if acc.investing else '' }}" data-account="{{ acc.kind }}">
+    <li class="p-4 border-line min-[420px]:[&:nth-child(n+3)]:border-t lg:[&:nth-child(n+3)]:border-t-0 min-[420px]:[&:nth-child(even)]:border-l lg:[&:not(:first-child)]:border-l" data-account="{{ acc.kind }}">
       <div class="flex items-center justify-between gap-2">
         <p class="text-sm font-medium">{{ acc.name }}</p>
-        <span class="text-xs text-muted tabular-nums">{% if acc.last4 %}••••{{ acc.last4 }}{% else %}demo{% endif %}</span>
+        <span class="text-xs text-muted">{% if acc.last4 %}••••{{ acc.last4 }}{% else %}demo{% endif %}</span>
       </div>
-      <p class="mt-1 text-xl font-semibold tabular-nums {{ 'text-clay-500' if acc.owed and acc.balance > 0 else '' }}" data-balance>{{ acc.balance | money2 }}</p>
+      <p class="mt-2 text-lg font-semibold" data-balance>{{ acc.balance | money2 }}</p>
       <p class="text-xs text-muted">{{ acc.note }}</p>
     </li>
     {% endfor %}
@@ -41,15 +38,15 @@
   <div class="lg:col-span-7 space-y-6 min-w-0">
 
     <section class="card" id="next-paycheck">
-      <p class="eyebrow">Next paycheck</p>
+      <h2 class="eyebrow">Next paycheck</h2>
       <div class="mt-2 flex flex-wrap items-baseline justify-between gap-2">
-        <p class=" text-xl font-semibold tabular-nums">{{ next_pay.paycheck | money2 }}</p>
+        <p class="text-lg font-semibold">{{ next_pay.paycheck | money2 }}</p>
         <p class="text-sm text-muted">{{ next_pay.on | day }} · in {{ next_pay.days }} day{{ 's' if next_pay.days != 1 }}</p>
       </div>
       {% if has_fund %}
-      <p class="mt-2 text-sm">At {{ '%g' % next_pay.pct }}% of each paycheck, <strong class="tabular-nums" data-next-invest>{{ next_pay.invested | money }}</strong> moves to FirstFund the moment it lands, and is invested right away.
+      <p class="mt-2 text-sm">At {{ '%g' % next_pay.pct }}% of each paycheck, <strong data-next-invest>{{ next_pay.invested | money }}</strong> moves to FirstFund the moment it lands, and is invested right away.
         <span class="text-muted">Whole dollars, rounded down.</span></p>
-      <a href="/p/{{ cid }}/account#investing" class="mt-2 inline-block text-sm font-medium text-moss-600 hover:underline">Change the percent →</a>
+      <a href="/p/{{ cid }}/account#investing" class="mt-3 inline-block link text-sm">Change the percent</a>
       {% else %}
       <p class="mt-2 text-sm text-muted">Nothing is invested until your fund is built. You'll pick the percent in the questions.</p>
       {% endif %}
@@ -57,7 +54,7 @@
 
     <section class="card" id="money-flow">
       <div class="flex flex-wrap items-baseline justify-between gap-2">
-        <p class="eyebrow">Money flow by month</p>
+        <h2 class="eyebrow">Money flow by month</h2>
         <p class="text-xs text-muted">From your bank activity</p>
       </div>
       {% if flow.months %}
@@ -72,8 +69,8 @@
             {% for b in m.bars %}
             <div class="grid grid-cols-[6.5rem_1fr_auto] sm:grid-cols-[9rem_1fr_auto] items-center gap-2 text-xs">
               <dt class="text-muted truncate">{{ b.label }}</dt>
-              <dd class="h-2.5 rounded-full bg-paper overflow-hidden" aria-hidden="true"><div class="h-full rounded-full flow-{{ b.key }}" style="width: {{ b.width }}%"></div></dd>
-              <dd class="tabular-nums text-right w-[5.5rem]">{{ b.amount | money }}</dd>
+              <dd class="h-2 rounded-full bg-paper overflow-hidden" aria-hidden="true"><div class="h-full rounded-full flow-{{ b.key }}" style="width: {{ b.width }}%"></div></dd>
+              <dd class="num w-[5.5rem]">{{ b.amount | money }}</dd>
             </div>
             {% endfor %}
           </dl>
@@ -83,7 +80,7 @@
       {% else %}
       <p class="mt-2 text-sm text-muted">No bank activity yet.</p>
       {% endif %}
-      <div class="mt-4 rounded-lg bg-paper px-3 py-3 text-sm" id="moved-vs-value">
+      <div class="mt-6 border-t border-line pt-4 text-sm" id="moved-vs-value">
         {% if has_fund %}
         <p>You've put in <strong class="tabular-nums">{{ inv.contributed | money2 }}</strong>{% if inv.starting > 0 and inv.from_paychecks > 0 %} ({{ inv.starting | money2 }} to start, {{ inv.from_paychecks | money2 }} from paychecks){% elif inv.from_paychecks > 0 %} from paychecks{% elif inv.starting > 0 %} as your starting amount{% endif %}. It's worth <strong class="tabular-nums">{{ inv.value | money2 }}</strong> now:
           <strong class="{{ 'text-moss-600' if inv.gain >= 0 else 'text-clay-500' }} tabular-nums">{{ signed_money(inv.gain) }}</strong> since you started.</p>
@@ -96,7 +93,7 @@
 
     <section class="card" id="activity">
       <div class="flex flex-wrap items-baseline justify-between gap-2">
-        <p class="eyebrow">Recent bank activity</p>
+        <h2 class="eyebrow">Recent bank activity</h2>
       </div>
       {% if feed %}
       <ul class="mt-2 divide-y divide-line text-sm">
@@ -104,10 +101,10 @@
         <li class="py-2 flex items-start justify-between gap-3">
           <div class="min-w-0">
             <p class="font-medium">{{ x.text[:1] | upper }}{{ x.text[1:] }}
-              {% if x.tag == 'firstfund' %}<span class="ml-1 rounded-full bg-moss-50 px-2 py-1 text-xs font-medium text-moss-700">Moved to investing</span>{% endif %}</p>
+              {% if x.tag == 'firstfund' %}<span class="ml-1 badge">Moved to investing</span>{% endif %}</p>
             <p class="text-xs text-muted">{{ x.on }} · {{ x.account }}{% if x.to %} → {{ x.to }}{% endif %}</p>
           </div>
-          <span class="tabular-nums shrink-0 {{ 'text-moss-600' if x.flow == 'in' else 'text-muted' if x.flow not in ('in', 'out') else '' }}">{% if x.flow == 'in' %}+{% elif x.flow == 'out' %}−{% endif %}{{ x.amount | money2 }}</span>
+          <span class="num shrink-0 {{ 'text-muted' if x.flow not in ('in', 'out') else '' }}">{% if x.flow == 'in' %}+{% elif x.flow == 'out' %}−{% endif %}{{ x.amount | money2 }}</span>
         </li>
         {% endfor %}
       </ul>
@@ -120,23 +117,23 @@
   <div class="lg:col-span-5 space-y-6 min-w-0">
     <section class="card" id="investing">
       <div class="flex flex-wrap items-baseline justify-between gap-2">
-        <p class="eyebrow">Investing</p>
-        {% if has_fund %}<div class="flex gap-3 text-sm font-medium"><a href="/p/{{ cid }}" class="text-moss-600 hover:underline">Portfolio →</a><a href="/p/{{ cid }}/report" class="text-moss-600 hover:underline">Report →</a></div>{% endif %}
+        <h2 class="eyebrow">Investing</h2>
+        {% if has_fund %}<div class="flex gap-4 text-sm"><a href="/p/{{ cid }}" class="link">Portfolio</a><a href="/p/{{ cid }}/report" class="link">Report</a></div>{% endif %}
       </div>
       {% if has_fund %}
-      <p class="mt-1 text-xl font-semibold tabular-nums">{{ inv.value | money2 }}</p>
-      <p class="text-base font-semibold {{ 'text-moss-600' if inv.gain >= 0 else 'text-clay-500' }}" title="{{ defs.total }}" data-fig="total">{{ signed_money(inv.gain) }}{% if inv.gain_pct is not none %} ({{ inv.gain_pct | signed(2) }}){% endif %}
+      <p class="mt-2 text-lg font-semibold">{{ inv.value | money2 }}</p>
+      <p class="mt-1 text-sm font-semibold {{ 'text-moss-600' if inv.gain >= 0 else 'text-clay-500' }}" title="{{ defs.total }}" data-fig="total">{{ signed_money(inv.gain) }}{% if inv.gain_pct is not none %} ({{ inv.gain_pct | signed(2) }}){% endif %}
         <span class="font-normal text-muted">since you started{% if inv.started %} on {{ inv.started | day }}{% endif %} · you put in {{ inv.contributed | money2 }}</span></p>
       {% set up = inv.day_change >= 0 %}
       <p class="text-sm font-medium {{ 'text-moss-600' if up else 'text-clay-500' }}" title="{{ defs.today }}" data-fig="today">{{ signed_money(inv.day_change) }} ({{ inv.day_pct | signed(2) }}) <span class="font-normal text-muted">today</span></p>
 
       {% if inv.value > 0 %}
-      <p class="mt-4 text-sm font-medium">Biggest holdings</p>
-      <ul class="mt-1 divide-y divide-line text-sm">
+      <div class="mt-6 flex justify-between border-b border-line pb-2 text-xs text-muted"><span>Biggest holdings</span><span>Value · share</span></div>
+      <ul class="divide-y divide-line text-sm">
         {% for r in inv.top %}
         <li class="py-2 flex items-center justify-between gap-3">
           <a href="/p/{{ cid }}/markets?s={{ r.ticker }}" class="min-w-0 hover:underline"><strong>{{ r.ticker }}</strong> <span class="text-muted">{{ r.info.label }}</span></a>
-          <span class="tabular-nums shrink-0">{{ r.value | money2 }} <span class="text-muted">· {{ r.share | pct(1) }}</span></span>
+          <span class="num shrink-0">{{ r.value | money2 }} <span class="text-muted">· {{ r.share | pct(1) }}</span></span>
         </li>
         {% endfor %}
       </ul>
@@ -145,22 +142,22 @@
       {% endif %}
       {% else %}
       <p class="mt-2 text-sm text-muted">Your fund isn't built yet: finish the questions.</p>
-      <a href="/p/{{ cid }}" class="btn mt-3 inline-block">Finish the questions</a>
+      <a href="/p/{{ cid }}" class="btn mt-4">Finish the questions</a>
       {% endif %}
     </section>
 
     <section class="card" id="bills">
-      <p class="eyebrow">Bills before your next paycheck</p>
+      <h2 class="eyebrow">Bills before your next paycheck</h2>
       {% if bills_due %}
       <ul class="mt-2 divide-y divide-line text-sm">
         {% for b in bills_due %}
         <li class="py-2 flex items-center justify-between gap-3">
           <div><p class="font-medium">{{ b.name }}</p><p class="text-xs text-muted">Due {{ b.due | day }}{% if b.in_days == 0 %} (today){% endif %}</p></div>
-          <span class="tabular-nums">{{ b.amount | money2 }}</span>
+          <span class="num">{{ b.amount | money2 }}</span>
         </li>
         {% endfor %}
       </ul>
-      <p class="mt-2 flex justify-between text-sm font-medium"><span>Total</span><span class="tabular-nums">{{ bills_total | money2 }}</span></p>
+      <p class="mt-2 flex justify-between border-t border-line pt-2 text-sm font-semibold"><span>Total</span><span class="num">{{ bills_total | money2 }}</span></p>
       {% else %}
       <p class="mt-2 text-sm text-muted">No bills due before {{ next_pay.on | day }}.</p>
       {% endif %}

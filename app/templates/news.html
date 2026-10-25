@@ -5,13 +5,13 @@
 <div class="grid lg:grid-cols-12 gap-6">
   <div class="lg:col-span-7 space-y-6">
     <div id="rundown" class="card" hx-get="/p/{{ cid }}/rundown" hx-trigger="load" hx-swap="outerHTML">
-      <p class="eyebrow">AI rundown</p>
+      <h2 class="eyebrow">Today's rundown</h2>
       <p class="mt-2 text-sm text-muted">Reading today's moves and headlines…</p>
     </div>
 
     <section class="card">
       <div class="flex flex-wrap items-center justify-between gap-2">
-        <p class="eyebrow">Headlines</p>
+        <h2 class="eyebrow">Headlines</h2>
         <div class="flex gap-1" role="tablist" aria-label="Which news">
           <a href="?feed=fund" role="tab" class="range-btn {% if which == 'fund' %}range-btn-active{% endif %}">For your fund</a>
           <a href="?feed=market" role="tab" class="range-btn {% if which == 'market' %}range-btn-active{% endif %}">Whole market</a>
@@ -21,10 +21,10 @@
       <ul class="mt-2 divide-y divide-line">
         {% for n in items %}
         <li class="py-3">
-          <a href="{{ n.link }}" target="_blank" rel="noopener noreferrer" class="font-medium leading-snug hover:underline">{{ n.title }} <span aria-hidden="true" class="text-muted">↗</span></a>
+          <a href="{{ n.link }}" target="_blank" rel="noopener noreferrer" class="font-medium hover:underline">{{ n.title }} <svg aria-hidden="true" class="inline h-3 w-3 align-baseline text-muted" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4H4v12h12v-4"/><path d="M11 3h6v6"/><path d="M17 3 9 11"/></svg><span class="sr-only">(opens in a new tab)</span></a>
           <p class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
             <span>{{ n.source }} · {{ n.published | ago }}</span>
-            {% for t in n.tickers[:4] %}<a href="/p/{{ cid }}/markets?s={{ t }}" class="rounded bg-paper px-2 py-1 font-medium text-ink-2 hover:bg-moss-50">{{ t }}</a>{% endfor %}
+            {% for t in n.tickers[:4] %}<a href="/p/{{ cid }}/markets?s={{ t }}" class="rounded-sm border border-line px-2 py-1 font-medium text-ink-2 hover:border-ink">{{ t }}</a>{% endfor %}
           </p>
         </li>
         {% endfor %}
