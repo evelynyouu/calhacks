@@ -33,6 +33,7 @@ class Segment:
     v_end: float                    # value just before the orders on `end`
     flow: float                     # net new money on `end` (buys minus sells), dollars
     gains: dict[str, float]         # price gain per ticker over the segment
+    held: dict[str, float]          # dollars held per ticker at the start of the segment
     income: dict[str, float]        # estimated income per ticker over the segment (approximate)
 
 
@@ -95,6 +96,7 @@ def replay(orders: list[Order], px: Price, start: date, end: date,
         if day <= prev:
             continue
         gains = {t: s * (px(t, day) - px(t, prev)) for t, s in shares.items()}
+        held = {t: s * px(t, prev) for t, s in shares.items()}
         income = {t: s * px(t, prev) * ((1 + yields[t]) ** ((day - prev).days / DAYS_PER_YEAR) - 1)
                   for t, s in shares.items() if yields.get(t)}
         v_end = value(day)
@@ -104,7 +106,7 @@ def replay(orders: list[Order], px: Price, start: date, end: date,
             flow += (1 if o["side"] == "buy" else -1) * o["shares"] * px(o["symbol"], day)
             _apply(shares, o)
             i += 1
-        out.segments.append(Segment(prev, day, prev_value, v_end, flow, gains, income))
+        out.segments.append(Segment(prev, day, prev_value, v_end, flow, gains, held, income))
         prev, prev_value = day, value(day)
     out.end_value = prev_value if out.segments else out.start_value
     return out
@@ -183,6 +185,18 @@ def attribution(r: Replay) -> dict[str, float]:
         for t, g in s.gains.items():
             out[t] = out.get(t, 0.0) + g
     return out
+
+
+def excess_over(r: Replay, ticker: str, alternative: dict[str, float], px: Price) -> float:
+    """Dollars `ticker` made beyond what the same dollars would have made in `alternative` ({ticker: weight}),
+    stretch by stretch. This is how a pick did against the core fund it replaced."""
+    total = 0.0
+    for s in r.segments:
+        held = s.held.get(ticker, 0.0)
+        if held:
+            alt = sum(w * (px(t, s.end) / px(t, s.start) - 1) for t, w in alternative.items())
+            total += s.gains.get(ticker, 0.0) - held * alt
+    return total
 
 
 def income_by_ticker(r: Replay) -> dict[str, float]:

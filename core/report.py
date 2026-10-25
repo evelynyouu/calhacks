@@ -20,7 +20,8 @@ from core.rebalance import drift as drift_of, rebalance_trades
 from core.sim import simulate
 
 QUARTER_DAYS = 91
-BENCHMARK = "SPY"
+BENCHMARK = "SPY"               # "the market" line
+US_SHARE_OF_STOCKS = 0.70       # VTI's share of VTI+VXUS when the fund has neither to read it from
 NOT_STOCKS = {"BND", "GLD"}
 
 DRIFT_TRIGGER = 0.05            # a fund 5 points off its target weight -> rebalance
@@ -59,6 +60,8 @@ def build_report(acct: FundAccount) -> dict:
         else round(gain / contributed * 100, 2) if contributed else 0.0,
         "period_pct": period_pct, "market_period_pct": mkt["m1"],
         "vs_market_pts": round(period_pct - mkt["m1"], 2),
+        "benchmark_period_pct": period["benchmark_pct"] if period else None,
+        "vs_benchmark_pts": period["vs_benchmark_pts"] if period else None,
         "invest_pct": acct.invest_pct, "fee_pct": p.annual_fee_pct,
         "fee_dollars": round(total * p.annual_fee_pct / 100, 2),
     }
@@ -91,29 +94,77 @@ def _returns(acct: FundAccount, tier) -> dict:
     both windows are None."""
     today, orders = acct.today, get_broker().orders(acct.customer_id)
     if not orders:
-        return {"available": False, "first_order": None, "period": None, "since_start": None}
+        return {"available": False, "first_order": None, "period": None, "since_start": None, "benchmark": None}
     first = min(o["on"] for o in orders)
     start = today - timedelta(days=tier.review_every_days)
     if acct.last_review and acct.last_review < start:
         start = acct.last_review
     young = start <= first   # the fund is younger than the period: show its whole life
-    return {"available": True, "first_order": first,
-            "period": _window(orders, first, today, None if young else start),
-            "since_start": _window(orders, first, today, None)}
+    bench = benchmark_weights(acct.portfolio)
+    return {"available": True, "first_order": first, "benchmark": bench,
+            "period": _window(orders, first, today, None if young else start, bench, acct.portfolio),
+            "since_start": _window(orders, first, today, None, bench, acct.portfolio)}
 
 
-def _window(orders: list[dict], first: date, end: date, start: date | None) -> dict:
-    """Dollars and returns for [start, end]. start=None means from the first deposit, which counts as new money."""
-    young = start is None
-    r = returns.replay(orders, market.raw_price, returns.day_before(first) if young else start, end)
-    twr, mwr = returns.twr(r), returns.money_weighted(r)
+def benchmark_weights(p) -> dict[str, float]:
+    """The fund's own core mix: VTI/VXUS/BND at the fund's stock/bond split, with the interest and single-company
+    slices put back into VTI/VXUS. Read from the target weights, so it holds for any bond share."""
+    w = {h.ticker: h.weight for h in p.holdings}
+    bonds = w.get("BND", 0.0)
+    us, intl = w.get("VTI", 0.0), w.get("VXUS", 0.0)
+    us_frac = us / (us + intl) if us + intl > 0 else US_SHARE_OF_STOCKS
+    return {"VTI": round((1 - bonds) * us_frac, 6), "VXUS": round((1 - bonds) * (1 - us_frac), 6), "BND": round(bonds, 6)}
+
+
+def _window(orders: list[dict], first: date, end: date, start: date | None, bench: dict[str, float], p) -> dict:
+    """Dollars, returns, benchmark and per-holding gains for [start, end]. start=None means from the first
+    deposit, which then counts as new money. The benchmark and the S&P 500 line get the same deposits on the
+    same days, so "vs benchmark" is only the customer's choices (interests, companies, drift)."""
+    px, from_start = market.raw_price, start is None
+    begin = returns.day_before(first) if from_start else start
+    r = returns.replay(orders, px, begin, end)
+    flows = returns.net_flows(orders, px)
+    blend = returns.replay(returns.shadow_orders(flows, bench, px), px, begin, end)
+    spy = returns.replay(returns.shadow_orders(flows, {BENCHMARK: 1.0}, px), px, begin, end)
+    twr, mwr, b_twr, s_twr = returns.twr(r), returns.money_weighted(r), returns.twr(blend), returns.twr(spy)
+    pct = lambda x: None if x is None else round(x * 100, 2)   # noqa: E731
+    gap = lambda a, b: None if a is None or b is None else round((a - b) * 100, 2)   # noqa: E731
     return {
-        "start": first if young else start, "end": end, "days": (end - (first if young else start)).days,
-        "from_start": young, "start_value": round(r.start_value, 2), "deposits": round(r.deposits, 2),
+        "start": first if from_start else start, "end": end, "days": (end - (first if from_start else start)).days,
+        "from_start": from_start, "start_value": round(r.start_value, 2), "deposits": round(r.deposits, 2),
         "market_gain": round(r.market_gain, 2), "end_value": round(r.end_value, 2),
-        "twr_pct": None if twr is None else round(twr * 100, 2),
-        "mwr_pct": None if mwr is None else round(mwr * 100, 2),
+        "twr_pct": pct(twr), "mwr_pct": pct(mwr),
+        "benchmark_pct": pct(b_twr), "benchmark_value": round(blend.end_value, 2), "vs_benchmark_pts": gap(twr, b_twr),
+        "spy_pct": pct(s_twr), "vs_spy_pts": gap(twr, s_twr),
+        "attribution": _attribution(r, p), "picks": _picks(r, p, bench, px),
     }
+
+
+def _attribution(r: returns.Replay, p) -> list[dict]:
+    """What moved the fund: dollars each holding added or cost, biggest first. Adds up to the market gain."""
+    roles = {h.ticker: h.role for h in p.holdings}
+    rows = [{"ticker": t, "label": market.info(t)["label"], "role": roles.get(t, "tilt"), "dollars": round(d, 2)}
+            for t, d in returns.attribution(r).items()]
+    return sorted(rows, key=lambda x: -abs(x["dollars"]))
+
+
+def _picks(r: returns.Replay, p, bench: dict[str, float], px) -> list[dict]:
+    """Each interest fund and single company: its price move, the dollars it added, and how it did against
+    the core stock funds it replaced (VTI/VXUS at the fund's own US/international split)."""
+    stocks = bench["VTI"] + bench["VXUS"]
+    core = {"VTI": bench["VTI"] / stocks, "VXUS": bench["VXUS"] / stocks} if stocks else {"VTI": 1.0}
+    gains = returns.attribution(r)
+    core_pct = round(sum(w * market.change_pct(t, r.start, r.end) for t, w in core.items()), 2)
+    rows = []
+    for h in p.holdings:
+        if h.role == "core":
+            continue
+        move = market.change_pct(h.ticker, r.start, r.end)
+        rows.append({"ticker": h.ticker, "label": market.info(h.ticker)["label"], "role": h.role,
+                     "weight": h.weight, "move_pct": move, "dollars": round(gains.get(h.ticker, 0.0), 2),
+                     "core_pct": core_pct, "vs_core_pts": round(move - core_pct, 2),
+                     "vs_core_dollars": round(returns.excess_over(r, h.ticker, core, px), 2)})
+    return rows
 
 
 def _holdings(acct, vals, total, month_ago) -> list[dict]:
