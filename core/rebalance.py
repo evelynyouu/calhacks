@@ -33,13 +33,23 @@ def targets(p: Portfolio, current: dict[str, float]) -> dict[str, float]:
     return {**base, **{t: personal[t] + share * held[t] / held_sum for t in index}}
 
 
-def allocate_new_money(p: Portfolio, current: dict[str, float], amount: float) -> dict[str, float]:
+NEW_MONEY_PICKS = 10   # a paycheck buys at most this many holdings: a 58-holding fund would otherwise get ~58 tiny orders
+
+
+def allocate_new_money(p: Portfolio, current: dict[str, float], amount: float, picks: int | None = None) -> dict[str, float]:
     """Send new cash to the most underweight holdings first. Returns {ticker: dollars}, none under MIN_TRADE
-    (a custom index has ~60 holdings; tiny orders aren't worth placing and a broker may refuse them)."""
+    (a custom index has ~60 holdings; tiny orders aren't worth placing and a broker may refuse them).
+
+    `picks` limits how many holdings get money: the ones furthest below target, which catch up first; the rest
+    catch up on later paychecks. None means every underweight holding, which is what a first deposit wants."""
+    if amount < MIN_TRADE:
+        return {}                                   # not worth an order; the money waits for the next paycheck
     total = sum(current.values()) + amount
     goal = targets(p, current)
     gaps = {t: max(0.0, w * total - current.get(t, 0.0)) for t, w in goal.items()}
     gaps = {t: g for t, g in gaps.items() if g > 0}
+    if picks:
+        gaps = dict(sorted(gaps.items(), key=lambda kv: (-kv[1], kv[0]))[:picks])
     while gaps:
         gap_sum = sum(gaps.values())
         small = [t for t, g in gaps.items() if amount * g / gap_sum < MIN_TRADE]

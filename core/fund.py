@@ -19,7 +19,7 @@ from core.policy import tier_for
 from core.builder import build as build_fund
 from core.spending import spending_profile
 from core.profile import get_profile
-from core.rebalance import allocate_new_money
+from core.rebalance import NEW_MONEY_PICKS, allocate_new_money
 
 AUTO_EXECUTE_TIER = 4   # Tier 4+ ($50K+): trades run immediately when auto_trade is on
 
@@ -68,10 +68,11 @@ def start(acct: FundAccount, on: date | None = None) -> list[Trade]:
     return trades
 
 
-def invest(acct: FundAccount, amount: float, on: date | None = None) -> list[Trade]:
-    """Buy `amount` dollars, sending it to the funds furthest below target."""
+def invest(acct: FundAccount, amount: float, on: date | None = None, picks: int | None = None) -> list[Trade]:
+    """Buy `amount` dollars, sending it to the holdings furthest below target. `picks` limits it to that many
+    (a paycheck buys NEW_MONEY_PICKS; the first deposit buys everything)."""
     on = on or acct.today
-    plan = allocate_new_money(acct.portfolio, values(acct.customer_id, on), amount)
+    plan = allocate_new_money(acct.portfolio, values(acct.customer_id, on), amount, picks)
     return [get_broker().submit(acct.customer_id, t, "buy", d, on) for t, d in plan.items() if d > 0]
 
 
@@ -90,7 +91,7 @@ def paycheck(acct: FundAccount) -> dict:
     trades, transfer_id = [], None
     if amount > 0 and acct.portfolio:
         transfer_id = nessie.transfer_to_investing(cid, amount)
-        trades = invest(acct, amount)
+        trades = invest(acct, amount, picks=NEW_MONEY_PICKS)
         acct.contributed += amount
     entry = {"on": acct.today, "paycheck": pay, "pct": acct.invest_pct, "invested": float(amount),
              "transfer_id": transfer_id, "trades": trades}
