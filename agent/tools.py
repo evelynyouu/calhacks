@@ -1,10 +1,14 @@
 """Claude tools. Each wraps a Python function; Claude never computes numbers.  OWNER: Ethan."""
 from __future__ import annotations
 
+from dataclasses import asdict, is_dataclass
+from datetime import date, datetime
+
 from app.state import Session
 from core import feed, fund, intake, market
 from core.market import ETFS
 from core.portfolio import THEMES
+from core.explain import explain_for_chat
 from core.report import build_report
 
 INDEXES = ["SPY", "QQQ", "DIA"]
@@ -19,10 +23,22 @@ TOOLS = [
         "input_schema": {"type": "object", "properties": {}},
     },
     {
+        "name": "get_fund_explanation",
+        "description": "Why the fund is built the way it is: the builder's own reasons for the risk score, the "
+                       "bond share, each holding, and anything it capped, shrank, dropped or flagged. Pass a ticker "
+                       "to answer \"why do I own X?\". Same text as the How your fund was built page.",
+        "input_schema": {"type": "object", "properties": {"ticker": {"type": "string"}}},
+    },
+    {
         "name": "get_report",
-        "description": "The latest report: value, money put in, gain, 30-day performance vs the market, each "
-                       "holding's performance, the biggest companies inside the fund, the customer's interests vs "
-                       "the market, broad market trends, and recommendations.",
+        "description": "The latest report, all computed by the app: value and money put in; the fund's return over "
+                       "the review period and since the start (time-weighted for the fund, money-weighted for the "
+                       "customer's own dollars) against a benchmark built from the fund's own core mix and against "
+                       "the S&P 500; what moved the fund in dollars per holding; each pick against the core it "
+                       "replaced; holdings, the biggest companies and sectors inside the fund; recommendations with "
+                       "the numbers that triggered them; the 10-year range with its assumptions; the customer's "
+                       "finances (budget, cash cushion, card debt, where the fund fits); the market; and notes on "
+                       "which prices are simulated and what is approximate.",
         "input_schema": {"type": "object", "properties": {}},
     },
     {
@@ -75,6 +91,8 @@ def fund_summary(session: Session) -> dict:
     p = a.portfolio
     return {
         "risk_label": p.risk_label, "risk_level": p.risk_level, "risk_score_out_of_100": a.risk_score,
+        "risk_score_used": p.score,
+        "limits": [r.text for r in p.reasons if r.kind in ("contradiction", "horizon", "drop", "override")],
         "paycheck_percent": a.invest_pct, "goal": a.answers.get("goal"),
         "interests": [THEMES[t] + " " + ETFS[THEMES[t]]["label"] for t in intake.interests(a.answers)],
         "interests_without_a_fund": a.answers.get("interests", {}).get("unmatched", []),
@@ -85,18 +103,45 @@ def fund_summary(session: Session) -> dict:
     }
 
 
+def _plain(x):
+    """Dates and dataclasses to JSON-safe values for a tool result."""
+    if isinstance(x, (date, datetime)):
+        return x.isoformat()
+    if is_dataclass(x) and not isinstance(x, type):
+        return _plain(asdict(x))
+    if isinstance(x, dict):
+        return {k: _plain(v) for k, v in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [_plain(v) for v in x]
+    return x
+
+
 def report_summary(session: Session) -> dict:
     rep = build_report(session.fund)
-    return {
-        "as_of": rep["as_of"].isoformat(), "summary": rep["summary"],
-        "holdings": [{k: h[k] for k in ("ticker", "label", "value", "weight", "target", "day_pct", "period_pct", "gain_pct")}
-                     for h in rep["holdings"]],
+    ret, proj = rep["returns"], rep["projection"]
+
+    def window(w):
+        if not w:
+            return None
+        keep = {k: v for k, v in w.items() if k not in ("attribution", "picks")}
+        return {**keep, "what_moved_the_fund": w["attribution"][:8], "picks": w["picks"]}
+
+    return _plain({
+        "as_of": rep["as_of"], "summary": rep["summary"],
+        "period": window(ret["period"]), "since_start": window(ret["since_start"]),
+        "benchmark_weights": ret["benchmark"],
+        "benchmark_note": "The benchmark is VTI/VXUS/BND at this fund's own stock/bond split, with the same deposits.",
+        "holdings": [{k: h[k] for k in ("ticker", "label", "value", "weight", "target", "off_target", "day_pct",
+                                        "period_pct", "gain_pct", "simulated")} for h in rep["holdings"]],
         "top_companies": [{k: c[k] for k in ("name", "ticker", "share", "via", "period_pct")} for c in rep["companies"][:5]],
-        "interests": rep["interests"], "market": {k: v for k, v in rep["market"].items()},
-        "fund_vs_market": rep["relation"],
+        "sectors": rep["sectors"], "interests": rep["interests"], "market": rep["market"], "fund_vs_market": rep["relation"],
         "recommendations": [{"title": r["title"], "facts": r["facts"], "trades": r["trades"]} for r in rep["recommendations"]],
-        "simulated_market_data": True,
-    }
+        "projection": {"typical_10y": proj.p50[-1], "low_10y": proj.p10[-1], "high_10y": proj.p90[-1],
+                       "assumptions": {k: v for k, v in rep["projection_inputs"].items() if k != "rows"},
+                       "note": "A range built on assumptions, not a forecast."},
+        "finances": {k: v for k, v in rep["finances"].items() if k != "facts"},
+        "data_notes": rep["data_notes"], "facts": rep["facts"],
+    })
 
 
 def market_today(session: Session) -> dict:
@@ -128,6 +173,8 @@ def run_tool(session: Session, name: str, args: dict) -> tuple[dict, list[str]]:
         return {"error": "No fund yet; the customer is still answering the intake questions."}, []
     if name == "get_fund":
         return fund_summary(session), []
+    if name == "get_fund_explanation":
+        return explain_for_chat(session.fund.portfolio, args.get("ticker") or None), []
     if name == "get_report":
         return report_summary(session), []
     if name == "update_interests":

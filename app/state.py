@@ -41,8 +41,9 @@ class Session:
         """Went through the bank link step, or has a fund already running (Alex): either way the bank is in use."""
         return bool(self.linked) or self.done
 
-    def say(self, text: str, role: str = "assistant") -> dict:
-        m = {"role": role, "text": text}
+    def say(self, text: str, role: str = "assistant", link: dict | None = None) -> dict:
+        """link: {"href", "label"}, shown under the message (e.g. "How your fund was built")."""
+        m = {"role": role, "text": text, **({"link": link} if link else {})}
         self.transcript.append(m)
         return m
 

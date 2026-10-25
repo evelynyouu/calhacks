@@ -1,31 +1,153 @@
 {% extends "base.html" %}
 {% block title %}Fund report · FirstFund{% endblock %}
 {% block header_right %}{% include "partials/tier.html" %}{% endblock %}
+{% macro pv(x, d=2) %}{% if x is none %}—{% else %}{{ x | signed(d) }}{% endif %}{% endmacro %}
+{% macro tone(x) %}{% if x is not none %}{{ 'text-moss-600' if x >= 0 else 'text-clay-500' }}{% endif %}{% endmacro %}
+{% macro dollars0(x) %}{{ '+' if x >= 0 else '−' }}{{ x | abs | money }}{% endmacro %}
+{% macro dollars(x) %}{{ '+' if x >= 0 else '−' }}{{ x | abs | money2 }}{% endmacro %}
 {% block content %}
-{% set sm = rep.summary %}{% set mk = rep.market %}{% set rel = rep.relation %}
+{% set sm = rep.summary %}{% set mk = rep.market %}{% set rel = rep.relation %}{% set p = rep.returns.period %}{% set since = rep.returns.since_start %}
+{% set fin = rep.finances %}{% set pin = rep.projection_inputs %}{% set notes = rep.data_notes %}
 <div class="max-w-4xl mx-auto space-y-5">
 
+  <!-- 1. Headline -->
   <section class="card">
     <div class="flex flex-wrap items-baseline justify-between gap-2">
       <p class="eyebrow">{{ profile.name }}'s fund report</p>
-      <p class="text-xs text-ink/50">As of {{ rep.as_of | day }} · {% if fast_forwarded %}demo date, prices simulated{% elif live_market %}Nasdaq prices{% else %}simulated prices{% endif %} · trades {{ rep.broker_mode }}</p>
+      <p class="text-xs text-ink/50">As of {{ rep.as_of | day }} · trades {{ rep.broker_mode }}</p>
     </div>
     <h1 class="font-display text-3xl font-bold mt-1">{{ sm.value | money2 }}</h1>
-    <p class="text-sm {% if gain_up %}text-moss-600{% else %}text-clay-500{% endif %}">
-      {{ '+' if gain_up else '−' }}{{ sm.gain | abs | money2 }} ({{ sm.gain_pct | signed(2) }}) on {{ sm.contributed | money2 }} put in
+    {% if p and p.days > 0 %}
+    <p class="text-sm mt-0.5">
+      <span class="{{ tone(p.market_gain) }}">{{ dollars(p.market_gain) }} from price moves</span>
+      {% if p.income_estimate %}<span class="text-ink/60">· about {{ p.income_estimate | money2 }} of income, estimated</span>{% endif %}
+      <span class="text-ink/60">· {% if p.from_start %}since you started on {{ p.start | day }} ({{ p.days }} days){% else %}{{ p.start | day }} to {{ p.end | day }} ({{ p.days }} days, since your last review){% endif %}</span>
     </p>
     <dl class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
-      <div class="stat"><dt>Past {{ rep.period_days }} days</dt><dd>{{ sm.period_pct | signed(2) }}</dd></div>
-      <div class="stat"><dt>S&amp;P 500, same days</dt><dd>{{ sm.market_period_pct | signed(2) }}</dd></div>
-      <div class="stat"><dt>Each paycheck</dt><dd>{{ sm.invest_pct | int }}%</dd></div>
-      <div class="stat"><dt>Yearly fees</dt><dd>{{ sm.fee_dollars | money2 }}</dd></div>
+      <div class="stat" title="The fund's return with the timing of your deposits taken out, including estimated income."><dt>Your fund</dt><dd class="{{ tone(p.twr_pct) }}">{{ pv(p.twr_pct) }}</dd></div>
+      <div class="stat" title="VTI, VXUS and BND at your fund's own stock/bond split, getting the same deposits on the same days."><dt>Your benchmark</dt><dd>{{ pv(p.benchmark_pct) }}</dd></div>
+      <div class="stat" title="What your choices (interests, companies, drift) added or cost, in percentage points."><dt>You vs benchmark</dt><dd class="{{ tone(p.vs_benchmark_pts) }}">{% if p.vs_benchmark_pts is none %}—{% else %}{{ '%+.2f' | format(p.vs_benchmark_pts) }} pts{% endif %}</dd></div>
+      <div class="stat" title="100% US stocks. Shown for context; a fund with bonds isn't expected to match it."><dt>S&amp;P 500, the market</dt><dd>{{ pv(p.spy_pct) }}</dd></div>
     </dl>
+    <p class="mt-2 text-xs text-ink/55">Your benchmark is the same core funds you own (VTI, VXUS, BND) at your fund's own {{ ((1 - rep.returns.benchmark.BND) * 100) | round | int }}% stock / {{ (rep.returns.benchmark.BND * 100) | round | int }}% bond split, with your interest and company picks put back into the stock funds. Comparing with it shows what your choices did; the S&amp;P 500 is all stocks, so it isn't the fair yardstick for a fund with bonds.</p>
+    {% elif p %}
+    <p class="mt-1 text-sm text-ink/70">Your fund started today, so there's no return to show yet.</p>
+    {% else %}
+    <p class="mt-1 text-sm text-ink/70">Nothing is invested yet, so there's no return to show. Your first paycheck or starting amount begins the history.</p>
+    {% endif %}
+    <p class="mt-2 text-xs {% if p and p.uses_simulated_prices %}text-clay-500{% else %}text-ink/50{% endif %}">{{ notes.price }}</p>
     <div class="mt-4 text-[.95rem] leading-relaxed whitespace-pre-line">{{ narrative }}</div>
     {% if history %}
     <div class="h-56 mt-4"><canvas data-chart="history" data-payload='{{ history | tojson }}' aria-label="Fund value and money put in over time"></canvas></div>
     {% endif %}
   </section>
 
+  <!-- 2. What moved your fund -->
+  {% if p and p.attribution %}
+  {% set mx = (p.attribution | map(attribute='dollars') | map('abs') | max) or 1 %}
+  <section class="card">
+    <p class="eyebrow">What moved your fund</p>
+    <p class="text-xs text-ink/50 mt-0.5">Dollars each holding added or cost over {% if p.from_start %}your first {{ p.days }} days{% else %}the last {{ p.days }} days{% endif %}, from prices alone. They add up to the market move of {{ dollars(p.market_gain) }}.</p>
+    <ul class="mt-3 space-y-1.5 text-sm">
+      {% for x in p.attribution %}
+      <li class="grid grid-cols-[8rem_1fr_6rem] items-center gap-2" title="{{ x.role }}">
+        <span class="truncate"><strong>{{ x.ticker }}</strong> <span class="text-ink/55 text-xs">{{ x.label }}</span></span>
+        <span class="h-2 rounded-full bg-ink/5 overflow-hidden"><span class="block h-2 rounded-full {{ 'bg-moss-500' if x.dollars >= 0 else 'bg-clay-500' }}" style="width: {{ ((x.dollars | abs) / mx * 100) | round(1) }}%"></span></span>
+        <span class="text-right tabular-nums {{ tone(x.dollars) }}">{{ dollars(x.dollars) }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  <!-- 3. Your money -->
+  {% if p and since %}
+  <section class="card overflow-x-auto">
+    <p class="eyebrow">Your money</p>
+    <table class="mt-2 w-full text-sm min-w-[28rem]">
+      <thead class="text-xs text-ink/50 text-left"><tr><th class="py-1.5 font-medium"></th><th class="text-right font-medium">{% if p.from_start %}Since you started{% else %}Last {{ p.days }} days{% endif %}</th>{% if not p.from_start %}<th class="text-right font-medium">Since you started</th>{% endif %}</tr></thead>
+      <tbody class="divide-y divide-ink/10 border-t border-ink/10 tabular-nums">
+        <tr><td class="py-1.5">Fund at the start</td><td class="text-right">{{ p.start_value | money2 }}</td>{% if not p.from_start %}<td class="text-right">{{ since.start_value | money2 }}</td>{% endif %}</tr>
+        <tr><td class="py-1.5">+ New money you added</td><td class="text-right">{{ p.deposits | money2 }}</td>{% if not p.from_start %}<td class="text-right">{{ since.deposits | money2 }}</td>{% endif %}</tr>
+        <tr><td class="py-1.5">+ Market gain or loss</td><td class="text-right {{ tone(p.market_gain) }}">{{ dollars(p.market_gain) }}</td>{% if not p.from_start %}<td class="text-right {{ tone(since.market_gain) }}">{{ dollars(since.market_gain) }}</td>{% endif %}</tr>
+        <tr class="font-semibold"><td class="py-1.5">= Fund now</td><td class="text-right">{{ p.end_value | money2 }}</td>{% if not p.from_start %}<td class="text-right">{{ since.end_value | money2 }}</td>{% endif %}</tr>
+        <tr class="text-ink/65"><td class="py-1.5">Estimated income, not in the balance</td><td class="text-right">{{ p.income_estimate | money2 }}</td>{% if not p.from_start %}<td class="text-right">{{ since.income_estimate | money2 }}</td>{% endif %}</tr>
+      </tbody>
+    </table>
+    {% if since.days == 0 %}<p class="mt-3 text-sm text-ink/65">Returns show up once your money has been invested for a day. Until then there's nothing meaningful to compare.</p>{% else %}
+    <dl class="mt-4 grid sm:grid-cols-2 gap-3 text-sm">
+      <div class="rounded-xl border border-ink/10 p-3"><dt class="font-medium">How your own money did: <span class="{{ tone(since.mwr_pct) }}">{{ pv(since.mwr_pct) }}</span> <span class="text-ink/50 font-normal">since you started</span></dt>
+        <dd class="text-xs text-ink/60 mt-1">The money-weighted return: it counts when each deposit landed, so a deposit just before a dip drags it down.{% if not p.from_start %} Last {{ p.days }} days: {{ pv(p.mwr_pct) }}.{% endif %}</dd></div>
+      <div class="rounded-xl border border-ink/10 p-3"><dt class="font-medium">How the fund did: <span class="{{ tone(since.twr_pct) }}">{{ pv(since.twr_pct) }}</span> <span class="text-ink/50 font-normal">since you started</span></dt>
+        <dd class="text-xs text-ink/60 mt-1">The time-weighted return: it removes the timing of your deposits, so it's the fair number to compare with your benchmark ({{ pv(since.benchmark_pct) }}) and the S&amp;P 500 ({{ pv(since.spy_pct) }}).</dd></div>
+    </dl>
+    {% endif %}
+    <p class="mt-3 text-xs text-ink/55">{% if since.days > 0 %}Returns include estimated income. Prices alone: your money {{ pv(since.mwr_price_pct) }}, the fund {{ pv(since.twr_price_pct) }}. {% endif %}You pay about {{ sm.fee_dollars | money2 }} a year in fund fees ({{ sm.fee_pct }}%).</p>
+  </section>
+  {% endif %}
+
+  <!-- 4. Your picks -->
+  <section class="card">
+    <p class="eyebrow">Your picks</p>
+    {% if p and p.picks and p.days == 0 %}
+    <ul class="mt-2 text-sm divide-y divide-ink/10">{% for x in p.picks %}<li class="py-2"><strong>{{ x.label }}</strong> <span class="text-ink/50">{{ x.ticker }} · {{ x.weight | pct(1) }} of fund</span></li>{% endfor %}</ul>
+    <p class="mt-2 text-xs text-ink/55">How each pick does against the core fund it replaced shows once your money has been invested for a day.</p>
+    {% elif p and p.picks %}
+    <p class="text-xs text-ink/50 mt-0.5">Each interest fund and company, over the same {{ p.days }} days, against the core stock funds (VTI and VXUS) it replaced. "Vs core" in dollars is what the same money would have made there instead.</p>
+    <ul class="mt-2 text-sm divide-y divide-ink/10">
+      {% for x in p.picks %}
+      <li class="py-2">
+        <div class="flex flex-wrap justify-between gap-x-3"><span><strong>{{ x.label }}</strong> <span class="text-ink/50">{{ x.ticker }} · {{ x.weight | pct(1) }} of fund</span></span>
+          <span class="tabular-nums {{ tone(x.dollars) }}">{{ dollars(x.dollars) }}</span></div>
+        <p class="text-xs text-ink/65 mt-0.5">{{ pv(x.move_pct, 1) }} vs {{ pv(x.core_pct, 1) }} for the core ·
+          <span class="{{ tone(x.vs_core_pts) }}">{{ '%.1f' | format(x.vs_core_pts | abs) }} points {{ 'ahead' if x.vs_core_pts >= 0 else 'behind' }}</span>, <span class="{{ tone(x.vs_core_dollars) }}">{{ dollars(x.vs_core_dollars) }} vs core</span>{% if x.m3 is not none %} · 3 months: {{ pv(x.m3, 1) }}, {{ '%.1f' | format(x.vs_market_m3 | abs) }} points {{ 'ahead of' if x.vs_market_m3 >= 0 else 'behind' }} the S&amp;P 500{% endif %}</p>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="mt-2 text-sm text-ink/60">You kept the fund broad, with no interest or company picks, so it matches its benchmark apart from drift.</p>{% endif %}
+  </section>
+
+  <!-- 5. Mix and risk -->
+  <section class="card overflow-x-auto">
+    <p class="eyebrow">Your mix and risk</p>
+    <p class="text-sm mt-1">{{ rel.stock_share | pct }} stocks, {{ (1 - rel.stock_share) | pct }} bonds and other. It typically moves about <strong>{{ '%g' % rel.move_on_10 }}%</strong> when the market moves 10%{% if rel.beta > 1 %}, because your picks swing more than the market{% endif %}.</p>
+    <table class="mt-2 w-full text-sm min-w-[44rem]">
+      <thead class="text-xs text-ink/50 text-left"><tr><th class="py-1.5 font-medium">Fund</th><th class="text-right font-medium">Value</th><th class="text-right font-medium">Now</th><th class="text-right font-medium">Target</th><th class="text-right font-medium" title="We flag a fund 5 points off its target, or 25% of its target if that's smaller.">Flagged at</th><th class="text-right font-medium">Today</th><th class="text-right font-medium">{{ rep.period_days }} days</th><th class="text-right font-medium">Since you bought</th></tr></thead>
+      <tbody>
+        {% for h in rep.holdings %}
+        <tr class="border-t border-ink/10" title="{{ h.about }}">
+          <td class="py-2"><a href="/p/{{ cid }}/markets?s={{ h.ticker }}" class="hover:underline"><strong>{{ h.ticker }}</strong> <span class="text-ink/60">{{ h.label }}</span></a>{% if h.simulated %} <span class="text-[.65rem] uppercase text-ink/45" title="This price is simulated">sim</span>{% endif %}</td>
+          <td class="text-right tabular-nums">{{ h.value | money2 }}</td>
+          <td class="text-right tabular-nums {% if h.off_target %}text-clay-500 font-semibold{% endif %}">{{ h.weight | pct(1) }}</td>
+          <td class="text-right tabular-nums text-ink/60">{{ h.target | pct(1) }}</td>
+          <td class="text-right tabular-nums text-ink/50">±{{ h.band | pct(1) }}</td>
+          <td class="text-right tabular-nums {{ tone(h.day_pct) }}">{{ pv(h.day_pct) }}</td>
+          <td class="text-right tabular-nums {{ tone(h.period_pct) }}">{{ pv(h.period_pct, 1) }}</td>
+          <td class="text-right tabular-nums {{ tone(h.gain_pct) }}">{{ pv(h.gain_pct, 1) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="mt-4 grid md:grid-cols-2 gap-5">
+      <div><p class="font-medium text-sm">Companies inside your fund</p>
+        <p class="text-xs text-ink/50">Looking through each fund to its biggest holdings (approximate).</p>
+        <ul class="mt-1 text-sm divide-y divide-ink/10">
+          {% for c in rep.companies %}
+          <li class="py-1.5 flex items-center justify-between gap-3">
+            <span><strong>{{ c.name }}</strong> <span class="text-ink/50 text-xs">via {{ c.via | join(', ') }}</span></span>
+            <span class="tabular-nums text-right whitespace-nowrap">{{ c.share | pct(1) }} · <span class="{{ tone(c.period_pct) }}">{{ pv(c.period_pct, 1) }}</span></span>
+          </li>
+          {% endfor %}
+        </ul></div>
+      <div><p class="font-medium text-sm">Sectors across the whole fund</p>
+        <p class="text-xs text-ink/50">Including what's inside your broad funds (approximate).</p>
+        <ul class="mt-1 text-sm divide-y divide-ink/10">
+          {% for x in rep.sectors %}<li class="py-1.5 flex justify-between"><span>{{ x.sector }}</span><span class="tabular-nums">{{ x.share | pct(1) }}</span></li>{% endfor %}
+        </ul></div>
+    </div>
+  </section>
+
+  <!-- 6. Recommendations -->
   <section class="card">
     <p class="eyebrow">What to do now</p>
     <div class="mt-3 space-y-3">
@@ -74,87 +196,104 @@
     </p>
   </section>
 
-  <section class="card overflow-x-auto">
-    <p class="eyebrow">Your holdings</p>
-    <table class="mt-2 w-full text-sm min-w-[40rem]">
-      <thead class="text-xs text-ink/50 text-left"><tr><th class="py-1.5 font-medium">Fund</th><th class="text-right font-medium">Value</th><th class="text-right font-medium">Now</th><th class="text-right font-medium">Target</th><th class="text-right font-medium">Today</th><th class="text-right font-medium">{{ rep.period_days }} days</th><th class="text-right font-medium">Since you bought</th></tr></thead>
-      <tbody>
-        {% for h in rep.holdings %}
-        <tr class="border-t border-ink/10" title="{{ h.about }}">
-          <td class="py-2"><a href="/p/{{ cid }}/markets?s={{ h.ticker }}" class="hover:underline"><strong>{{ h.ticker }}</strong> <span class="text-ink/60">{{ h.label }}</span></a></td>
-          <td class="text-right tabular-nums">{{ h.value | money2 }}</td>
-          <td class="text-right tabular-nums">{{ h.weight | pct(1) }}</td>
-          <td class="text-right tabular-nums text-ink/60">{{ h.target | pct(1) }}</td>
-          <td class="text-right tabular-nums {% if (h.day_pct or 0) >= 0 %}text-moss-600{% else %}text-clay-500{% endif %}">{{ h.day_pct | signed(2) if h.day_pct is not none else '–' }}</td>
-          <td class="text-right tabular-nums {% if h.period_pct >= 0 %}text-moss-600{% else %}text-clay-500{% endif %}">{{ h.period_pct | signed }}</td>
-          <td class="text-right tabular-nums {% if h.gain_pct is not none %}{{ 'text-moss-600' if h.gain_pct >= 0 else 'text-clay-500' }}{% endif %}">{% if h.gain_pct is not none %}{{ h.gain_pct | signed }}{% else %}–{% endif %}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </section>
-
-  <div class="grid md:grid-cols-2 gap-5">
-    <section class="card">
-      <p class="eyebrow">Companies inside your fund</p>
-      <p class="text-xs text-ink/50 mt-0.5">Looking through each fund to its biggest holdings (approximate weights).</p>
-      <ul class="mt-2 text-sm divide-y divide-ink/10">
-        {% for c in rep.companies %}
-        <li class="py-1.5 flex items-center justify-between gap-3">
-          <span><strong>{{ c.name }}</strong> <span class="text-ink/50 text-xs">via {{ c.via | join(', ') }}</span></span>
-          <span class="tabular-nums text-right whitespace-nowrap">{{ c.share | pct(1) }} · <span class="{% if c.period_pct >= 0 %}text-moss-600{% else %}text-clay-500{% endif %}">{{ c.period_pct | signed }}</span></span>
-        </li>
-        {% endfor %}
-      </ul>
-      <p class="mt-1 text-xs text-ink/50">Share of your fund · change over {{ rep.period_days }} days</p>
-    </section>
-
-    <section class="card">
-      <p class="eyebrow">Your interests</p>
-      {% if rep.interests %}
-      <ul class="mt-2 text-sm divide-y divide-ink/10">
-        {% for i in rep.interests %}
-        <li class="py-2">
-          <div class="flex justify-between"><span><strong>{{ i.label }}</strong> <span class="text-ink/50">{{ i.ticker }} · {{ i.weight | pct(1) }} of fund</span></span></div>
-          <p class="text-xs text-ink/65 mt-0.5">{{ i.m1 | signed }} this month · {{ i.m3 | signed }} over 3 months ·
-            <span class="{% if i.vs_market_m3 >= 0 %}text-moss-600{% else %}text-clay-500{% endif %}">{{ '%.1f' % (i.vs_market_m3 | abs) }} points {{ 'ahead of' if i.vs_market_m3 >= 0 else 'behind' }} the market</span></p>
-        </li>
-        {% endfor %}
-      </ul>
-      {% else %}<p class="mt-2 text-sm text-ink/60">You kept the fund broad, with no industry picks.</p>{% endif %}
-    </section>
-  </div>
-
+  <!-- 7. Looking ahead -->
   <section class="card">
-    <p class="eyebrow">The market, and what it means for you</p>
-    <dl class="mt-3 grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
-      <div class="stat"><dt>S&amp;P 500, 1 mo</dt><dd>{{ mk.m1 | signed }}</dd></div>
-      <div class="stat"><dt>3 months</dt><dd>{{ mk.m3 | signed }}</dd></div>
-      <div class="stat"><dt>This year</dt><dd>{{ mk.ytd | signed }}</dd></div>
-      <div class="stat"><dt>International, 1 mo</dt><dd>{{ mk.intl_m1 | signed }}</dd></div>
-      <div class="stat"><dt>Bonds, 1 mo</dt><dd>{{ mk.bonds_m1 | signed }}</dd></div>
-    </dl>
-    <ul class="mt-4 text-sm space-y-1.5">
-      <li>The market is <strong>{{ mk.direction }}</strong> and {{ mk.vol_word }}: its swings over the past month work out to {{ '%.1f' % mk.vol }}% a year, against a typical {{ '%.1f' % mk.vol_typical }}%.
-        {% if mk.below_high < 0 %}It sits {{ '%.1f' % (mk.below_high | abs) }}% below its high of the past year.{% else %}It's at its high for the past year.{% endif %}</li>
-      <li>Your fund typically moves about <strong>{{ '%g' % rel.move_on_10 }}%</strong> when the market moves 10%, because {{ rel.stock_share | pct }} of it is in stocks{% if rel.beta > 1 %} and your industry picks swing more than the market{% endif %}.</li>
-      <li>Over the past {{ rep.period_days }} days your fund moved {{ rel.fund_m1 | signed(2) }} while the S&amp;P 500 moved {{ rel.market_m1 | signed(2) }}.</li>
-    </ul>
-    <div class="mt-4 grid sm:grid-cols-2 gap-4 text-sm">
-      <div><p class="font-medium">Leading sectors this month</p>
-        <ul class="mt-1 space-y-0.5">{% for x in mk.leaders %}<li class="flex justify-between"><span>{{ x.label }} <span class="text-ink/50">{{ x.ticker }}</span></span><span class="tabular-nums text-moss-600">{{ x.m1 | signed }}</span></li>{% endfor %}</ul></div>
-      <div><p class="font-medium">Lagging sectors this month</p>
-        <ul class="mt-1 space-y-0.5">{% for x in mk.laggards %}<li class="flex justify-between"><span>{{ x.label }} <span class="text-ink/50">{{ x.ticker }}</span></span><span class="tabular-nums {% if x.m1 >= 0 %}text-moss-600{% else %}text-clay-500{% endif %}">{{ x.m1 | signed }}</span></li>{% endfor %}</ul></div>
-    </div>
-  </section>
-
-  <section class="card">
-    <div class="flex items-baseline justify-between">
-      <p class="eyebrow">Where this could go: 10 years at {{ rep.projection.monthly_contribution | money }}/month</p>
+    <div class="flex flex-wrap items-baseline justify-between gap-x-3">
+      <p class="eyebrow">Looking ahead: 10 years at {{ rep.projection.monthly_contribution | money }}/month</p>
       <p class="text-sm text-ink/60">You'd put in {{ rep.projection.total_contributed | money }}</p>
     </div>
-    <p class="mt-1 text-sm">Typical <strong>{{ rep.projection.p50[-1] | money }}</strong> · range {{ rep.projection.p10[-1] | money }} to {{ rep.projection.p90[-1] | money }}. A range, not a promise.</p>
+    <p class="mt-1 text-sm">Typical <strong>{{ rep.projection.p50[-1] | money }}</strong> · range {{ rep.projection.p10[-1] | money }} to {{ rep.projection.p90[-1] | money }}. This is a range built on assumptions, not a forecast or a promise.</p>
     <div class="h-56 mt-2"><canvas data-chart="fan" data-payload='{{ fan_data | tojson }}' aria-label="10-year outcome range"></canvas></div>
+    <details class="mt-2 text-sm">
+      <summary class="cursor-pointer text-ink/70">The assumptions behind this range</summary>
+      <p class="mt-2 text-xs text-ink/65">Built from your fund's own holdings: about {{ pin.return_pct }}% a year on average after the {{ pin.fee_pct }}% yearly fee, swinging about {{ pin.vol_pct }}% a year. Deposits are ${{ pin.per_paycheck }} per paycheck, {{ pin.paychecks_per_year }} paychecks a year (paid every 14 days), about {{ pin.monthly | money2 }} a month. Stocks and bonds are assumed to move together only weakly. These are rounded planning figures, not predictions, and real results can fall outside the range.</p>
+      <table class="mt-2 w-full text-xs"><thead class="text-ink/50 text-left"><tr><th class="py-1 font-medium">Fund</th><th class="text-right font-medium">Weight</th><th class="text-right font-medium">Assumed return</th><th class="text-right font-medium">Assumed swing</th></tr></thead>
+        <tbody>{% for x in pin.rows %}<tr class="border-t border-ink/10"><td class="py-1">{{ x.ticker }}</td><td class="text-right tabular-nums">{{ x.weight | pct(1) }}</td><td class="text-right tabular-nums">{{ x.mean | pct(1) }}</td><td class="text-right tabular-nums">{{ x.vol | pct(1) }}</td></tr>{% endfor %}</tbody></table>
+    </details>
+  </section>
+
+  <!-- 8. Your finances, and where the fund fits -->
+  {% set b = fin.budget %}{% set sf = fin.safety %}{% set dt = fin.debt %}{% set role = fin.role %}
+  <section class="card" id="finances">
+    <p class="eyebrow">Your finances, and where the fund fits</p>
+    <p class="text-sm text-ink/70 mt-1">The fund is one part of your money. Here is the rest of the picture, so you can see what investing does to it. These are numbers, not rules; every choice here is yours.</p>
+
+    <div class="mt-4 grid md:grid-cols-2 gap-4">
+      <div class="rounded-xl border border-ink/10 p-4">
+        <p class="font-medium text-sm">A typical month</p>
+        <table class="mt-2 w-full text-sm tabular-nums">
+          <tr><td class="py-1">Income (two paychecks)</td><td class="text-right">{{ b.income | money }}</td></tr>
+          <tr><td class="py-1">Bills</td><td class="text-right">−{{ b.bills | money }}</td></tr>
+          <tr><td class="py-1">Everyday spending</td><td class="text-right">−{{ b.spending | money }}</td></tr>
+          <tr class="border-t border-ink/10 font-medium"><td class="py-1">Left over</td><td class="text-right {{ tone(b.surplus) }}">{{ dollars0(b.surplus) }}</td></tr>
+          <tr><td class="py-1">Into your fund ({{ sm.invest_pct | int }}% of each paycheck)</td><td class="text-right">−{{ b.monthly_invest | money }}</td></tr>
+          <tr class="border-t border-ink/10 font-medium"><td class="py-1">Still left after investing</td><td class="text-right {{ tone(b.left_after_investing) }}">{{ dollars0(b.left_after_investing) }}</td></tr>
+        </table>
+        <p class="mt-2 text-xs text-ink/60">That's {{ '%g' % b.share_of_income_pct }}% of your income{% if b.share_of_surplus_pct is not none %} and {{ '%g' % b.share_of_surplus_pct }}% of what's left after bills and spending{% endif %}. {% if b.over_surplus %}It's more than what's left over, so the rest would come out of checking or savings.{% endif %} Over a year that's about {{ b.yearly_invest | money }}, from {{ pin.paychecks_per_year }} paychecks.</p>
+      </div>
+
+      <div class="rounded-xl border border-ink/10 p-4">
+        <p class="font-medium text-sm">Your cash cushion</p>
+        <p class="mt-1 text-2xl font-display font-bold">{{ '%.1f' | format(sf.months) }} <span class="text-sm font-sans font-normal text-ink/60">months of expenses · target {{ '%g' % sf.target_months }}</span></p>
+        <div class="mt-2 h-2 rounded-full bg-ink/5 overflow-hidden"><div class="h-2 rounded-full {{ 'bg-moss-500' if sf.met else 'bg-ink/40' }}" style="width: {{ [ (sf.months / sf.target_months * 100), 100 ] | min | round(1) }}%"></div></div>
+        <p class="mt-2 text-xs text-ink/60">{{ sf.cushion | money }} saved, plus {{ sf.checking | money }} in checking. {% if sf.met %}That covers your target.{% else %}{{ sf.gap | money }} more would reach {{ '%g' % sf.target_months }} months; a cushion keeps a surprise bill from forcing you to sell investments at a bad time.{% endif %}</p>
+        {% if dt.balance > 0 %}
+        <p class="font-medium text-sm mt-4">Your card</p>
+        <p class="mt-1 text-sm">{{ dt.balance | money }} at {{ '%g' % dt.apr }}% costs about <strong>{{ dt.interest_per_year | money }}</strong> a year ({{ dt.interest_per_month | money }} a month).</p>
+        <p class="mt-1 text-xs text-ink/60">Paying a card down earns a guaranteed return equal to its rate. The fund is assumed to average about {{ '%g' % dt.fund_return_pct }}% a year, with ups and downs, so {% if dt.beats_fund %}the card costs more than the fund is assumed to earn{% else %}the fund is assumed to earn more than the card costs, though not guaranteed{% endif %}.{% if dt.months_if_investing_money_paid_it %} Sending the {{ b.monthly_invest | money }} a month now going to the fund at the card instead would clear it in about {{ dt.months_if_investing_money_paid_it }} months.{% endif %} Doing both, or either, is your call.</p>
+        {% else %}
+        <p class="font-medium text-sm mt-4">Your card</p>
+        <p class="mt-1 text-sm text-ink/70">No card debt, so none of your money is going to interest.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="mt-4 rounded-xl border border-ink/10 p-4">
+      <p class="font-medium text-sm">Where the fund fits your plan</p>
+      <ol class="mt-2 space-y-2 text-sm">
+        {% for st in fin.ladder %}
+        <li class="flex gap-2"><span class="mt-0.5 inline-flex h-5 w-5 flex-none items-center justify-center rounded-full text-xs {{ 'bg-moss-100 text-moss-700' if st.done else 'bg-ink/5 text-ink/50' }}">{{ '✓' if st.done else loop.index }}</span>
+          <span><strong>{{ st.step }}.</strong> <span class="text-ink/70">{{ st.detail }}</span></span></li>
+        {% endfor %}
+      </ol>
+      <ul class="mt-3 text-sm space-y-1.5 text-ink/80">
+        <li>Your fund is <strong>{{ role.fund_value | money }}</strong>{% if role.fund_share_of_net_worth_pct is not none %}, {{ '%g' % role.fund_share_of_net_worth_pct }}% of your net worth of {{ role.net_worth | money }} (fund, cash and checking, minus card debt){% endif %}.</li>
+        <li>Most of it, {{ ((1 - role.bond_share - role.interest_share) * 100) | round | int }}%, is the broad core: thousands of companies in VTI and VXUS, owned cheaply ({{ role.fee_dollars | money2 }} a year in fees). Bonds, {{ (role.bond_share * 100) | round | int }}%, soften the dips. {{ (role.interest_share * 100) | round | int }}% is your own picks.</li>
+        <li>Each paycheck buys at that day's prices, so you buy more shares when prices are low and fewer when they're high, without having to time anything.</li>
+        <li>If the market fell {{ '%g' % role.crash_pct }}%, your fund would typically fall about {{ '%g' % role.crash_fund_drop_pct }}% (about {{ role.crash_dollars | money }}), approximately.{% if role.comfort_drop_pct is not none %} You said you could live with a {{ '%g' % role.comfort_drop_pct }}% drop, so that is {{ 'within' if role.within_comfort else 'beyond' }} your comfort level.{% endif %}</li>
+        {% if role.goal and role.typical_in_10_years %}<li>For "{{ role.goal }}": at this pace the typical 10-year result is {{ role.typical_in_10_years | money }}, an assumption, not a promise.</li>{% endif %}
+      </ul>
+      <p class="mt-3 text-xs text-ink/50">Monthly figures use two paychecks a month, the usual case; some months have three, and the projection above counts all {{ pin.paychecks_per_year }} a year. FirstFund is a guide, not a licensed advisor.</p>
+    </div>
+  </section>
+
+  <!-- 9. Market context -->
+  <section class="card">
+    <p class="eyebrow">The market, briefly</p>
+    <dl class="mt-3 grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
+      <div class="stat"><dt>S&amp;P 500, 1 mo</dt><dd>{{ pv(mk.m1, 1) }}</dd></div>
+      <div class="stat"><dt>3 months</dt><dd>{{ pv(mk.m3, 1) }}</dd></div>
+      <div class="stat"><dt>This year</dt><dd>{{ pv(mk.ytd, 1) }}</dd></div>
+      <div class="stat"><dt>International, 1 mo</dt><dd>{{ pv(mk.intl_m1, 1) }}</dd></div>
+      <div class="stat"><dt>Bonds, 1 mo</dt><dd>{{ pv(mk.bonds_m1, 1) }}</dd></div>
+    </dl>
+    <p class="mt-3 text-sm">The market is <strong>{{ mk.direction }}</strong> and {{ mk.vol_word }}: its swings over the past month work out to {{ '%.1f' % mk.vol }}% a year, against a typical {{ '%.1f' % mk.vol_typical }}%. {% if mk.below_high < 0 %}It sits {{ '%.1f' % (mk.below_high | abs) }}% below its high of the past year.{% else %}It's at its high for the past year.{% endif %}</p>
+    <div class="mt-3 grid sm:grid-cols-2 gap-4 text-sm">
+      <div><p class="font-medium">Leading sectors</p>
+        <ul class="mt-1 space-y-0.5">{% for x in mk.leaders %}<li class="flex justify-between"><span>{{ x.label }} <span class="text-ink/50">{{ x.ticker }}</span></span><span class="tabular-nums {{ tone(x.m1) }}">{{ pv(x.m1, 1) }}</span></li>{% endfor %}</ul></div>
+      <div><p class="font-medium">Lagging sectors</p>
+        <ul class="mt-1 space-y-0.5">{% for x in mk.laggards %}<li class="flex justify-between"><span>{{ x.label }} <span class="text-ink/50">{{ x.ticker }}</span></span><span class="tabular-nums {{ tone(x.m1) }}">{{ pv(x.m1, 1) }}</span></li>{% endfor %}</ul></div>
+    </div>
+  </section>
+
+  <!-- 10. Data notes -->
+  <section class="card text-xs text-ink/60 space-y-1.5">
+    <p class="eyebrow">Where these numbers come from</p>
+    <p><strong class="text-ink/80">Prices.</strong> {{ notes.price }}{% if notes.simulated_tickers %} Simulated now: {{ notes.simulated_tickers | join(', ') }}.{% endif %}</p>
+    <p><strong class="text-ink/80">Income.</strong> {{ notes.income }}</p>
+    <p><strong class="text-ink/80">Inside your funds.</strong> {{ notes.look_through }}</p>
+    <p><strong class="text-ink/80">The 10-year range.</strong> It rests on assumptions about each fund, shown above, not on a forecast.</p>
+    <p><strong class="text-ink/80">Trades.</strong> {% if rep.broker_mode == 'simulated' %}Practice account: trades fill instantly at the prices above.{% else %}{{ rep.broker_mode }} orders.{% endif %}</p>
   </section>
 </div>
 {% endblock %}

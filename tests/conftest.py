@@ -3,6 +3,7 @@ blocked, so running pytest with NESSIE_MODE=live in the environment can never to
 Nessie key or the real data/ files. Tests that want live mode opt in (see tests/test_live.py)."""
 import pytest
 
+import agent.claude_agent as claude_agent
 from app import state as app_state
 from core import feed, market, nessie, profile, seed, state
 from core.broker import get_broker
@@ -12,6 +13,8 @@ from core.broker import get_broker
 def sandbox(monkeypatch, tmp_path):
     monkeypatch.setenv("NESSIE_MODE", "fixture")
     monkeypatch.setenv("MARKET_DATA", "sim")   # no real prices or news in tests: simulated, deterministic
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)   # app.main loads .env: tests must never call (or pay for) the real Claude API
+    monkeypatch.setattr(claude_agent, "_client", None)
     monkeypatch.setenv("AUTH_DISABLED", "1")   # skip the sign-in gate; tests/test_auth.py turns it back on
     monkeypatch.setenv("AUTH_DB", str(tmp_path / "users.db"))
     monkeypatch.setattr(feed, "CACHE_DIR", tmp_path / "prices")

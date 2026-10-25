@@ -108,6 +108,18 @@ def source(ticker: str) -> str:
     return "live" if _real_closes(ticker) else "simulated"
 
 
+def last_real_date(ticker: str) -> date | None:
+    """The last day we have a real close for, or None if the ticker has no real data at all."""
+    real = _real_closes(ticker)
+    return real[0][-1] if real else None
+
+
+def simulated_on(ticker: str, on: date) -> bool:
+    """Is the price on `on` simulated? True with no real data, or after the last real close."""
+    last = last_real_date(ticker)
+    return last is None or on > last
+
+
 def known(ticker: str) -> bool:
     """Can we price this ticker at all? (csv tickers always; others only with real data)."""
     return ticker in ETFS or ticker in COMPANIES or _real_closes(ticker) is not None

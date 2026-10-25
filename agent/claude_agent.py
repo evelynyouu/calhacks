@@ -15,6 +15,7 @@ from agent.prompts import RUNDOWN_INSTRUCTION, SUGGESTED_PROMPTS, SYSTEM_PROMPT
 from agent.tools import TOOLS, headlines, market_today, news_tickers, run_tool
 from app.state import Session
 from core.followups import HIGH_RISK_LEVEL, HORIZON_LABELS
+from core.explain import fallback_intro, intro_facts
 from core.intake import QUESTIONS
 from core.market import ETFS
 from core.report import build_report
@@ -58,11 +59,11 @@ def followup_text(fu) -> str:
     return text if text and "\n" not in text and nums(text) <= nums(fu.text) else fu.text
 
 
-_HORIZON_PHRASES = {"under_3": "You expect to need this money in under 3 years.",
-                    "3_7": "You expect to need this money in 3 to 7 years.",
-                    "7_15": "You expect to need this money in 7 to 15 years.",
-                    "15_plus": "You expect to need this money in 15 years or more.",
-                    "not_sure": "You're not sure yet when you'll need this money."}
+_HORIZON_PHRASES = {"lt3": "You expect to need this money in under 3 years.",
+                    "3to7": "You expect to need this money in 3 to 7 years.",
+                    "7to15": "You expect to need this money in 7 to 15 years.",
+                    "15plus": "You expect to need this money in 15 years or more.",
+                    "unsure": "You're not sure yet when you'll need this money."}
 
 
 def _followup_facts(answers: dict, level: int) -> list[str]:
@@ -71,10 +72,31 @@ def _followup_facts(answers: dict, level: int) -> list[str]:
     h = answers.get("horizon")
     if h in HORIZON_LABELS:
         facts.append(_HORIZON_PHRASES.get(h, f"You expect to need this money in: {HORIZON_LABELS[h].lower()}."))
-        if h == "under_3" and level >= HIGH_RISK_LEVEL:
+        if h == "lt3" and level >= HIGH_RISK_LEVEL:
             facts.append("A growth-leaning fund can be down in any single year, so money needed within 3 years is "
                          "often kept in steadier funds. It's your call; ask me about it any time.")
     return facts
+
+
+def fund_facts(session: Session) -> list[str]:
+    """The fund in Python-computed facts. When a limit or the customer's own choice moved the mix away
+    from what the answers scored, both numbers and the reason are included, so Claude can't misstate why."""
+    a, p = session.fund, session.fund.portfolio
+    core = ", ".join(f"{h.ticker} {h.weight:.0%}" for h in p.holdings if h.role == "core")
+    tilts = ", ".join(f"{h.ticker} {h.weight:.1%}" for h in p.holdings if h.role == "tilt")
+    if p.score is None or p.score == a.risk_score:
+        score = [f"Risk score {a.risk_score} out of 100, so the fund is {p.risk_label} (level {p.risk_level} of 4)."]
+    else:
+        score = [f"The customer's answers give a risk score of {a.risk_score} out of 100.",
+                 f"The fund was built at a risk score of {p.score} out of 100, so it is {p.risk_label} "
+                 f"(level {p.risk_level} of 4), for these reasons:",
+                 *(r.text for r in p.reasons if r.kind in ("contradiction", "horizon", "drop", "override")
+                   and (r.kind in ("contradiction", "override") or r.facts.get("lowered")))]
+    return [*score, f"Core: {core}.",
+            f"Interest slice: {tilts}." if tilts else "No interest slice: the fund stays broad.",
+            f"Yearly fee {p.annual_fee_pct:.2f}%.",
+            f"{a.invest_pct:g}% of each paycheck will be invested as soon as it lands.",
+            *p.overlap_warnings]
 
 
 def fund_ready(session: Session) -> str:
@@ -82,24 +104,26 @@ def fund_ready(session: Session) -> str:
     a, p = session.fund, session.fund.portfolio
     core = ", ".join(f"{h.ticker} {h.weight:.0%}" for h in p.holdings if h.role == "core")
     tilts = ", ".join(f"{h.ticker} {h.weight:.1%}" for h in p.holdings if h.role == "tilt")
-    facts = [
-        f"Risk score {a.risk_score} out of 100, so the fund is {p.risk_label} (level {p.risk_level} of 4).",
-        f"Core: {core}.",
-        f"Interest slice: {tilts}." if tilts else "No interest slice: the fund stays broad.",
-        f"Yearly fee {p.annual_fee_pct:.2f}%.",
-        f"{a.invest_pct:g}% of each paycheck will be invested as soon as it lands.",
-        *p.overlap_warnings,
-    ]
+    facts = fund_facts(session)
     unmatched = a.answers.get("interests", {}).get("unmatched", [])
+    notes = list(p.overlap_warnings)
     if unmatched:
-        facts.append("No fund matches these yet, so they were noted but not added: " + ", ".join(unmatched) + ".")
+        notes.append("No fund matches these yet, so they were noted but not added: " + ", ".join(unmatched) + ".")
+        facts.append(notes[-1])
     facts += _followup_facts(a.answers, p.risk_level)
     offline = (f"Your fund is ready: {p.risk_label.lower()}, with {core}"
                + (f", plus {tilts} for your interests" if tilts else "") + f". The yearly fee is {p.annual_fee_pct:.2f}%. "
-               + " ".join(facts[5:]) + " Press “Paycheck arrives” to watch a paycheck invest itself, or ask me anything.")
+               + " ".join(notes) + " Press “Paycheck arrives” to watch a paycheck invest itself, or ask me anything.")
     return explain(facts, f"The customer's goal: {a.answers.get('goal', '')!r}. In 3 to 4 short sentences, explain "
                           "their new fund: what the core does, what the interest slice adds, and one thing to "
                           "know about their risk level. End by inviting questions.", fallback=offline)
+
+
+def fund_intro(session: Session) -> str:
+    """At most 2-3 sentences on top of "How your fund was built", tied to the goal. Python facts only."""
+    a = session.fund
+    return explain(intro_facts(a), "In 2 to 3 short sentences, tie this fund to the customer's goal. Don't list "
+                   "numbers; the page below shows them.", fallback=fallback_intro(a))
 
 
 # ---------- Chat after the intake ----------
@@ -206,18 +230,25 @@ def _offline_turn(session: Session, text: str) -> str:
 
 # ---------- Explanations ----------
 
+EXPLAIN_MAX_TOKENS = 1500   # the model may think before it writes; a long fact list used all of 400 and left no text
+
+
 def explain(facts: list[str], instruction: str, fallback: str | None = None) -> str:
     """Turn Python-computed facts into a short explanation. Falls back to `fallback` (or the facts)."""
+    offline = fallback if fallback is not None else " ".join(facts)
     client = _get_client()
     if client is None:
-        return fallback if fallback is not None else " ".join(facts)
+        return offline
     try:
         resp = client.messages.create(
-            model=MODEL, max_tokens=400,
+            model=MODEL, max_tokens=EXPLAIN_MAX_TOKENS,
             system=SYSTEM_PROMPT + "\nUse only these facts; add no new numbers.",
             messages=[{"role": "user", "content": instruction + "\n\nFacts:\n- " + "\n- ".join(facts)}],
         )
-        return "".join(b.text for b in resp.content if b.type == "text").strip()
+        text = "".join(b.text for b in resp.content if b.type == "text").strip()
+        if not text:   # ran out of tokens before writing, or no text block: show the offline version, never a blank
+            print(f"[claude] explain returned no text (stop_reason={resp.stop_reason}); using the offline version")
+        return text or offline
     except Exception as e:  # noqa: BLE001
         print(f"[claude] explain fallback: {e!r}")
-        return fallback if fallback is not None else " ".join(facts)
+        return offline

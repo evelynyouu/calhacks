@@ -19,7 +19,7 @@ INTAKE = [  # (form data, what the chat shows as the user's message)
     ({"value": "growth"}, "Strong growth, even with bigger dips"),
     ({"value": "medium"}, "Ends between $900 and $1,150"),
     ({"value": "20"}, "20%"),
-    ({"value": "6"}, "6 out of 10"),
+    ({"value": "15plus"}, "In 15 years or more"),
     ({"values": ["tech", "healthcare"], "other": "video games"}, "Technology, Healthcare, Gaming"),
 ]
 
@@ -64,7 +64,7 @@ def test_full_intake_builds_the_fund():
         if i == 1:
             assert 'type="range"' in r.text and "of your $2,050 paycheck" in r.text   # next: the % slider
         if i == 5:
-            assert 'class="scale-btn"' in r.text                                     # next: the 1-10 scale
+            assert 'class="choice-btn"' in r.text and "When will you need" in r.text   # next: the horizon choice
         if i == 6:
             assert 'type="checkbox" name="values"' in r.text and 'name="other"' in r.text   # next: chips + Other
     assert "Your fund is ready" in r.text and 'id="fund-card" hx-swap-oob' in r.text
@@ -113,8 +113,10 @@ def test_report_page_has_every_section():
     client.post("/p/sam/paycheck")
     r = client.get("/p/sam/report")
     assert r.status_code == 200
-    for section in ("What to do now", "Your holdings", "Companies inside your fund", "Your interests",
-                    "The market, and what it means for you", "Where this could go", "prices simulated"):
+    # The report was reorganized (headline, what moved, your money, picks, mix, recs, outlook, finances, market, data notes).
+    for section in ("What moved your fund", "Your money", "Your picks", "Your mix and risk", "Companies inside your fund",
+                    "What to do now", "Looking ahead", "Your finances, and where the fund fits", "The market, briefly",
+                    "Where these numbers come from", "All prices here are simulated"):
         assert section in r.text, section
 
 
@@ -138,7 +140,8 @@ def test_queue_then_confirm_rebalance_trades():
     page = client.get("/p/sam").text
     assert "waiting for your OK" in page and "Confirm trades" in page
     r = client.post("/p/sam/trades/confirm")
-    assert "Done: sell SMH" in r.text and not state.get("sam").fund.pending
+    # SMH is smaller now (sized for how much it swings), so it's no longer the first sale
+    assert "Done: sell" in r.text and "sell SMH" in r.text and not state.get("sam").fund.pending
 
 
 def test_recommendation_buttons_change_pct_and_interests():

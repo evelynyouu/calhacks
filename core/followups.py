@@ -13,7 +13,7 @@ intake) and the bank profile; every number in a follow-up's text is computed her
     shown = apply(fu, answers, value="40")                                 # updates answers in place
 
 How an answer changes `answers`:
-  choice   the option's `effects` are written into answers (e.g. {"horizon": "under_3"})
+  choice   the option's `effects` are written into answers (e.g. {"horizon": "lt3"})
   money    / slider: the typed number replaces answers[fu.target]
   chips    picked themes are added to answers["interests"]["themes"]; the typed phrase they stand in
            for leaves answers["interests"]["unmatched"]
@@ -71,8 +71,9 @@ SIMILARITY_MIN = 0.7
 MAX_SUGGESTIONS = 3
 
 KEEP = "keep"
-HORIZON_OPTIONS = [("under_3", "Under 3 years"), ("3_7", "3 to 7 years"), ("7_15", "7 to 15 years"),
-                   ("15_plus", "15 years or more"), ("not_sure", "Not sure yet")]
+# Same keys as the intake's horizon question (core/intake.py), so either one fills answers["horizon"] the same way
+HORIZON_OPTIONS = [("lt3", "Under 3 years"), ("3to7", "3 to 7 years"), ("7to15", "7 to 15 years"),
+                   ("15plus", "15 years or more"), ("unsure", "Not sure yet")]
 HORIZON_LABELS = dict(HORIZON_OPTIONS)
 
 # Goals that are usually spent soon (unless the text says otherwise)

@@ -7,75 +7,232 @@ recommendations (some with trades the customer can confirm), and the review sche
 """
 from __future__ import annotations
 
+import csv
+import math
 from datetime import date, timedelta
 
-from core import intake, market
+from core import intake, market, returns
 from core.broker import get_broker, values
+from core.finances import build_finances
 from core.fund import FundAccount
 from core.market import ETFS, HOLDINGS
 from core.policy import tier_for
 from core.portfolio import THEME_LABELS, THEMES
-from core.profile import get_profile
-from core.rebalance import drift as drift_of, rebalance_trades
-from core.sim import simulate
+from core.profile import PAY_PERIOD_DAYS, get_profile
+from core.rebalance import band, drift as drift_of, off_target, rebalance_trades
+from core.sim import portfolio_assumptions, simulate
 
-PERIOD_DAYS = 30
 QUARTER_DAYS = 91
-BENCHMARK = "SPY"
+PAYCHECKS_PER_YEAR = round(365 / PAY_PERIOD_DAYS)    # paid every 14 days: 26 a year, not 24
+# Approximate yearly income (distributions) per fund, from data/yields.csv. The price feed has no adjusted
+# closes, so income is estimated, accrued daily, and kept apart from the balance. Single companies count as 0.
+with (market.DATA / "yields.csv").open() as _f:
+    YIELDS = {r["ticker"]: float(r["yield_pct"]) / 100 for r in csv.DictReader(_f)}
+BENCHMARK = "SPY"               # "the market" line
+US_SHARE_OF_STOCKS = 0.70       # VTI's share of VTI+VXUS when the fund has neither to read it from
 NOT_STOCKS = {"BND", "GLD"}
 
-DRIFT_TRIGGER = 0.05            # a fund 5 points off its target weight -> rebalance
-DIP_TRIGGER = -7.0              # market down 7% in a month ...
-BELOW_HIGH_TRIGGER = -10.0      # ... or 10% below its 1-year high -> consider investing more
+DIP_TRIGGER = -7.0              # your stocks down 7% in a month ...
+BELOW_HIGH_TRIGGER = -10.0      # ... or 10% below their 1-year high -> consider investing more
 DIP_PCT_STEP = 5                # suggested raise in paycheck percent during a dip
 LAG_TRIGGER = -10.0             # an interest 10 points behind the market over 3 months -> hold, don't sell
 CONCENTRATION_TRIGGER = 0.08    # one company 8% of the fund -> diversify
 TECH_HEAVY_SHARE = 0.6          # 60% of the interest slice in tech-like themes -> look at other sectors
+TECH_FUND_TRIGGER = 0.35        # tech-like companies 35% of the whole fund (look-through) -> look at other sectors
 HIGH_PCT = 50                   # investing half of each paycheck or more -> check cash
 LOWER_PCT_STEP = 10
 TECH_THEMES = {"tech", "ai_chips", "software", "cyber", "robotics", "communications", "gaming"}
+TECH_SECTORS = {"Technology", "Communication"}
 STEADY_THEMES = ["healthcare", "staples", "utilities", "dividends"]
+# Which sector an interest fund adds to, for looking through the whole fund. Funds missing here are left out.
+THEME_SECTOR = {
+    "tech": "Technology", "ai_chips": "Technology", "software": "Technology", "cyber": "Technology",
+    "robotics": "Technology", "communications": "Communication", "gaming": "Communication",
+    "healthcare": "Healthcare", "biotech": "Healthcare", "financials": "Financials", "real_estate": "Real estate",
+    "consumer": "Consumer discretionary", "staples": "Consumer staples", "industrials": "Industrials",
+    "space_defense": "Industrials", "utilities": "Utilities", "oil_gas": "Energy", "clean_energy": "Energy",
+}
+with (market.DATA / "sectors.csv").open() as _f:     # approximate sector mix of the broad funds, rounded
+    CORE_SECTORS: dict[str, dict[str, float]] = {}
+    for _r in csv.DictReader(_f):
+        CORE_SECTORS.setdefault(_r["fund"], {})[_r["sector"]] = float(_r["weight_pct"]) / 100
 CALM, CHOPPY = 0.8, 1.25        # volatility vs typical
 
 
 def build_report(acct: FundAccount) -> dict:
     cid, today, p = acct.customer_id, acct.today, acct.portfolio
-    month_ago, quarter_ago = today - timedelta(days=PERIOD_DAYS), today - timedelta(days=QUARTER_DAYS)
+    quarter_ago = today - timedelta(days=QUARTER_DAYS)
     vals = values(cid, today)
     total = sum(vals.values())
     tier = tier_for(total)
 
+    rets = _returns(acct, tier)
+    period = rets["period"]
+    month_ago = period["start"] if period else today - timedelta(days=tier.review_every_days)
     holdings = _holdings(acct, vals, total, month_ago)
-    period_pct = round(sum(h["weight"] * h["period_pct"] for h in holdings), 2) if total else 0.0
     mkt = _market(today, month_ago, quarter_ago)
-    gain = total - acct.contributed
+    since = rets["since_start"]
+    contributed = since["deposits"] if since else acct.contributed
+    gain = total - contributed
+    period_pct = period["twr_pct"] if period and period["twr_pct"] is not None else 0.0
     summary = {
-        "value": round(total, 2), "contributed": round(acct.contributed, 2), "gain": round(gain, 2),
-        "gain_pct": round(gain / acct.contributed * 100, 2) if acct.contributed else 0.0,
+        "value": round(total, 2), "contributed": round(contributed, 2), "gain": round(gain, 2),
+        "gain_pct": since["mwr_price_pct"] if since and since["mwr_price_pct"] is not None
+        else round(gain / contributed * 100, 2) if contributed else 0.0,
         "period_pct": period_pct, "market_period_pct": mkt["m1"],
         "vs_market_pts": round(period_pct - mkt["m1"], 2),
+        "income_estimate": since["income_estimate"] if since else 0.0,
+        "benchmark_period_pct": period["benchmark_pct"] if period else None,
+        "vs_benchmark_pts": period["vs_benchmark_pts"] if period else None,
         "invest_pct": acct.invest_pct, "fee_pct": p.annual_fee_pct,
         "fee_dollars": round(total * p.annual_fee_pct / 100, 2),
     }
-    companies = _companies(vals, total, month_ago, today)
+    all_companies = _companies(vals, total, month_ago, today, top=None)
+    companies = all_companies[:10]
     interests = _interests(acct, vals, total, month_ago, quarter_ago, today, mkt)
     relation = _relation(vals, total, period_pct, mkt)
-    recs = _recommendations(acct, vals, total, holdings, companies, interests, mkt, tier)
+    recs = _recommendations(acct, vals, total, holdings, all_companies, interests, mkt, tier)
 
     paycheck = get_profile(cid).paycheck_amount
-    monthly = round(paycheck * acct.invest_pct / 100 * 2, 2)   # two paychecks a month
+    per_paycheck = math.floor(paycheck * acct.invest_pct / 100)        # Nessie moves whole dollars, as fund.paycheck does
+    monthly = round(per_paycheck * PAYCHECKS_PER_YEAR / 12, 2)
     sim = simulate(p, total, monthly)
+    assumptions = portfolio_assumptions(p)
     next_review = (acct.last_review or today) + timedelta(days=tier.review_every_days)
     rep = {
-        "as_of": today, "period_days": PERIOD_DAYS, "summary": summary, "holdings": holdings,
+        "as_of": today, "period_days": period["days"] if period else tier.review_every_days, "summary": summary,
+        "returns": rets, "holdings": holdings,
         "companies": companies, "interests": interests, "market": mkt, "relation": relation,
         "recommendations": recs, "projection": sim, "history": value_history(acct),
+        "projection_inputs": {"per_paycheck": per_paycheck, "paychecks_per_year": PAYCHECKS_PER_YEAR, "monthly": monthly,
+                              "return_pct": sim.expected_return_pct, "vol_pct": sim.volatility_pct,
+                              "fee_pct": p.annual_fee_pct, "rows": assumptions["rows"]},
         "schedule": {"tier": tier, "review_every_days": tier.review_every_days, "auto_allowed": tier.auto_trades,
                      "auto_on": acct.auto_trade, "next_review": next_review},
         "broker_mode": get_broker().mode,
     }
+    by_ticker = {i["ticker"]: i for i in interests}
+    for w in (period, since):                     # 3-month view next to each pick, for the hold-through-a-slump rule
+        for x in (w["picks"] if w else []):
+            i = by_ticker.get(x["ticker"])
+            x["m3"], x["vs_market_m3"] = (i["m3"], i["vs_market_m3"]) if i else (None, None)
+    rep["sectors"] = [{"sector": k, "share": round(v, 4)} for k, v in
+                      sorted(_sector_exposure(vals, total).items(), key=lambda kv: -kv[1])[:6]]
+    rep["data_notes"] = _data_notes(acct, holdings)
+    targets = {h.ticker: h.weight for h in p.holdings}
+    rep["finances"] = build_finances(
+        get_profile(cid), acct.answers, total, per_paycheck, PAYCHECKS_PER_YEAR, sim.expected_return_pct,
+        relation["beta"], targets.get("BND", 0.0), round(sum(h.weight for h in p.holdings if h.role != "core"), 4),
+        summary["fee_dollars"], sim.p50[-1])
     rep["facts"] = _facts(rep)
+    rep["narrative"] = _narrative(rep)
     return rep
+
+
+def _data_notes(acct: FundAccount, holdings: list[dict]) -> dict:
+    """Where the numbers come from, so the page can say it plainly: real or simulated prices, and what is approximate."""
+    today, tickers = acct.today, [h["ticker"] for h in holdings]
+    last_real = market.last_real_date(BENCHMARK)
+    always = [t for t in tickers if market.last_real_date(t) is None]
+    if last_real is None:
+        price = "All prices here are simulated: real market data isn't available right now."
+    elif today > last_real:
+        price = (f"Prices after {last_real.strftime('%b')} {last_real.day} are simulated: the demo has moved past the "
+                 f"last real closing prices, so anything dated later is a simulation, not the market.")
+    else:
+        price = "Prices are real Nasdaq closing prices."
+    if last_real is not None and always:
+        price += f" {', '.join(always)} {'has' if len(always) == 1 else 'have'} no real price data, so always simulated."
+    return {"price": price, "last_real_date": last_real, "simulated_tickers": [h["ticker"] for h in holdings if h["simulated"]],
+            "income": "Income (fund distributions) is estimated from approximate yearly yields and isn't in your balance; "
+                      "returns marked \"price only\" leave it out.",
+            "look_through": "Company and sector shares inside your funds are approximate: they use each fund's biggest holdings."}
+
+
+def _returns(acct: FundAccount, tier) -> dict:
+    """What the fund did, replayed from the broker's orders: over the review period and since the start.
+    The period runs from the last review (at least one review cadence back); a younger fund gets its whole
+    life, labeled as such. With no order history (nothing bought yet, or a broker that can't list orders)
+    both windows are None."""
+    today, orders = acct.today, get_broker().orders(acct.customer_id)
+    if not orders:
+        return {"available": False, "first_order": None, "period": None, "since_start": None, "benchmark": None}
+    first = min(o["on"] for o in orders)
+    start = today - timedelta(days=tier.review_every_days)
+    if acct.last_review and acct.last_review < start:
+        start = acct.last_review
+    young = start <= first   # the fund is younger than the period: show its whole life
+    bench = benchmark_weights(acct.portfolio)
+    return {"available": True, "first_order": first, "benchmark": bench,
+            "period": _window(orders, first, today, None if young else start, bench, acct.portfolio),
+            "since_start": _window(orders, first, today, None, bench, acct.portfolio)}
+
+
+def benchmark_weights(p) -> dict[str, float]:
+    """The fund's own core mix: VTI/VXUS/BND at the fund's stock/bond split, with the interest and single-company
+    slices put back into VTI/VXUS. Read from the target weights, so it holds for any bond share."""
+    w = {h.ticker: h.weight for h in p.holdings}
+    bonds = w.get("BND", 0.0)
+    us, intl = w.get("VTI", 0.0), w.get("VXUS", 0.0)
+    us_frac = us / (us + intl) if us + intl > 0 else US_SHARE_OF_STOCKS
+    return {"VTI": round((1 - bonds) * us_frac, 6), "VXUS": round((1 - bonds) * (1 - us_frac), 6), "BND": round(bonds, 6)}
+
+
+def _window(orders: list[dict], first: date, end: date, start: date | None, bench: dict[str, float], p) -> dict:
+    """Dollars, returns, benchmark and per-holding gains for [start, end]. start=None means from the first
+    deposit, which then counts as new money. The benchmark and the S&P 500 line get the same deposits on the
+    same days, so "vs benchmark" is only the customer's choices (interests, companies, drift)."""
+    px, from_start = market.raw_price, start is None
+    begin = returns.day_before(first) if from_start else start
+    r = returns.replay(orders, px, begin, end, YIELDS)
+    flows = returns.net_flows(orders, px)
+    blend = returns.replay(returns.shadow_orders(flows, bench, px), px, begin, end, YIELDS)
+    spy = returns.replay(returns.shadow_orders(flows, {BENCHMARK: 1.0}, px), px, begin, end, YIELDS)
+    inc = True   # headline returns include estimated income; the *_price_pct twins leave it out
+    twr, mwr, b_twr, s_twr = (returns.twr(r, inc), returns.money_weighted(r, inc), returns.twr(blend, inc),
+                              returns.twr(spy, inc))
+    pct = lambda x: None if x is None else round(x * 100, 2)   # noqa: E731
+    gap = lambda a, b: None if a is None or b is None else round((a - b) * 100, 2)   # noqa: E731
+    return {
+        "start": first if from_start else start, "end": end, "days": (end - (first if from_start else start)).days,
+        "from_start": from_start, "start_value": round(r.start_value, 2), "deposits": round(r.deposits, 2),
+        "market_gain": round(r.market_gain, 2), "end_value": round(r.end_value, 2),
+        "income_estimate": round(r.income, 2),
+        "twr_pct": pct(twr), "mwr_pct": pct(mwr),
+        "twr_price_pct": pct(returns.twr(r)), "mwr_price_pct": pct(returns.money_weighted(r)),
+        "benchmark_price_pct": pct(returns.twr(blend)), "spy_price_pct": pct(returns.twr(spy)),
+        "uses_simulated_prices": any(market.simulated_on(t, end) for t in {*bench, BENCHMARK, *(o["symbol"] for o in orders)}),
+        "benchmark_pct": pct(b_twr), "benchmark_value": round(blend.end_value, 2), "vs_benchmark_pts": gap(twr, b_twr),
+        "spy_pct": pct(s_twr), "vs_spy_pts": gap(twr, s_twr),
+        "attribution": _attribution(r, p), "picks": _picks(r, p, bench, px, first if from_start else start),
+    }
+
+
+def _attribution(r: returns.Replay, p) -> list[dict]:
+    """What moved the fund: dollars each holding added or cost, biggest first. Adds up to the market gain."""
+    roles = {h.ticker: h.role for h in p.holdings}
+    rows = [{"ticker": t, "label": market.info(t)["label"], "role": roles.get(t, "tilt"), "dollars": round(d, 2)}
+            for t, d in returns.attribution(r).items()]
+    return sorted(rows, key=lambda x: -abs(x["dollars"]))
+
+
+def _picks(r: returns.Replay, p, bench: dict[str, float], px, since: date) -> list[dict]:
+    """Each interest fund and single company: its price move, the dollars it added, and how it did against
+    the core stock funds it replaced (VTI/VXUS at the fund's own US/international split)."""
+    stocks = bench["VTI"] + bench["VXUS"]
+    core = {"VTI": bench["VTI"] / stocks, "VXUS": bench["VXUS"] / stocks} if stocks else {"VTI": 1.0}
+    gains = returns.attribution(r)
+    core_pct = round(sum(w * market.change_pct(t, since, r.end) for t, w in core.items()), 2)
+    rows = []
+    for h in p.holdings:
+        if h.role == "core":
+            continue
+        move = market.change_pct(h.ticker, since, r.end)
+        rows.append({"ticker": h.ticker, "label": market.info(h.ticker)["label"], "role": h.role,
+                     "weight": h.weight, "move_pct": move, "dollars": round(gains.get(h.ticker, 0.0), 2),
+                     "core_pct": core_pct, "vs_core_pts": round(move - core_pct, 2),
+                     "vs_core_dollars": round(returns.excess_over(r, h.ticker, core, px), 2)})
+    return rows
 
 
 def _holdings(acct, vals, total, month_ago) -> list[dict]:
@@ -83,6 +240,7 @@ def _holdings(acct, vals, total, month_ago) -> list[dict]:
     targets = {h.ticker: h.weight for h in p.holdings}
     shares, cost = get_broker().positions(acct.customer_id), get_broker().cost_basis(acct.customer_id)
     drifts = drift_of(p, vals) if total else {t: -w for t, w in targets.items()}
+    flagged = off_target(p, vals) if total else {}
     tickers = list(targets) + [t for t in vals if t not in targets]
     day = market.quotes(tickers, today)
     rows = []
@@ -95,13 +253,15 @@ def _holdings(acct, vals, total, month_ago) -> list[dict]:
             "day_pct": day[t]["change_pct"] if t in day else None,
             "price": market.price(t, today), "value": round(v, 2),
             "weight": round(v / total, 4) if total else 0.0, "target": targets.get(t, 0.0),
-            "drift": drifts.get(t, 0.0), "period_pct": market.change_pct(t, month_ago, today),
+            "drift": drifts.get(t, 0.0), "off_target": t in flagged, "band": round(band(targets.get(t, 0.0)), 4),
+            "period_pct": market.change_pct(t, month_ago, today),
+            "simulated": market.simulated_on(t, today),
             "gain_pct": round((v / cost[t] - 1) * 100, 2) if cost.get(t) else None,
         })
     return rows
 
 
-def _companies(vals, total, month_ago, today, top: int = 10) -> list[dict]:
+def _companies(vals, total, month_ago, today, top: int | None = 10) -> list[dict]:
     expo: dict[str, dict] = {}
     for t, v in vals.items():
         if t not in ETFS:   # a company held directly
@@ -159,70 +319,156 @@ def _relation(vals, total, period_pct, mkt) -> dict:
 
 
 def _recommendations(acct, vals, total, holdings, companies, interests, mkt, tier) -> list[dict]:
+    """The rules. Every rec lists the numbers that triggered it next to the threshold, in its facts
+    ("tech is 41% of your fund; we flag at 35%"), and repeats them in rec["trigger"]."""
     recs: list[dict] = []
     pct = acct.invest_pct
 
-    off = sorted((h for h in holdings if abs(h["drift"]) >= DRIFT_TRIGGER), key=lambda h: -abs(h["drift"]))
+    off = sorted((h for h in holdings if h["off_target"]), key=lambda h: -abs(h["drift"]))
     if total and off:
-        facts = [f"{h['ticker']} ({h['label']}) is {h['weight']:.0%} of your fund; its target is {h['target']:.0%}."
-                 for h in off[:3]]
+        facts, trig = [], []
+        for h in off[:3]:
+            seen, limit = f"{h['weight']:.1%}", f"{h['band'] * 100:.1f} points"
+            facts.append(f"{h['ticker']} ({h['label']}) is {seen} of your fund; its target is {h['target']:.1%}. "
+                         f"We flag a fund that is {limit} off its target ({abs(h['drift']) * 100:.1f} here).")
+            trig.append({"what": h["ticker"], "text": facts[-1], "value_text": f"{abs(h['drift']) * 100:.1f}",
+                         "threshold_text": limit})
         if tier.auto_trades:
             trades = [{"symbol": t, "side": "buy" if d > 0 else "sell", "notional": abs(d)}
                       for t, d in sorted(rebalance_trades(acct.portfolio, vals).items(), key=lambda kv: kv[1])]
             recs.append(_rec("rebalance", "Rebalance back to your targets",
                              facts + ["Selling what ran ahead and buying what fell behind keeps your risk where you chose it."],
-                             trades=trades))
+                             trades=trades, trigger=trig))
         else:
             recs.append(_rec("steer", "Let your next paychecks fix the mix",
-                             facts + ["New money goes to the funds furthest below target, so nothing needs selling."]))
+                             facts + ["New money goes to the funds furthest below target, so nothing needs selling."],
+                             trigger=trig))
 
-    if pct < 100 and (mkt["m1"] <= DIP_TRIGGER or mkt["below_high"] <= BELOW_HIGH_TRIGGER):
+    sleeve = _stock_sleeve(holdings, acct.today)
+    if sleeve and pct < 100 and (sleeve["m1"] <= DIP_TRIGGER or sleeve["below_high"] <= BELOW_HIGH_TRIGGER):
         new = min(100, pct + DIP_PCT_STEP)
+        which = ("m1", f"{_pct(sleeve['m1'], 1)} this month", f"{DIP_TRIGGER:g}%") if sleeve["m1"] <= DIP_TRIGGER else \
+            ("below_high", f"{abs(sleeve['below_high']):.1f}% below their high of the past year", f"{abs(BELOW_HIGH_TRIGGER):g}%")
+        text = (f"Your stocks, {sleeve['share']:.0%} of your fund, moved {_pct(sleeve['m1'], 1)} this month and are "
+                f"{abs(sleeve['below_high']):.1f}% below their high of the past year. We mention this at {DIP_TRIGGER:g}% "
+                f"in a month or {abs(BELOW_HIGH_TRIGGER):g}% below the high.")
         recs.append(_rec("invest_more", "Prices are lower: consider investing a bit more for a while",
-                         [f"The S&P 500 moved {_pct(mkt['m1'], 1)} this month and is {abs(mkt['below_high']):.1f}% below its high of the past year.",
+                         [text,
+                          f"That is about {_pct(sleeve['m1'] * sleeve['share'], 1)} on the whole fund, since the rest is bonds and other holdings.",
                           f"Raising your paycheck share from {pct:g}% to {new:g}% buys more shares while they're cheaper.",
-                          "Only do this if your checking account still covers your bills."], set_pct=new))
+                          "Only do this if your checking account still covers your bills."], set_pct=new,
+                         trigger=[{"what": "stocks", "text": text, "value_text": which[1], "threshold_text": which[2]}]))
 
     for i in interests:
         if i["vs_market_m3"] <= LAG_TRIGGER:
+            text = (f"{i['ticker']} moved {_pct(i['m3'], 1)} over 3 months, {abs(i['vs_market_m3']):.1f} points behind the market. "
+                    f"We mention this at {abs(LAG_TRIGGER):g} points.")
             recs.append(_rec("hold", f"Hold {i['label']} through the slump",
-                             [f"{i['ticker']} moved {_pct(i['m3'], 1)} over 3 months, {abs(i['vs_market_m3']):.1f} points behind the market.",
-                              "Selling after a drop locks the loss in. Your paychecks are buying it at lower prices now."]))
+                             [text, "Selling after a drop locks the loss in. Your paychecks are buying it at lower prices now."],
+                             trigger=[{"what": i["ticker"], "text": text, "value_text": f"{abs(i['vs_market_m3']):.1f}",
+                                       "threshold_text": f"{abs(LAG_TRIGGER):g} points"}]))
 
-    if companies and companies[0]["share"] >= CONCENTRATION_TRIGGER:
-        c = companies[0]
-        tilts = [t for t in c["via"] if t in ETFS and ETFS[t]["role"] == "tilt"]
-        recs.append(_rec("diversify", f"{c['name']} is a big piece of your fund",
-                         [f"{c['name']} is about {c['share']:.0%} of your fund, through {', '.join(c['via'])}.",
-                          "If one company has a bad year, you'll feel it. Fewer overlapping picks spreads that out."],
-                         remove_interest=[ETFS[t]["theme"] for t in tilts],
-                         remove_stock=[c["ticker"]] if "direct" in c["via"] else []))
+    big = [c for c in companies if c["share"] >= CONCENTRATION_TRIGGER]
+    if big:
+        facts, trig, tilts, direct = [], [], [], []
+        for c in big:
+            facts.append(f"{c['name']} is about {c['share']:.1%} of your fund, through {', '.join(c['via'])}. "
+                         f"We flag a company at {CONCENTRATION_TRIGGER:.0%}.")
+            trig.append({"what": c["ticker"], "text": facts[-1], "value_text": f"{c['share']:.1%}",
+                         "threshold_text": f"{CONCENTRATION_TRIGGER:.0%}"})
+            tilts += [ETFS[t]["theme"] for t in c["via"] if t in ETFS and ETFS[t]["role"] == "tilt"]
+            direct += [c["ticker"]] if "direct" in c["via"] else []
+        title = f"{big[0]['name']} is a big piece of your fund" if len(big) == 1 else \
+            f"{len(big)} companies are big pieces of your fund"
+        recs.append(_rec("diversify", title,
+                         facts + ["If one company has a bad year, you'll feel it. Fewer overlapping picks spreads that out."],
+                         remove_interest=list(dict.fromkeys(tilts)), remove_stock=list(dict.fromkeys(direct)), trigger=trig))
 
     tilt_total = sum(h["target"] for h in holdings if h["role"] == "tilt")
-    tech = sum(h["target"] for h in holdings if h["role"] == "tilt" and ETFS[h["ticker"]]["theme"] in TECH_THEMES)
+    tech_picks = sum(h["target"] for h in holdings if h["role"] == "tilt" and ETFS[h["ticker"]]["theme"] in TECH_THEMES)
+    sectors = _sector_exposure(vals, total)
+    tech_fund = sum(v for k, v in sectors.items() if k in TECH_SECTORS)
     held = set(intake.interests(acct.answers))
-    if tilt_total and tech / tilt_total >= TECH_HEAVY_SHARE and not held & set(STEADY_THEMES):
+    picks_heavy = bool(tilt_total) and tech_picks / tilt_total >= TECH_HEAVY_SHARE
+    if (picks_heavy or tech_fund >= TECH_FUND_TRIGGER) and not held & set(STEADY_THEMES):
         today, quarter_ago = acct.today, acct.today - timedelta(days=QUARTER_DAYS)
         options = sorted(STEADY_THEMES, key=lambda th: -market.change_pct(THEMES[th], quarter_ago, today))[:2]
+        facts, trig = [], []
+        text = (f"About {tech_fund:.0%} of your whole fund is in tech and communication companies, counting what's inside "
+                f"your broad funds (approximate). We flag it at {TECH_FUND_TRIGGER:.0%}.")
+        facts.append(text)
+        trig.append({"what": "tech exposure", "text": text, "value_text": f"{tech_fund:.0%}",
+                     "threshold_text": f"{TECH_FUND_TRIGGER:.0%}"})
+        if picks_heavy:
+            text = (f"{tech_picks / tilt_total:.0%} of your interest picks are tech-related, and they tend to rise and fall together. "
+                    f"We flag it at {TECH_HEAVY_SHARE:.0%}.")
+            facts.append(text)
+            trig.append({"what": "interest picks", "text": text, "value_text": f"{tech_picks / tilt_total:.0%}",
+                         "threshold_text": f"{TECH_HEAVY_SHARE:.0%}"})
         recs.append(_rec("explore", "Look into steadier sectors",
-                         [f"{tech / tilt_total:.0%} of your interest picks are tech-related, and they tend to rise and fall together."]
-                         + [f"{THEME_LABELS[th]} ({THEMES[th]}) moved {_pct(market.change_pct(THEMES[th], quarter_ago, today), 1)} "
-                            f"over 3 months and usually swings less." for th in options],
-                         add_interest=options))
+                         facts + [f"{THEME_LABELS[th]} ({THEMES[th]}) moved {_pct(market.change_pct(THEMES[th], quarter_ago, today), 1)} "
+                                  f"over 3 months and usually swings less." for th in options],
+                         add_interest=options, trigger=trig))
 
     if pct >= HIGH_PCT:
         new = max(0, pct - LOWER_PCT_STEP)
+        text = f"You're investing {pct:g}% of each paycheck. We mention it at {HIGH_PCT}%."
         recs.append(_rec("invest_less", "Make sure you keep enough cash",
-                         [f"You're investing {pct:g}% of each paycheck.",
-                          "A common rule is to keep 3 to 6 months of expenses in savings before investing heavily.",
-                          f"Lowering to {new:g}% leaves more in checking."], set_pct=new))
+                         [text, "A common rule is to keep 3 to 6 months of expenses in savings before investing heavily.",
+                          f"Lowering to {new:g}% leaves more in checking."], set_pct=new,
+                         trigger=[{"what": "paycheck share", "text": text, "value_text": f"{pct:g}%", "threshold_text": f"{HIGH_PCT}%"}]))
 
     if not recs:
-        worst = max((abs(h["drift"]) for h in holdings), default=0.0)
+        worst = max(holdings, key=lambda h: abs(h["drift"]) / (h["band"] or 1), default=None)
+        if worst:
+            text = (f"Every fund is inside its band. The furthest is {worst['ticker']} at {abs(worst['drift']) * 100:.1f} points "
+                    f"off its target; we flag it at {worst['band'] * 100:.1f}.")
+        else:
+            text = "There's nothing in the fund yet to check."
         recs.append(_rec("hold", "Stay the course",
-                         [f"Every fund is within {worst * 100:.1f} points of its target.",
-                          f"Keep investing {pct:g}% of each paycheck; steady buying does the heavy lifting."]))
+                         [text, f"Keep investing {pct:g}% of each paycheck; steady buying does the heavy lifting."],
+                         trigger=[{"what": "drift", "text": text,
+                                   "value_text": f"{abs(worst['drift']) * 100:.1f}" if worst else "0",
+                                   "threshold_text": f"{worst['band'] * 100:.1f}" if worst else "0"}]))
     return recs
+
+
+def _stock_sleeve(holdings: list[dict], today: date) -> dict | None:
+    """The stock part of this fund (everything but bonds and gold) as one index at today's weights: how far it
+    moved this month and how far below its one-year high it sits. None if the fund holds no stocks."""
+    stocks = {h["ticker"]: h["weight"] for h in holdings if h["ticker"] not in NOT_STOCKS and h["weight"] > 0}
+    share = sum(stocks.values())
+    if not share:
+        return None
+    w = {t: x / share for t, x in stocks.items()}
+    days = [today - timedelta(days=n) for n in range(365, -1, -1)]
+    px = {t: [market.raw_price(t, d) for d in days] for t in w}     # each day priced once
+    index = [1.0]
+    for i in range(1, len(days)):
+        index.append(index[-1] * (1 + sum(x * (px[t][i] / px[t][i - 1] - 1) for t, x in w.items())))
+    return {"share": round(share, 4), "m1": round((index[-1] / index[-31] - 1) * 100, 2),
+            "below_high": round((index[-1] / max(index) - 1) * 100, 2)}
+
+
+def _sector_exposure(vals: dict[str, float], total: float) -> dict[str, float]:
+    """Share of the whole fund per sector, looking through the broad funds (approximate)."""
+    out: dict[str, float] = {}
+    if not total:
+        return out
+    for t, v in vals.items():
+        if t in CORE_SECTORS:
+            mix = CORE_SECTORS[t]
+        elif t in ETFS:
+            sector = THEME_SECTOR.get(ETFS[t]["theme"])
+            mix = {sector: 1.0} if sector else {}
+        elif t in market.COMPANIES:
+            sector = THEME_SECTOR.get(ETFS[market.COMPANIES[t]["etf"]]["theme"])
+            mix = {sector: 1.0} if sector else {}
+        else:
+            mix = {}
+        for sector, w in mix.items():
+            out[sector] = out.get(sector, 0.0) + v / total * w
+    return out
 
 
 def _pct(x: float, digits: int = 1) -> str:
@@ -233,8 +479,10 @@ def _pct(x: float, digits: int = 1) -> str:
 
 def _rec(action: str, title: str, facts: list[str], trades: list[dict] | None = None,
          set_pct: float | None = None, add_interest: list[str] | None = None,
-         remove_interest: list[str] | None = None, remove_stock: list[str] | None = None) -> dict:
-    return {"action": action, "title": title, "facts": facts, "trades": trades or [], "set_pct": set_pct,
+         remove_interest: list[str] | None = None, remove_stock: list[str] | None = None,
+         trigger: list[dict] | None = None) -> dict:
+    return {"action": action, "title": title, "facts": facts, "trigger": trigger or [], "trades": trades or [],
+            "set_pct": set_pct,
             "add_interest": add_interest or [], "remove_interest": remove_interest or [],
             "remove_stock": remove_stock or []}
 
@@ -265,20 +513,74 @@ def value_history(acct: FundAccount, points: int = 30) -> dict | None:
 
 
 def _facts(rep: dict) -> list[str]:
-    s, m, r = rep["summary"], rep["market"], rep["relation"]
-    facts = [
-        f"Fund value ${s['value']:,.2f}; you've put in ${s['contributed']:,.2f}; "
-        f"gain ${s['gain']:,.2f} ({_pct(s['gain_pct'], 2)}).",
-        f"Past {rep['period_days']} days: your fund {_pct(s['period_pct'], 2)}, the S&P 500 {_pct(s['market_period_pct'], 2)}.",
-        f"The market is {m['direction']} and {m['vol_word']}: {_pct(m['m3'], 1)} over 3 months, {_pct(m['ytd'], 1)} this year.",
-        f"Leading sectors this month: " + ", ".join(f"{x['label']} {_pct(x['m1'], 1)}" for x in m["leaders"]) + ".",
-        f"Your fund typically moves about {r['move_on_10']:g}% when the market moves 10%; "
-        f"{r['stock_share']:.0%} of it is in stocks.",
-    ]
-    for i in rep["interests"]:
-        facts.append(f"Your interest {i['label']} ({i['ticker']}): {_pct(i['m1'], 1)} this month, {_pct(i['m3'], 1)} over 3 months.")
+    """Short, finished sentences, every number from the report above, most relevant first: the customer's own fund,
+    then their money, then the market. Claude explains these and may not add numbers."""
+    s, m, r, ret = rep["summary"], rep["market"], rep["relation"], rep["returns"]
+    p, since = ret["period"], ret["since_start"]
+    facts = [f"Fund value ${s['value']:,.2f}; you've put in ${s['contributed']:,.2f}; gain ${s['gain']:,.2f} ({_pct(s['gain_pct'], 2)} on your money, prices only)."]
+    if p and p["twr_pct"] is not None and p["days"] > 0:
+        span = f"since you started on {_day(p['start'])}" if p["from_start"] else f"from {_day(p['start'])} to {_day(p['end'])}"
+        facts.append(f"{span[0].upper()}{span[1:]} ({p['days']} days), your fund returned {_pct(p['twr_pct'], 2)} including estimated income "
+                     f"({_pct(p['twr_price_pct'], 2)} from prices alone).")
+        facts.append(f"Its benchmark, VTI/VXUS/BND at your fund's own {1 - ret['benchmark']['BND']:.0%} stock / {ret['benchmark']['BND']:.0%} "
+                     f"bond split with the same deposits, returned {_pct(p['benchmark_pct'], 2)}, so your choices added {_pct(p['vs_benchmark_pts'], 2)[:-1]} points. "
+                     f"The S&P 500 returned {_pct(p['spy_pct'], 2)}.")
+        facts.append(f"In those {p['days']} days the fund started at ${p['start_value']:,.2f}, you added ${p['deposits']:,.2f}, "
+                     f"the market moved it ${p['market_gain']:+,.2f}, and it ended at ${p['end_value']:,.2f}.")
+        moved = p["attribution"]
+        if moved:
+            up, down = max(moved, key=lambda x: x["dollars"]), min(moved, key=lambda x: x["dollars"])
+            facts.append(f"Biggest gain: {up['ticker']} ({up['label']}) ${up['dollars']:+,.2f}."
+                         + (f" Biggest drag: {down['ticker']} ({down['label']}) ${down['dollars']:+,.2f}." if down["dollars"] < 0 else ""))
+    else:
+        facts.append("The fund has just started, so there is no return to report yet.")
+    if since and since["mwr_pct"] is not None and since["days"] > 0:
+        facts.append(f"Since you started on {_day(since['start'])} you've put in ${since['deposits']:,.2f}; the fund is worth "
+                     f"${since['end_value']:,.2f}. Your own money returned {_pct(since['mwr_pct'], 2)} (it counts when each deposit landed); "
+                     f"the fund itself returned {_pct(since['twr_pct'], 2)}.")
+    for x in (p["picks"] if p else []):
+        facts.append(f"Your pick {x['label']} ({x['ticker']}, {x['weight']:.1%} of the fund) moved {_pct(x['move_pct'], 1)}, "
+                     f"${x['dollars']:+,.2f}; the core stock funds it replaced moved {_pct(x['core_pct'], 1)}.")
+    facts.append(f"{r['stock_share']:.0%} of the fund is in stocks; it typically moves about {r['move_on_10']:g}% when the market moves 10%.")
     if rep["companies"]:
         top = rep["companies"][0]
-        facts.append(f"Biggest company in your fund: {top['name']}, about {top['share']:.1%}, {_pct(top['period_pct'], 1)} this month.")
-    facts += [f"Recommendation: {x['title']}." for x in rep["recommendations"]]
+        facts.append(f"Biggest company inside the fund: {top['name']}, about {top['share']:.1%} (approximate look-through).")
+    for x in rep["recommendations"]:
+        facts.append(f"Recommendation: {x['title']}. " + " ".join(t["text"] for t in x["trigger"][:2]))
+    proj, pin = rep["projection"], rep["projection_inputs"]
+    facts.append(f"Looking ahead, with ${pin['monthly']:,.0f} a month going in and an assumed {pin['return_pct']:g}% a year "
+                 f"(an assumption, not a forecast), the typical 10-year result is ${proj.p50[-1]:,.0f}, within ${proj.p10[-1]:,.0f} to ${proj.p90[-1]:,.0f}.")
+    facts += rep["finances"]["facts"]
+    facts.append(f"The market is {m['direction']} and {m['vol_word']}: the S&P 500 is {_pct(m['m3'], 1)} over 3 months, {_pct(m['ytd'], 1)} this year.")
+    facts.append(rep["data_notes"]["price"])
     return facts
+
+
+def _day(d: date) -> str:
+    return f"{d.strftime('%b')} {d.day}"
+
+
+def _narrative(rep: dict) -> str:
+    """Two short paragraphs from the same facts, for when Claude isn't available. Plain, and only the report's numbers."""
+    ret, s = rep["returns"], rep["summary"]
+    p, since, fin = ret["period"], ret["since_start"], rep["finances"]
+    if p and p["twr_pct"] is not None and p["days"] > 0:
+        first = (f"Your fund is worth ${s['value']:,.2f}. Over the last {p['days']} days it returned {_pct(p['twr_pct'], 2)}, against "
+                 f"{_pct(p['benchmark_pct'], 2)} for a mix of the same core funds at your stock/bond split and {_pct(p['spy_pct'], 2)} "
+                 f"for the S&P 500. The gap to that mix comes from your own choices: {'your interest picks and company holdings' if p['picks'] else 'how far the funds have drifted from your targets'}.")
+        if p["attribution"]:
+            top = max(p["attribution"], key=lambda x: x["dollars"])
+            first += f" {top['ticker']} added the most, ${top['dollars']:+,.2f}."
+    else:
+        first = f"Your fund is worth ${s['value']:,.2f} and has only just started, so there's no return to compare yet."
+    if since and since["days"] > 0 and since["mwr_pct"] is not None:
+        first += f" Counting every deposit, your own money has returned {_pct(since['mwr_pct'], 2)} since {_day(since['start'])}."
+    b = fin["budget"]
+    second = (f"Each paycheck puts ${b['per_paycheck']:,.0f} in, about ${b['monthly_invest']:,.0f} in a typical month, and your cash cushion "
+              f"covers {fin['safety']['months']:.1f} months of expenses. ")
+    second += ("A card at {apr:g}% costs more than the fund is assumed to earn, so paying it down is also a good use of money; the choice is yours. "
+               .format(apr=fin["debt"]["apr"]) if fin["debt"]["beats_fund"] else "")
+    second += f"The recommendations below say what, if anything, is worth doing now. {rep['data_notes']['price']}"
+    return first + "\n\n" + second
+
+

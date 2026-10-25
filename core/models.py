@@ -63,6 +63,22 @@ class Readiness:
 
 HoldingRole = Literal["core", "tilt", "stock"]
 
+# What a reason explains. Holdings: core, bonds, tilt, stock. Adjustments: cap (shrunk to fit), swing (sized
+# down because it moves a lot), dropped (left out). Notes: overlap, concentration, sector. How the mix was
+# chosen: score, contradiction, horizon, drop, override.
+ReasonKind = Literal["core", "bonds", "tilt", "stock", "cap", "swing", "dropped", "overlap", "concentration",
+                     "sector", "score", "contradiction", "horizon", "drop", "override"]
+
+
+@dataclass
+class Reason:
+    """One decision the fund builder made, in plain words. The "How your fund was built" page and the
+    chat's get_fund_explanation tool are generated from these, so the explanation can't drift from the code."""
+    kind: ReasonKind
+    text: str
+    ticker: str | None = None     # the holding (or left-out fund/company) it's about
+    facts: dict = field(default_factory=dict)   # the numbers behind the text, for templates and tests
+
 
 @dataclass
 class Holding:
@@ -81,7 +97,10 @@ class Portfolio:
     annual_fee_pct: float     # weighted expense ratio, percent
     worst_year: int
     worst_year_return: float  # percent, negative
-    overlap_warnings: list[str] = field(default_factory=list)
+    overlap_warnings: list[str] = field(default_factory=list)   # the reasons worth flagging (see WARNING_KINDS)
+    reasons: list[Reason] = field(default_factory=list)
+    score: int | None = None          # 0..100, what the mix was built at (after any ceilings)
+    pointed_level: int | None = None  # the level the answers pointed to, if a ceiling lowered it
 
     @property
     def core(self) -> Holding:
@@ -95,6 +114,10 @@ class Portfolio:
         return balance * self.annual_fee_pct / 100
 
 
+# Reasons also listed as warnings on the fund card. Any other reason can opt in with facts["warn"].
+WARNING_KINDS = ("dropped", "overlap", "concentration", "sector", "contradiction")
+
+
 @dataclass
 class SimResult:
     years: list[int]          # 0..10
@@ -104,6 +127,8 @@ class SimResult:
     monthly_contribution: float
     starting_balance: float
     total_contributed: float
+    expected_return_pct: float = 0.0   # the assumptions behind the range (yearly, after fees), shown to the customer
+    volatility_pct: float = 0.0
 
 
 @dataclass

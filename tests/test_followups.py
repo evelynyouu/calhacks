@@ -20,9 +20,16 @@ client = TestClient(app)
 
 # Answers that trip nothing (same as tests/test_routes.py INTAKE)
 BASE = {"goal": "Buy a house someday", "starting_amount": 2500, "paycheck_pct": 12, "risk_priority": "growth",
-        "risk_range": "medium", "max_drop": 20, "swing_comfort": 6,
+        "risk_range": "medium", "max_drop": 20,
         "interests": {"themes": ["tech", "healthcare"], "unmatched": []}}
-BOLD = {"risk_priority": "max", "risk_range": "wide", "max_drop": 35, "swing_comfort": 8}     # level 4, no clash
+BOLD = {"risk_priority": "max", "risk_range": "wide", "max_drop": 35}     # level 4, no clash
+
+
+@pytest.fixture
+def no_horizon_question(monkeypatch):
+    """The horizon follow-ups only run when the intake doesn't ask horizon itself (it does now), so their
+    rules are tested against an intake without that question."""
+    monkeypatch.setattr(intake, "QUESTIONS", [q for q in intake.QUESTIONS if q.key != "horizon"])
 
 
 @pytest.fixture(autouse=True)
@@ -118,61 +125,61 @@ def test_paycheck_over_leftover_slider_sets_pct(sam):
     assert apply(check(a, "paycheck_pct", sam), a, "40") == "40%" and a["paycheck_pct"] == 40
 
 
-@pytest.mark.parametrize("clash", [{"risk_priority": "protect", "swing_comfort": 9},
-                                   {"risk_range": "widest", "max_drop": 5, "risk_priority": "steady",
-                                    "swing_comfort": 5}])
+@pytest.mark.parametrize("clash", [{"risk_priority": "protect", "max_drop": 45},
+                                   {"risk_range": "widest", "max_drop": 5, "risk_priority": "steady"}])
 def test_contradictory_risk_fires(clash):
-    fu = check(ans(**clash), "swing_comfort")
+    fu = check(ans(**clash), "max_drop")
     assert fu.key == "contradictory_risk" and len(fu.options) == 2
 
 
 def test_contradictory_risk_near_miss():
-    # protect = 0 vs swing 6/10 = 0.56: a spread under RISK_SPREAD
-    assert fired(ans(risk_priority="protect", swing_comfort=6), "swing_comfort") is None
+    # protect = 0 vs a 25% drop = 0.5: a spread under RISK_SPREAD
+    assert fired(ans(risk_priority="protect", risk_range="narrow", max_drop=25), "max_drop") is None
     # only fires after the last risk question
-    assert fired(ans(risk_priority="protect", swing_comfort=9), "max_drop") is None
+    assert fired(ans(risk_priority="protect", max_drop=45), "risk_range") is None
 
 
 def test_contradictory_risk_pulls_the_other_answer_halfway():
-    """Chosen answer stays; the other moves to the nearest allowed value halfway between the two (0..1 scale)."""
-    a = ans(risk_priority="protect", risk_range="medium", max_drop=20, swing_comfort=9)
-    fu = check(a, "swing_comfort")
-    assert fu.options == [("careful", "Protecting what I put in"), ("bold", "Comfort with big swings: 9 out of 10")]
+    """Chosen answer stays; the other moves to the nearest allowed value about halfway between the two (0..1 scale)."""
+    a = ans(risk_priority="protect", risk_range="medium", max_drop=45)
+    fu = check(a, "max_drop")
+    assert [v for v, _ in fu.options] == ["careful", "bold"]
     careful = copy.deepcopy(a)
-    apply(fu, careful, "careful")              # protect (0) chosen: swing 9 (0.89) -> 0.44 -> 5 of 10
-    assert careful["risk_priority"] == "protect" and careful["swing_comfort"] == 5
-    assert "from 9 out of 10 to 5 out of 10" in careful["followup_notes"][0]
+    apply(fu, careful, "careful")              # protect chosen: the 45% drop comes down toward it
+    assert careful["risk_priority"] == "protect" and 15 <= careful["max_drop"] <= 30
+    assert careful["followup_notes"]
     bold = copy.deepcopy(a)
-    apply(fu, bold, "bold")                    # swing 9 chosen: protect (0) -> 0.44 -> nearest of 4 = steady
-    assert bold["swing_comfort"] == 9 and bold["risk_priority"] == "steady"
-    assert intake.risk_score(careful) < intake.risk_score(a) < intake.risk_score(bold)
+    apply(fu, bold, "bold")                    # the 45% drop chosen: protect moves up toward it
+    assert bold["max_drop"] == 45 and bold["risk_priority"] in ("steady", "growth")
+    # max drop is a ceiling on the mix, not part of the score, so only moving the priority changes the score
+    assert intake.risk_score(careful) == intake.risk_score(a) < intake.risk_score(bold)
 
 
 def test_contradictory_risk_range_vs_drop():
-    a = ans(risk_priority="steady", risk_range="widest", max_drop=5, swing_comfort=5)
-    fu = check(a, "swing_comfort")
+    a = ans(risk_priority="steady", risk_range="widest", max_drop=5)
+    fu = check(a, "max_drop")
     assert fu.effects == {"careful": {"risk_range": "wide"}, "bold": {"max_drop": 30}}
 
 
-def test_near_term_goal_with_high_risk():
-    fu = check(ans(goal="wedding in 2027", **BOLD), "swing_comfort")
+def test_near_term_goal_with_high_risk(no_horizon_question):
+    fu = check(ans(goal="wedding in 2027", **BOLD), "max_drop")
     assert fu.key == "near_term_high_risk"
-    assert [v for v, _ in fu.options] == ["under_3", "3_7", "7_15", "15_plus", "not_sure"]
+    assert [v for v, _ in fu.options] == ["lt3", "3to7", "7to15", "15plus", "unsure"]
     for goal in ("a car", "house next year", "emergency fund", "tuition"):
-        assert fired(ans(goal=goal, **BOLD), "swing_comfort") == "near_term_high_risk", goal
+        assert fired(ans(goal=goal, **BOLD), "max_drop") == "near_term_high_risk", goal
     a = ans(goal="a car", **BOLD)
-    apply(fu, a, "under_3")
-    assert a["horizon"] == "under_3"
+    apply(fu, a, "lt3")
+    assert a["horizon"] == "lt3"
 
 
-def test_near_term_near_misses():
-    assert fired(ans(goal="a car"), "swing_comfort") is None                       # risk level 2, not growth
-    assert fired(ans(goal="a car in 2035", **BOLD), "swing_comfort") is None       # far date
-    assert fired(ans(goal="Buy a house someday", **BOLD), "swing_comfort") is None
-    assert fired(ans(goal="wedding in 2027", horizon="3_7", **BOLD), "swing_comfort") is None
+def test_near_term_near_misses(no_horizon_question):
+    assert fired(ans(goal="a car", risk_priority="steady"), "max_drop") is None   # risk level 2, not growth
+    assert fired(ans(goal="a car in 2035", **BOLD), "max_drop") is None       # far date
+    assert fired(ans(goal="Buy a house someday", **BOLD), "max_drop") is None
+    assert fired(ans(goal="wedding in 2027", horizon="3to7", **BOLD), "max_drop") is None
 
 
-def test_goal_without_a_timeline_asks_last_and_only_alone():
+def test_goal_without_a_timeline_asks_last_and_only_alone(no_horizon_question):
     fu = check(ans(goal="Retirement"), "interests")
     assert fu.key == "goal_no_timeline"
     assert fired(ans(goal="Retirement"), "interests", asked=["unclear_goal"]) is None   # something else was asked
@@ -181,10 +188,8 @@ def test_goal_without_a_timeline_asks_last_and_only_alone():
 
 
 def test_horizon_followups_skip_when_a_horizon_question_exists(monkeypatch):
-    qs = list(intake.QUESTIONS) + [Question("horizon", "choice", "When will you need the money?",
-                                            options=followups.HORIZON_OPTIONS[:4])]
-    monkeypatch.setattr(intake, "QUESTIONS", qs)
-    assert fired(ans(goal="wedding in 2027", **BOLD), "swing_comfort") is None
+    assert any(q.key == "horizon" for q in intake.QUESTIONS)   # the intake asks it directly now
+    assert fired(ans(goal="wedding in 2027", **BOLD), "max_drop") is None
     assert fired(ans(goal="Retirement"), "horizon") is None
 
 
@@ -209,14 +214,14 @@ CASES = [  # (answers, step) for every rule
     (dict(starting_amount=99_999), "starting_amount"),
     (dict(starting_amount=0, paycheck_pct=0), "paycheck_pct"),
     (dict(paycheck_pct=90), "paycheck_pct"),
-    (dict(risk_priority="protect", swing_comfort=9), "swing_comfort"),
-    (dict(goal="a car", **BOLD), "swing_comfort"),
+    (dict(risk_priority="protect", max_drop=45), "max_drop"),
+    (dict(goal="a car", **BOLD), "max_drop"),
     (dict(interests={"themes": [], "unmatched": ["helthcare"]}), "interests"),
     (dict(goal="retirement"), "interests"),
 ]
 
 
-def test_every_rule_has_a_case_and_keep_changes_nothing(sam):
+def test_every_rule_has_a_case_and_keep_changes_nothing(sam, no_horizon_question):
     keys = set()
     for kw, step in CASES:
         a = ans(**kw)
@@ -238,7 +243,7 @@ def test_at_most_two_per_intake(sam):
             asked.append(fu.key)
             apply(fu, a, keep=True)
     assert asked == ["unclear_goal", "nothing_invested"] and len(asked) == MAX_FOLLOWUPS
-    assert check(ans(risk_priority="protect", swing_comfort=9), "swing_comfort", sam, asked) is None
+    assert check(ans(risk_priority="protect", max_drop=45), "max_drop", sam, asked) is None
 
 
 def test_keep_value_is_not_an_option():
@@ -249,8 +254,8 @@ def test_keep_value_is_not_an_option():
 
 # ---------- Through the route ----------
 
-INTAKE = [{"value": "a car"}, {"value": "$2,500"}, {"value": "12"}, {"value": "max"}, {"value": "wide"},
-          {"value": "35"}, {"value": "8"}, {"values": ["tech"], "other": ""}]
+INTAKE = [{"value": "a car"}, {"value": "$2,500"}, {"value": "12"}, {"value": "protect"}, {"value": "medium"},
+          {"value": "45"}, {"value": "3to7"}, {"values": ["tech"], "other": ""}]
 
 
 def test_full_intake_with_a_followup_in_the_middle_builds_the_fund():
@@ -259,17 +264,18 @@ def test_full_intake_with_a_followup_in_the_middle_builds_the_fund():
     for i, form in enumerate(INTAKE):
         r = client.post("/p/sam/answer", data=form)
         assert r.status_code == 200, i
-        if i == 6:   # last risk answer: the horizon follow-up, counter stays on question 7
+        if i == 5:   # last risk answer clashes with the first: a follow-up, counter stays on question 6
             s = state.get("sam")
-            assert s.followup and s.followup.key == "near_term_high_risk" and s.step == 6
-            assert "When do you expect to need this money?" in r.text and "Question 7 of 8" in r.text
+            assert s.followup and s.followup.key == "contradictory_risk" and s.step == 5
+            assert "Which sounds more like you?" in r.text and "Question 6 of 8" in r.text
             assert "quick follow-up" in r.text and 'name="keep"' in r.text
-            r = client.post("/p/sam/answer", data={"value": "under_3"})
-            assert "Under 3 years" in r.text and "Which industries" in r.text and "Question 8 of 8" in r.text
+            r = client.post("/p/sam/answer", data={"value": "careful"})
+            assert "When will you need most of this money?" in r.text and "Question 7 of 8" in r.text
     s = state.get("sam")
     assert s.done and s.step == len(intake.QUESTIONS) and s.followup is None
-    assert s.followups_asked == ["near_term_high_risk"] and s.fund.answers["horizon"] == "under_3"
-    assert "Your fund is ready" in r.text and "under 3 years" in r.text and s.fund.portfolio
+    assert s.followups_asked == ["contradictory_risk"] and s.fund.answers["risk_priority"] == "protect"
+    assert s.fund.answers["max_drop"] < 45 and s.fund.answers["followup_notes"]
+    assert "Your fund is ready" in r.text and s.fund.portfolio
 
 
 def test_keep_through_the_route_and_bad_followup_answer():
