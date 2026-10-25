@@ -13,7 +13,7 @@ from tests.fund_helpers import make_fund
 client = TestClient(app)
 
 INTAKE = [  # (form data, what the chat shows as the user's message)
-    ({"value": "Buy a house someday"}, "Buy a house someday"),
+    ({"value": "home"}, "Buying a home"),
     ({"value": "$2,500"}, "$2,500"),
     ({"value": "12"}, "12%"),
     ({"value": "growth"}, "Strong growth, even with bigger dips"),
@@ -50,10 +50,11 @@ def test_unknown_persona_404():
     assert client.get("/p/unknown").status_code == 404
 
 
-def test_first_visit_greets_and_asks_the_first_question_with_a_text_box():
+def test_first_visit_greets_and_asks_the_goal_as_cards():
     page = link("sam")
-    assert "Hi Sam!" in page and "What are you investing for?" in page
-    assert '<textarea name="value"' in page and "Question 1 of 8" in page
+    assert "Hi Sam!" in page and "What are you investing for?" in page and "Question 1 of 8" in page
+    assert 'value="home" class="choice-btn">Buying a home' in page and 'name="other"' in page
+    assert "Something else" in page and "<textarea" not in page and "A)" not in page
 
 
 def test_full_intake_builds_the_fund():
@@ -77,7 +78,7 @@ def test_full_intake_builds_the_fund():
 
 def test_bad_answer_explains_and_stays_on_the_question():
     link("sam")
-    client.post("/p/sam/answer", data={"value": "house"})
+    client.post("/p/sam/answer", data={"value": "home"})
     r = client.post("/p/sam/answer", data={"value": "lots"})
     assert "Type a dollar amount" in r.text and state.get("sam").step == 1
 

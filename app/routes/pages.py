@@ -20,7 +20,7 @@ from app.routes.auth import auth_disabled, csrf_token
 from app import state
 from core import backtest, builder, disclosure, explain, feed, figures, followups, fund, intake, market, nessie
 from core.broker import get_broker, values
-from core.intake import QUESTIONS, AnswerError, parse
+from core.intake import QUESTIONS, AnswerError
 from core.market import ETFS
 from core.models import to_dict
 from core.policy import tier_for
@@ -41,6 +41,8 @@ templates.env.globals["price_label"] = market.price_label
 templates.env.globals["csrf_token"] = csrf_token
 templates.env.globals["defs"] = figures.DEFINITIONS   # one definition per return figure
 templates.env.globals["disclosure"] = disclosure.disclosure   # header line + footer in base.html
+templates.env.globals["goal_label"] = intake.goal_label
+templates.env.globals["suggested_horizon"] = intake.suggested_horizon
 
 MARKET_DROP_PCT = -10.0
 RAISE_PCT = 10.0
@@ -49,7 +51,7 @@ EXAMPLE_BUY = 25.0   # "$25 buys 0.07 shares" on a stock's page
 
 # Personas that start with a fund already running, so the demo can jump straight to the report
 DEMO_PRESETS = {
-    "alex": {"answers": {"goal": "Retire early", "starting_amount": 52_000, "paycheck_pct": 20,
+    "alex": {"answers": {"goal": "retirement", "goal_text": "Retire early", "starting_amount": 52_000, "paycheck_pct": 20,
                          "risk_priority": "growth", "risk_range": "wide", "max_drop": 25, "horizon": "15plus",
                          "interests": {"themes": ["healthcare", "tech"], "unmatched": []}},
              "started_days_ago": 365, "auto_trade": True},
@@ -227,8 +229,7 @@ def answer(request: Request, cid: str, value: str = Form(""), values: list[str] 
             shown = followups.apply(s.followup, s.fund.answers, value, values, keep=bool(keep))
             s.followup = None
         else:
-            stored, shown = parse(q, value, values, other)
-            s.fund.answers[q.key] = stored
+            shown = intake.record(s.fund.answers, q, value, values, other)
     except AnswerError as e:
         return _render("partials/chat_turn.html", _ctx(request, cid, new_messages=[{"role": "assistant", "text": str(e)}]))
     new = [s.say(shown, "user")]

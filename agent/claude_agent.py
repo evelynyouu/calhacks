@@ -16,7 +16,7 @@ from agent.tools import TOOLS, headlines, market_today, news_tickers, run_tool
 from app.state import Session
 from core.followups import HIGH_RISK_LEVEL, HORIZON_LABELS
 from core.explain import fallback_intro, intro_facts
-from core.intake import QUESTIONS
+from core.intake import QUESTIONS, goal_label, suggested_horizon
 from core.market import ETFS
 from core.report import build_report
 
@@ -75,6 +75,10 @@ def _followup_facts(answers: dict, level: int) -> list[str]:
         if h == "lt3" and level >= HIGH_RISK_LEVEL:
             facts.append("A growth-leaning fund can be down in any single year, so money needed within 3 years is "
                          "often kept in steadier funds. It's your call; ask me about it any time.")
+    sugg = suggested_horizon(answers)
+    if sugg:   # "Not sure yet": mention what the goal usually means, as a suggestion only
+        facts.append(f"They aren't sure when they'll need the money. Their goal often means "
+                     f"{HORIZON_LABELS[sugg[0]].lower()}, but no timeline limit was applied; they can set one any time.")
     return facts
 
 
@@ -114,7 +118,7 @@ def fund_ready(session: Session) -> str:
     offline = (f"Your fund is ready: {p.risk_label.lower()}, with {core}"
                + (f", plus {tilts} for your interests" if tilts else "") + f". The yearly fee is {p.annual_fee_pct:.2f}%. "
                + " ".join(notes) + " Press “Paycheck arrives” to watch a paycheck invest itself, or ask me anything.")
-    return explain(facts, f"The customer's goal: {a.answers.get('goal', '')!r}. In 3 to 4 short sentences, explain "
+    return explain(facts, f"The customer's goal: {goal_label(a.answers)!r}. In 3 to 4 short sentences, explain "
                           "their new fund: what the core does, what the interest slice adds, and one thing to "
                           "know about their risk level. End by inviting questions.", fallback=offline)
 
@@ -144,8 +148,8 @@ def _session_context(session: Session) -> str:
     """What already happened in the app, so chat can answer questions about it (app-computed, safe to cite)."""
     a = session.fund
     lines = [f"Today in the demo is {a.today.isoformat()}."]
-    if a.answers.get("goal"):
-        lines.append(f"Their goal: {a.answers['goal']}")
+    if goal_label(a.answers):
+        lines.append(f"Their goal: {goal_label(a.answers)}")
     lines += a.log[:6]
     if a.pending:
         lines.append(f"{len(a.pending)} trades are waiting for the customer to confirm.")
