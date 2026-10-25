@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from core import intake, market
+from core import intake, market, returns
 from core.broker import get_broker, values
 from core.fund import FundAccount
 from core.market import ETFS, HOLDINGS
@@ -19,7 +19,6 @@ from core.profile import get_profile
 from core.rebalance import drift as drift_of, rebalance_trades
 from core.sim import simulate
 
-PERIOD_DAYS = 30
 QUARTER_DAYS = 91
 BENCHMARK = "SPY"
 NOT_STOCKS = {"BND", "GLD"}
@@ -40,18 +39,24 @@ CALM, CHOPPY = 0.8, 1.25        # volatility vs typical
 
 def build_report(acct: FundAccount) -> dict:
     cid, today, p = acct.customer_id, acct.today, acct.portfolio
-    month_ago, quarter_ago = today - timedelta(days=PERIOD_DAYS), today - timedelta(days=QUARTER_DAYS)
+    quarter_ago = today - timedelta(days=QUARTER_DAYS)
     vals = values(cid, today)
     total = sum(vals.values())
     tier = tier_for(total)
 
+    rets = _returns(acct, tier)
+    period = rets["period"]
+    month_ago = period["start"] if period else today - timedelta(days=tier.review_every_days)
     holdings = _holdings(acct, vals, total, month_ago)
-    period_pct = round(sum(h["weight"] * h["period_pct"] for h in holdings), 2) if total else 0.0
     mkt = _market(today, month_ago, quarter_ago)
-    gain = total - acct.contributed
+    since = rets["since_start"]
+    contributed = since["deposits"] if since else acct.contributed
+    gain = total - contributed
+    period_pct = period["twr_pct"] if period and period["twr_pct"] is not None else 0.0
     summary = {
-        "value": round(total, 2), "contributed": round(acct.contributed, 2), "gain": round(gain, 2),
-        "gain_pct": round(gain / acct.contributed * 100, 2) if acct.contributed else 0.0,
+        "value": round(total, 2), "contributed": round(contributed, 2), "gain": round(gain, 2),
+        "gain_pct": since["mwr_pct"] if since and since["mwr_pct"] is not None
+        else round(gain / contributed * 100, 2) if contributed else 0.0,
         "period_pct": period_pct, "market_period_pct": mkt["m1"],
         "vs_market_pts": round(period_pct - mkt["m1"], 2),
         "invest_pct": acct.invest_pct, "fee_pct": p.annual_fee_pct,
@@ -67,7 +72,8 @@ def build_report(acct: FundAccount) -> dict:
     sim = simulate(p, total, monthly)
     next_review = (acct.last_review or today) + timedelta(days=tier.review_every_days)
     rep = {
-        "as_of": today, "period_days": PERIOD_DAYS, "summary": summary, "holdings": holdings,
+        "as_of": today, "period_days": period["days"] if period else tier.review_every_days, "summary": summary,
+        "returns": rets, "holdings": holdings,
         "companies": companies, "interests": interests, "market": mkt, "relation": relation,
         "recommendations": recs, "projection": sim, "history": value_history(acct),
         "schedule": {"tier": tier, "review_every_days": tier.review_every_days, "auto_allowed": tier.auto_trades,
@@ -76,6 +82,38 @@ def build_report(acct: FundAccount) -> dict:
     }
     rep["facts"] = _facts(rep)
     return rep
+
+
+def _returns(acct: FundAccount, tier) -> dict:
+    """What the fund did, replayed from the broker's orders: over the review period and since the start.
+    The period runs from the last review (at least one review cadence back); a younger fund gets its whole
+    life, labeled as such. With no order history (nothing bought yet, or a broker that can't list orders)
+    both windows are None."""
+    today, orders = acct.today, get_broker().orders(acct.customer_id)
+    if not orders:
+        return {"available": False, "first_order": None, "period": None, "since_start": None}
+    first = min(o["on"] for o in orders)
+    start = today - timedelta(days=tier.review_every_days)
+    if acct.last_review and acct.last_review < start:
+        start = acct.last_review
+    young = start <= first   # the fund is younger than the period: show its whole life
+    return {"available": True, "first_order": first,
+            "period": _window(orders, first, today, None if young else start),
+            "since_start": _window(orders, first, today, None)}
+
+
+def _window(orders: list[dict], first: date, end: date, start: date | None) -> dict:
+    """Dollars and returns for [start, end]. start=None means from the first deposit, which counts as new money."""
+    young = start is None
+    r = returns.replay(orders, market.raw_price, returns.day_before(first) if young else start, end)
+    twr, mwr = returns.twr(r), returns.money_weighted(r)
+    return {
+        "start": first if young else start, "end": end, "days": (end - (first if young else start)).days,
+        "from_start": young, "start_value": round(r.start_value, 2), "deposits": round(r.deposits, 2),
+        "market_gain": round(r.market_gain, 2), "end_value": round(r.end_value, 2),
+        "twr_pct": None if twr is None else round(twr * 100, 2),
+        "mwr_pct": None if mwr is None else round(mwr * 100, 2),
+    }
 
 
 def _holdings(acct, vals, total, month_ago) -> list[dict]:
