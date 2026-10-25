@@ -1,18 +1,25 @@
-"""Allocation engine.  OWNER: Saahil.  RULES: Lance (ETF list, tilt caps).
+"""Allocation engine: the customer's own index.  OWNER: Saahil.  RULES: Lance (ETF list, tilt caps), Evelyn (custom index).
 
-A fund = a broad core (US stocks, international stocks, bonds) plus a slice for the customer's
-interests, one fund per interest, plus any single companies they picked (each capped, and capped in
-total, by risk level). The bond share follows the risk score smoothly (65% at 0 down to 10% at 100,
-in 5-point steps); the interest and company slices come out of the stock part, so the bond share is
-never touched. Every decision comes with a Reason (core/models.py). Choosing the score from the
-intake answers, with the horizon and max-drop ceilings, is core/builder.py.
+A fund, in slices (core/models.SLICES):
+  bonds     BND; the share follows the risk score (65% at 0 down to 10% at 100, in 5-point steps)
+  intl      VXUS, INTL_SHARE of the stock part (only a handful of foreign companies trade in the US)
+  us_core   about 55 big US companies (core/universe.py), weighted by size like an index fund, none over
+            CORE_NAME_CAP of the slice
+  spend     companies where the customer spends money (core/spending.py), by dollars, SPEND_CAP_BY_RISK
+  interest  each interest's THEME_PICKS biggest companies, or its theme fund if we hold none
+  added     companies the customer added (each capped, and capped in total, by risk level)
+Spend, interest and added come out of the US index, so the bond and international shares are never
+touched. A company held for two reasons is one position, and no position reaches COMPANY_CAP. Every
+decision comes with a Reason. Choosing the score from the answers, with the horizon and max-drop
+ceilings, is core/builder.py.
 """
 from __future__ import annotations
 
 import math
+from functools import lru_cache
 
-from core import market
-from core.market import ETFS, HOLDINGS
+from core import market, universe
+from core.market import COMPANIES, ETFS, HOLDINGS
 from core.models import WARNING_KINDS, Holding, Portfolio, Reason
 
 RISK_LABELS = {1: "Conservative", 2: "Moderate", 3: "Growth", 4: "Aggressive"}
@@ -22,6 +29,15 @@ LEVEL_BAND = 25           # score 0-24 -> level 1, 25-49 -> 2, 50-74 -> 3, 75-10
 BOND_MAX, BOND_MIN, BOND_STEP = 0.65, 0.10, 0.05
 LEVEL_BONDS = {1: 0.65, 2: 0.45, 3: 0.25, 4: 0.10}
 US_SHARE = 0.70           # of the stock part; the rest is international, roughly the world market's split
+INTL_SHARE = 1 - US_SHARE
+CORE_NAME_CAP = 0.06      # of the US index: about the biggest company's share of the whole US market
+COMPANY_CAP = 0.08        # of the fund, all slices together; matches the report's diversify rule
+# Where you spend: a share of the fund by risk level, the biggest SPEND_PICKS companies by dollars, none
+# under MIN_PICK. It personalizes the fund; it doesn't predict anything, and the reasons say so.
+SPEND_CAP_BY_RISK = {1: 0.05, 2: 0.08, 3: 0.10, 4: 0.12}
+SPEND_PICKS = 8
+MIN_PICK = 0.005
+THEME_PICKS = 2           # an interest becomes its theme's biggest companies; a theme with none keeps its fund
 # Real calendar-year total returns (percent, dividends reinvested, nominal) in the two years that hurt
 # most: 2008, when stocks crashed and bonds rose, and 2022, when both fell. Source:
 # totalrealreturns.com/n/VTI,VGTSX,BND,VXUS (read 2026-10-24). VXUS launched in 2011, so its 2008 is
@@ -71,15 +87,46 @@ def worst_year(holdings: list[Holding]) -> tuple[int, float]:
 
 
 def build_portfolio(risk_level: int, interests: list[str] | None = None, stocks: list[str] | None = None,
-                    *, bond_share: float | None = None, score: int | None = None) -> Portfolio:
-    """The fund for a level (interest and company caps) and a bond share (default: the level's)."""
+                    *, bond_share: float | None = None, score: int | None = None, spending=None) -> Portfolio:
+    """The fund for a level (caps), a bond share (default: the level's), interests, added companies and a
+    spending profile (core/spending.Spend list; None = not given, [] = no purchases found)."""
     risk_level = min(4, max(1, int(risk_level)))
     bond_share = LEVEL_BONDS[risk_level] if bond_share is None else bond_share
     kind = RISK_LABELS[risk_level].lower()
-    cap = TILT_CAP_BY_RISK[risk_level]
-    tilts = list(dict.fromkeys(THEMES[i] for i in interests or [] if i in THEMES))
     reasons: list[Reason] = []
-    sizes = _size_interests(tilts, cap, kind, reasons)
+    parts, budgets = _compose(risk_level, interests, stocks, bond_share, spending, reasons)
+    holdings = _holdings(parts)
+    held_funds = [t for t in budgets if t in parts["interest"]]   # interests that stayed funds
+    overlaps = {f: _overlap_score(f, list(budgets)) for f in budgets}
+    reasons = (_holding_reasons(holdings, parts, kind, score, overlaps) + reasons + _overlap_reasons(held_funds)
+               + _lookthrough_reasons(holdings))
+    fee = sum(h.weight * h.expense_ratio for h in holdings)
+    wy, wr = worst_year(holdings)
+    exact = {k: {t: round(w, 4) for t, w in v.items() if round(w, 4) > 0} for k, v in parts.items()}
+    return Portfolio(risk_level, RISK_LABELS[risk_level], holdings, round(fee, 3), wy, wr,
+                     warnings_from(reasons), reasons, exact, score)
+
+
+def worst_return_for(risk_level: int, interests, stocks, *, bond_share: float, spending=None) -> float:
+    """Just the fund's real-worst-year return (percent) for these choices: what core/builder.py searches
+    over for the max-drop ceiling, without building reasons."""
+    parts, _ = _compose(min(4, max(1, int(risk_level))), interests, stocks, bond_share, spending, [])
+    total: dict[str, float] = {}
+    for part in parts.values():
+        for t, w in part.items():
+            total[t] = total.get(t, 0.0) + w
+    return worst_year([Holding(t, t, w, "core", 0.0) for t, w in total.items()])[1]
+
+
+def _compose(risk_level: int, interests, stocks, bond_share: float, spending, reasons: list[Reason]):
+    """Every slice's weights: ({slice: {ticker: weight}}, interest budgets by theme fund). Adds the reasons
+    for what was sized, trimmed or left out."""
+    kind = RISK_LABELS[risk_level].lower()
+    parts: dict[str, dict[str, float]] = {}   # slice -> {ticker: weight}
+
+    tilts = list(dict.fromkeys(THEMES[i] for i in interests or [] if i in THEMES))
+    budgets = _size_interests(tilts, TILT_CAP_BY_RISK[risk_level], kind, reasons)
+    parts["interest"] = _interest_companies(budgets, reasons)
 
     picks = [t for t in dict.fromkeys(s.upper() for s in stocks or []) if t not in ETFS]
     stock_cap = STOCK_CAP_BY_RISK[risk_level]
@@ -89,22 +136,189 @@ def build_portfolio(risk_level: int, interests: list[str] | None = None, stocks:
                                          f"left out: {t}.", t, {"room": room}))
     picks = picks[:room]
     each = min(STOCK_EACH, stock_cap / len(picks)) if picks else 0.0
+    parts["added"] = {t: each for t in picks}
 
-    rest = 1 - bond_share - sum(sizes.values()) - each * len(picks)   # what's left of the stock part for the core
-    weights = {"VTI": rest * US_SHARE, "VXUS": rest * (1 - US_SHARE), "BND": bond_share, **sizes}
-    for t in picks:
-        weights[t] = each
+    parts["spend"] = _spend_slice(spending, SPEND_CAP_BY_RISK[risk_level], reasons)
 
-    roles = {t: "core" if t in RETURNS else "tilt" if t in ETFS else "stock" for t in weights}
-    holdings = [_holding(t, round(w, 4), roles[t]) for t, w in weights.items()]
-    holdings[0].weight = round(holdings[0].weight + 1 - sum(h.weight for h in holdings), 4)
-    overlaps = {t: _overlap_score(t, list(sizes)) for t in sizes}
-    reasons = (_holding_reasons(holdings, kind, score, overlaps) + reasons + _overlap_reasons(list(sizes))
-               + _lookthrough_reasons(holdings))
-    fee = sum(h.weight * h.expense_ratio for h in holdings)
-    wy, wr = worst_year(holdings)
-    return Portfolio(risk_level, RISK_LABELS[risk_level], holdings, round(fee, 3), wy, wr,
-                     warnings_from(reasons), reasons, score)
+    stocks_share = 1 - bond_share
+    parts["bonds"] = {"BND": bond_share}
+    parts["intl"] = {"VXUS": stocks_share * INTL_SHARE}
+    us_core = stocks_share * US_SHARE - sum(sum(parts[k].values()) for k in ("interest", "added", "spend"))
+    parts["us_core"] = _core_weights(us_core)
+    _cap_companies(parts, reasons)
+    return parts, budgets
+
+
+SLICE_ORDER = ("added", "spend", "interest", "us_core", "intl", "bonds")   # most personal first: a ticker's slice
+
+
+def _holdings(parts: dict[str, dict[str, float]]) -> list[Holding]:
+    """One Holding per ticker (its weights from every slice added up), in display order: bonds,
+    international, the US index biggest first, then spend, interests and added by size."""
+    total: dict[str, float] = {}
+    for k in SLICE_ORDER:
+        for t, w in parts.get(k, {}).items():
+            total[t] = total.get(t, 0.0) + w
+    home = {t: next(k for k in SLICE_ORDER if t in parts.get(k, {})) for t in total}
+    rank = {k: i for i, k in enumerate(("bonds", "intl", "us_core", "spend", "interest", "added"))}
+    size = {t: -universe.market_cap(t) if t in COMPANIES else 0.0 for t in total}
+    ordered = sorted(total, key=lambda t: (rank[home[t]], -round(total[t], 4), size[t], t))
+    holdings = [_holding(t, round(total[t], 4), home[t]) for t in ordered if round(total[t], 4) > 0]
+    # rounding lands on VXUS (a fund: no per-company cap to push it past), else the biggest holding
+    sink = next((h for h in holdings if h.ticker == "VXUS"), None) or max(holdings, key=lambda h: h.weight)
+    sink.weight = round(sink.weight + 1 - sum(h.weight for h in holdings), 4)
+    return holdings
+
+
+ROLE_OF_SLICE = {"bonds": "core", "intl": "core", "us_core": "core", "spend": "spend", "interest": "tilt",
+                 "added": "stock"}
+
+
+def _holding(ticker: str, weight: float, slice_: str) -> Holding:
+    role = ROLE_OF_SLICE[slice_]
+    if ticker in ETFS:
+        r = ETFS[ticker]
+        return Holding(ticker, r["name"], weight, role, float(r["expense_ratio"]), "", slice_)
+    sector = universe.sector(ticker) if ticker in COMPANIES else ""
+    return Holding(ticker, market.name(ticker), weight, role, 0.0, sector, slice_)   # a company has no fund fee
+
+
+def plain_index(total: float) -> dict[str, float]:
+    """`total` spread over the US index by size with nothing personal: the report's benchmark for the US part."""
+    return _core_weights(total)
+
+
+def _core_weights(total: float) -> dict[str, float]:
+    """The US index: each core company in proportion to its market cap, none over CORE_NAME_CAP of it."""
+    return {t: total * w for t, w in _core_shares().items()}
+
+
+@lru_cache(maxsize=1)
+def _core_shares() -> dict[str, float]:
+    names = universe.core_companies()
+    return _capped_shares({t: universe.market_cap(t) for t in names}, CORE_NAME_CAP)
+
+
+def _capped_shares(sizes: dict[str, float], cap: float) -> dict[str, float]:
+    """Shares proportional to `sizes`, summing to 1, none above `cap`: cap the biggest, share the rest out
+    in proportion, repeat until nothing is over (how capped index funds are weighted)."""
+    fixed: dict[str, float] = {}
+    free = dict(sizes)
+    while free:
+        room = 1 - sum(fixed.values())
+        total = sum(free.values())
+        over = {t for t, v in free.items() if room * v / total > cap}
+        if not over:
+            return {**fixed, **{t: room * v / total for t, v in free.items()}}
+        for t in over:
+            fixed[t] = cap
+            del free[t]
+    return fixed
+
+
+def _interest_companies(budgets: dict[str, float], reasons: list[Reason]) -> dict[str, float]:
+    """Each interest's budget split over its theme's biggest companies by size; its fund if there are none."""
+    out: dict[str, float] = {}
+    for fund, budget in budgets.items():
+        theme = ETFS[fund]["theme"]
+        names = universe.theme_companies(theme, THEME_PICKS)
+        if not names:
+            out[fund] = out.get(fund, 0.0) + budget
+            reasons.append(Reason("tilt", f"We don't hold single {ETFS[fund]['label'].lower()} companies, so this "
+                                          f"interest stays a fund: {fund}.", fund,
+                                  {"theme": theme, "fund": True, "overlap": _overlap_score(fund, list(budgets))}))
+            continue
+        caps = {t: universe.market_cap(t) for t in names}
+        for t in names:
+            out[t] = out.get(t, 0.0) + budget * caps[t] / sum(caps.values())
+        for t in names:
+            reasons.append(Reason("tilt", f"{market.name(t)} ({t}) is one of the {len(names)} biggest "
+                                          f"{ETFS[fund]['label']} companies we hold, and you picked "
+                                          f"{ETFS[fund]['label']}.", t,
+                                  {"theme": theme, "weight": round(budget * caps[t] / sum(caps.values()), 4),
+                                   "overlap": _overlap_score(fund, list(budgets))}))
+    return out
+
+
+def _spend_slice(spending, cap: float, reasons: list[Reason]) -> dict[str, float]:
+    """Companies where the customer spends, by dollars: the top SPEND_PICKS, none under MIN_PICK."""
+    if spending is None:
+        return {}
+    from core.spending import company_spend   # spending reads the bank; imported here to keep this module light
+    dollars = company_spend(spending)
+    if not dollars:
+        reasons.append(Reason("spend", "We didn't find purchases in the last 90 days, so there's no “where you "
+                                       "spend” slice; that share stays in your US index.", None, {"empty": True}))
+        return {}
+    ranked = sorted(dollars, key=lambda t: (-dollars[t], t))
+    kept = ranked[:SPEND_PICKS]
+    while kept:
+        total = sum(dollars[t] for t in kept)
+        small = [t for t in kept if cap * dollars[t] / total < MIN_PICK]
+        if not small:
+            break
+        kept.remove(small[-1])
+    for t in ranked:
+        if t not in kept:
+            reasons.append(Reason("spend", f"Your spending that maps to {market.name(t)} (${dollars[t]:,.0f}) is "
+                                           f"too small next to the rest to hold on its own.", t,
+                                  {"dropped": True, "dollars": round(dollars[t], 2)}))
+    total = sum(dollars[t] for t in kept)
+    out = {t: math.floor(cap * dollars[t] / total * 1e4) / 1e4 for t in kept}   # down, so rounding can't pass the cap
+    via = {}
+    for s in spending:
+        for t in ([s.ticker] if s.ticker else []):
+            via.setdefault(t, []).append(s)
+    for s in spending:
+        if s.via == "category" and not s.ticker:
+            from core.spending import CATEGORY_LEADERS
+            leaders = [t for t in CATEGORY_LEADERS.get(s.category, []) if t in out]
+            if leaders:
+                reasons.append(Reason("spend", f"{s.merchant} isn't a public company, so your "
+                                               f"{s.category.lower()} spending there (${s.dollars:,.0f}) goes to the "
+                                               f"biggest {s.category.lower()} companies we hold: "
+                                               f"{', '.join(market.name(t) for t in leaders)}.", None,
+                                      {"merchant": s.merchant, "category": s.category, "tickers": leaders}))
+    for t, w in out.items():
+        names = " and ".join(sorted({x.merchant for x in via.get(t, [])})) or "its category"
+        reasons.append(Reason("spend", f"{share(w)} in {market.name(t)} ({t}): you spent ${dollars[t]:,.0f} at "
+                                       f"{names} in the last 90 days. This personalizes your fund; it isn't a "
+                                       f"prediction that the company will do well.", t,
+                              {"weight": round(w, 4), "dollars": round(dollars[t], 2)}))
+    return out
+
+
+def _cap_companies(parts: dict[str, dict[str, float]], reasons: list[Reason]) -> None:
+    """No company (all its slices together) reaches COMPANY_CAP. The excess comes off its US-index part
+    first, then its other parts, and goes to the rest of the US index in proportion."""
+    limit = COMPANY_CAP - 0.001
+    for _ in range(5):   # moving weight can push another company over; a few passes settle it
+        total: dict[str, float] = {}
+        for k in ("us_core", "spend", "interest", "added"):
+            for t, w in parts[k].items():
+                total[t] = total.get(t, 0.0) + w
+        over = {t: w - limit for t, w in total.items() if w > limit}
+        if not over:
+            return
+        freed = 0.0
+        for t, excess in over.items():
+            before = total[t]
+            for k in ("us_core", "interest", "spend", "added"):
+                take = min(excess, parts[k].get(t, 0.0))
+                if take:
+                    parts[k][t] -= take
+                    excess -= take
+                    freed += take
+            reasons.append(Reason("cap", f"{market.name(t)} would have been {share(before)} of your fund counting "
+                                         f"every reason it's in it; we keep any one company under "
+                                         f"{share(COMPANY_CAP)}, so it's {share(before - over[t] + excess)}.", t,
+                                  {"before": round(before, 4), "cap": COMPANY_CAP}))
+        others = {t: w for t, w in parts["us_core"].items() if t not in over and w > 0}
+        base = sum(others.values())
+        for t, w in others.items():
+            parts["us_core"][t] = w + freed * w / base
+        for k in parts:
+            parts[k] = {t: w for t, w in parts[k].items() if w > 1e-9}
 
 
 def share(w: float) -> str:
@@ -121,8 +335,10 @@ def warnings_from(reasons: list[Reason]) -> list[str]:
     return [r.text for r in reasons if r.kind in WARNING_KINDS or r.facts.get("warn")]
 
 
-def _holding_reasons(holdings: list[Holding], kind: str, score: int | None, overlaps: dict) -> list[Reason]:
+def _holding_reasons(holdings: list[Holding], parts: dict, kind: str, score: int | None,
+                     overlaps: dict[str, float]) -> list[Reason]:
     out = []
+    core_rank = {t: i + 1 for i, t in enumerate(universe.core_companies())}
     for h in holdings:
         pct = share(h.weight)
         if h.ticker == "BND":
@@ -130,25 +346,29 @@ def _holding_reasons(holdings: list[Holding], kind: str, score: int | None, over
                    if score is not None else f"That's the bond share for a {kind} fund.")
             out.append(Reason("bonds", f"{pct} in bonds (BND). Bonds usually hold steady when stocks fall, so they "
                                        f"cushion drops. {why}", "BND", {"bond_share": h.weight, "score": score}))
-        elif h.role == "core":
-            out.append(Reason("core", f"{pct} in {_lower_first(ETFS[h.ticker]['label'])} ({h.ticker}). "
-                                      f"{ETFS[h.ticker]['about']}. Owning the whole market means no single "
-                                      f"company can sink you.", h.ticker, {"weight": h.weight}))
-        elif h.role == "tilt":
+        elif h.ticker == "VXUS":
+            out.append(Reason("core", f"{pct} in {_lower_first(ETFS['VXUS']['label'])} (VXUS). {ETFS['VXUS']['about']}. "
+                                      f"Only a handful of foreign companies trade in the US, so this part stays a "
+                                      f"fund.", "VXUS", {"weight": h.weight}))
+        if h.ticker in parts["us_core"]:
+            w = parts["us_core"][h.ticker]
+            out.append(Reason("core", f"{share(w)} in {h.name} ({h.ticker}): number {core_rank[h.ticker]} by size "
+                                      f"of the US companies in your index, in {h.sector}. Bigger companies get more, "
+                                      f"like an index fund; none gets more than {share(CORE_NAME_CAP)} of your US "
+                                      f"index.", h.ticker, {"weight": round(w, 4), "rank": core_rank[h.ticker]}))
+        if h.ticker in parts["added"]:
+            out.append(Reason("stock", f"{share(parts['added'][h.ticker])} in {h.name} ({h.ticker}) because you added "
+                                       f"it. One company can swing on its own news, so each is kept small.", h.ticker,
+                              {"weight": parts["added"][h.ticker]}))
+        if h.ticker in parts["interest"] and h.ticker in ETFS:
             out.append(Reason("tilt", f"{pct} in {h.ticker} because you picked {ETFS[h.ticker]['label']}. "
                                       f"{ETFS[h.ticker]['about']}.", h.ticker,
                               {"weight": h.weight, "overlap": overlaps.get(h.ticker, 0.0)}))
-        else:
-            out.append(Reason("stock", f"{pct} in {h.name} ({h.ticker}) because you added it. One company can swing "
-                                       f"on its own news, so each is kept small.", h.ticker, {"weight": h.weight}))
+        held_in = [k for k in ("us_core", "spend", "interest", "added") if parts[k].get(h.ticker)]
+        if len(held_in) > 1:
+            out.append(Reason("combined", f"{h.name} is in your fund for {len(held_in)} reasons, so it's {pct} in all.",
+                              h.ticker, {"slices": held_in}))
     return out
-
-
-def _holding(ticker: str, weight: float, role: str) -> Holding:
-    if role == "stock":
-        return Holding(ticker, market.name(ticker), weight, role, 0.0)   # owning a company directly has no fund fee
-    r = ETFS[ticker]
-    return Holding(ticker, r["name"], weight, role, float(r["expense_ratio"]))
 
 
 def swing(ticker: str) -> float:
@@ -218,15 +438,7 @@ def _fit_scale(wanted: list[float], cap: float) -> float:
 
 
 def _overlap_reasons(tilts: list[str]) -> list[Reason]:
-    out = []
-    for t in tilts:
-        shared = _overlap(t, "VTI")
-        if shared >= OVERLAP_WARN:
-            top = [market.name(c) for c, _ in sorted(HOLDINGS[t], key=lambda cw: -cw[1])
-                   if c in dict(HOLDINGS["VTI"])][:3]
-            out.append(Reason("overlap", f"{t}'s biggest companies ({', '.join(top)}) are also VTI's biggest, so "
-                                         f"adding {t} leans the fund further into them (approximate: we only see each "
-                                         f"fund's top holdings).", t, {"with": "VTI", "shared": round(shared, 4)}))
+    out = []   # interest funds that share companies; a company held twice directly gets a "combined" reason
     for i, a in enumerate(tilts):
         for b in tilts[i + 1:]:
             wa, wb = dict(HOLDINGS.get(a, [])), dict(HOLDINGS.get(b, []))
@@ -238,34 +450,42 @@ def _overlap_reasons(tilts: list[str]) -> list[Reason]:
 
 
 def lookthrough(holdings: list[Holding]) -> dict:
-    """APPROXIMATE exposure of the whole fund (core included) to each company and sector, from each fund's
-    biggest holdings in data/holdings.csv plus companies held directly."""
+    """Exposure of the whole fund to each company and sector. Companies held directly count in full;
+    funds count through their biggest holdings in data/holdings.csv (APPROXIMATE: top holdings only),
+    and an interest fund's whole weight counts toward its theme's sector."""
     companies: dict[str, float] = {}
     via: dict[str, list[str]] = {}
     sectors: dict[str, float] = {}
+
+    def add(c, w, how):
+        companies[c] = companies.get(c, 0.0) + w
+        via.setdefault(c, []).append(how)
+
     for h in holdings:
-        if h.role == "stock":
-            companies[h.ticker] = companies.get(h.ticker, 0.0) + h.weight
-            via.setdefault(h.ticker, []).append("directly")
+        if h.ticker in COMPANIES:
+            add(h.ticker, h.weight, "directly")
             sectors[_sector_of(h.ticker)] = sectors.get(_sector_of(h.ticker), 0.0) + h.weight
             continue
-        if h.role == "tilt":
-            s = SECTOR_OF_THEME.get(ETFS[h.ticker]["theme"], ETFS[h.ticker]["label"])
+        if h.ticker in ETFS and ETFS[h.ticker]["role"] == "tilt":
+            s = _fund_sector(h.ticker)
             sectors[s] = sectors.get(s, 0.0) + h.weight
         for c, w in HOLDINGS.get(h.ticker, []):
-            companies[c] = companies.get(c, 0.0) + h.weight * w
-            via.setdefault(c, []).append(h.ticker)
-            if h.role == "core":
+            add(c, h.weight * w, h.ticker)
+            if h.ticker == "VXUS":
                 sectors[_sector_of(c)] = sectors.get(_sector_of(c), 0.0) + h.weight * w
     return {"companies": {c: round(w, 4) for c, w in companies.items()}, "via": via,
             "sectors": {s: round(w, 4) for s, w in sectors.items()}}
 
 
 def _sector_of(company: str) -> str:
-    home = market.COMPANIES.get(company, {}).get("etf")
-    if not home or home not in ETFS:
-        return "Other"
-    return SECTOR_OF_THEME.get(ETFS[home]["theme"], ETFS[home]["label"])
+    return universe.sector(company) if company in COMPANIES else "Other"
+
+
+def _fund_sector(fund: str) -> str:
+    """An interest fund's sector: its companies' sector, or its own label (Gold, Emerging markets...)."""
+    theme = ETFS[fund]["theme"]
+    names = universe.theme_companies(theme, 1)
+    return universe.sector(names[0]) if names else ETFS[fund]["label"]
 
 
 def _lookthrough_reasons(holdings: list[Holding]) -> list[Reason]:
@@ -277,13 +497,15 @@ def _lookthrough_reasons(holdings: list[Holding]) -> list[Reason]:
                                                f"{', '.join(lt['via'][c])}). The report suggests spreading out once one "
                                                f"company passes {CONCENTRATION_NOTE:.0%} (approximate: we only see each "
                                                f"fund's top holdings).", c, {"share": w, "via": lt["via"][c]}))
-    stocks = sum(h.weight for h in holdings if h.ticker != "BND")
-    market_mix = lookthrough([Holding("VTI", "", stocks, "core", 0.0)])["sectors"]   # all stocks in VTI instead
+    # The plain index: the same US stock share spread over the US index by size, nothing personal
+    us = sum(h.weight for h in holdings if h.ticker not in ("BND", "VXUS"))
+    plain = [Holding(t, "", w, "core", 0.0, universe.sector(t), "us_core") for t, w in _core_weights(us).items()]
+    market_mix = lookthrough(plain + [h for h in holdings if h.ticker == "VXUS"])["sectors"]
     for s, w in sorted(lt["sectors"].items(), key=lambda sw: -sw[1]):
         base = market_mix.get(s, 0.0)
         if s != "Other" and w - base >= SECTOR_EXCESS:
-            out.append(Reason("sector", f"About {w:.0%} of your fund is in {s}, against about {base:.0%} if all your "
-                                        f"stocks were in the whole US market (VTI). That's your call; it just means "
-                                        f"more of your money rides on one part of the economy (approximate).", None,
+            out.append(Reason("sector", f"About {w:.0%} of your fund is in {s}, against about {base:.0%} in a plain "
+                                        f"index of the same companies. That's your call; it just means more of your "
+                                        f"money rides on one part of the economy (approximate).", None,
                               {"sector": s, "share": w, "market": base}))
     return out

@@ -24,6 +24,9 @@ def test_dropped_interests_and_companies_get_reasons_and_still_warn():
     themes = ["tech", "healthcare", "biotech", "financials", "real_estate", "gold", "gaming", "utilities"]
     p = build_portfolio(1, themes, ["AAPL", "NVDA", "MSFT"])
     dropped = [r for r in p.reasons if r.kind == "dropped"]
-    kept = {h.ticker for h in p.holdings}
+    # a left-out company can still be in the US index (MSFT is), so check the slices it was asked for
+    kept = set(p.parts.get("interest", {})) | set(p.parts.get("added", {}))
+    from core.market import ETFS
     assert dropped and all(r.ticker not in kept for r in dropped)
+    assert {r.ticker for r in dropped if r.ticker not in ETFS} == {"MSFT"}
     assert any("left out" in w for w in p.overlap_warnings)     # warnings come from the reasons

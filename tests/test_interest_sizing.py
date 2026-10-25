@@ -5,8 +5,13 @@ import pytest
 from core.portfolio import MIN_TILT, PER_INTEREST_CAP, TILT_CAP_BY_RISK, build_portfolio, lookthrough
 
 
-def weight(p, t):
-    return next((h.weight for h in p.holdings if h.ticker == t), 0.0)
+def budget(p, theme):
+    """One interest's share of the fund. Interests are companies now (or the theme fund when we hold none), so
+    add up its part of each (p.parts holds the exact interest part; the companies are also in the US index)."""
+    from core.market import COMPANIES, ETFS
+    def theme_of(t):
+        return ETFS[t]["theme"] if t in ETFS else ETFS[COMPANIES[t]["etf"]]["theme"]
+    return round(sum(w for t, w in p.parts.get("interest", {}).items() if theme_of(t) == theme), 4)
 
 
 def reasons(p, kind, ticker=None):
@@ -15,22 +20,22 @@ def reasons(p, kind, ticker=None):
 
 def test_one_interest_no_longer_takes_the_whole_cap():
     p = build_portfolio(4, ["healthcare"])
-    assert weight(p, "XLV") == pytest.approx(PER_INTEREST_CAP)
+    assert budget(p, "healthcare") == pytest.approx(PER_INTEREST_CAP)
     assert PER_INTEREST_CAP < TILT_CAP_BY_RISK[4]
 
 
 def test_funds_that_swing_more_get_less_with_a_reason():
     p = build_portfolio(4, ["clean_energy", "staples"])
-    assert MIN_TILT <= weight(p, "ICLN") < weight(p, "XLP")
-    assert reasons(p, "swing", "ICLN") and not reasons(p, "swing", "XLP")
+    assert MIN_TILT <= budget(p, "clean_energy") < budget(p, "staples")
+    assert reasons(p, "swing", "ICLN") and not reasons(p, "swing", "XLP")   # sized by the theme's fund
 
 
 @pytest.mark.parametrize("level", [1, 2, 3, 4])
 def test_interests_stay_within_the_total_cap_and_shrinks_are_explained(level):
-    p = build_portfolio(level, ["healthcare", "staples", "financials", "utilities"])
-    tilts = [h for h in p.holdings if h.role == "tilt"]
-    assert sum(h.weight for h in tilts) <= TILT_CAP_BY_RISK[level] + 1e-4
-    assert all(h.weight >= MIN_TILT - 1e-4 for h in tilts)
+    themes = ["healthcare", "staples", "financials", "utilities"]
+    p = build_portfolio(level, themes)
+    assert p.tilt_share <= TILT_CAP_BY_RISK[level] + 1e-4
+    assert all(budget(p, th) >= MIN_TILT - 1e-4 for th in themes)
     if sum(PER_INTEREST_CAP for _ in range(4)) > TILT_CAP_BY_RISK[level]:
         assert reasons(p, "cap") or reasons(p, "dropped")
 
@@ -39,23 +44,24 @@ def test_extras_are_dropped_by_overlap_not_pick_order():
     themes = ["healthcare", "tech", "biotech", "financials", "real_estate", "gold", "gaming", "utilities"]
     p = build_portfolio(1, themes)
     dropped = reasons(p, "dropped")
-    kept = [h.ticker for h in p.holdings if h.role == "tilt"]
-    assert "XLK" not in kept                                     # tech overlaps the core most, though picked 2nd
+    assert budget(p, "tech") == 0                                # tech overlaps the market most, though picked 2nd
     assert all("overlap" in r.text for r in dropped)
     assert min(r.facts["overlap"] for r in dropped) >= max(r.facts["overlap"] for r in reasons(p, "tilt"))
 
 
-def test_overlap_with_the_core_is_flagged():
+def test_an_interest_company_already_in_the_index_is_one_position_with_both_reasons():
+    # was: "XLK's top companies are VTI's"; interests are companies now, so the overlap is the same company
     p = build_portfolio(3, ["tech"])
-    note = next(r for r in reasons(p, "overlap") if r.ticker == "XLK")
-    assert "VTI" in note.text and "approximate" in note.text
+    for t in ("AAPL", "MSFT"):
+        assert sum(h.ticker == t for h in p.holdings) == 1
+        assert reasons(p, "combined", t) and reasons(p, "core", t) and reasons(p, "tilt", t)
 
 
-def test_one_company_over_8_percent_of_the_fund_is_flagged():
+def test_no_company_reaches_8_percent_even_held_for_three_reasons():
+    # was: NVDA flagged at 8%+ through XLK, SMH and directly; now no position reaches the report's 8% line
     p = build_portfolio(4, ["tech", "ai_chips"], ["NVDA"])
-    assert lookthrough(p.holdings)["companies"]["NVDA"] >= 0.08
-    note = next(r for r in reasons(p, "concentration") if r.ticker == "NVDA")
-    assert "approximate" in note.text and note.text in p.overlap_warnings
+    assert lookthrough(p.holdings)["companies"]["NVDA"] < 0.08
+    assert reasons(p, "cap", "NVDA") and not reasons(p, "concentration", "NVDA")
 
 
 def test_a_sector_far_above_the_market_is_flagged():

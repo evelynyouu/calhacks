@@ -7,7 +7,7 @@ A theme's companies are the ones whose home fund (the `etf` column) is that them
 """
 from __future__ import annotations
 
-from core.market import COMPANIES, ETFS
+from core.market import COMPANIES, ETFS   # noqa: F401  (COMPANIES re-exported)
 
 SECTORS = ("Technology", "Healthcare", "Financials", "Consumer", "Everyday essentials", "Communication",
            "Industrials", "Energy", "Utilities", "Real estate", "Materials")

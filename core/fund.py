@@ -16,6 +16,7 @@ from core.broker import get_broker, values
 from core.models import Portfolio, Trade
 from core.policy import tier_for
 from core.builder import build as build_fund
+from core.spending import spending_profile
 from core.profile import get_profile
 from core.rebalance import allocate_new_money
 
@@ -39,9 +40,17 @@ class FundAccount:
 def build(acct: FundAccount) -> Portfolio:
     """(Re)build the fund from the intake answers."""
     acct.risk_score = intake.risk_score(acct.answers)
-    acct.portfolio = build_fund(acct.answers)
+    acct.portfolio = build_fund(acct.answers, spending=_spending(acct.customer_id))
     acct.invest_pct = float(acct.answers.get("paycheck_pct", acct.invest_pct))
     return acct.portfolio
+
+
+def _spending(cid: str):
+    """Where the customer spends, from the bank; None (no spend slice) for a customer the bank doesn't know."""
+    try:
+        return spending_profile(cid)
+    except KeyError:
+        return None
 
 
 def start(acct: FundAccount, on: date | None = None) -> list[Trade]:

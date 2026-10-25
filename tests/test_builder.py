@@ -34,8 +34,11 @@ def test_levels_stay_in_bands_of_25():
 def test_worst_year_uses_real_2008_and_2022_returns():
     steadiest = build_portfolio(1, [], bond_share=BOND_MAX)
     riskiest = build_portfolio(4, [], bond_share=BOND_MIN)
-    assert worst_year(steadiest.holdings) == (2022, pytest.approx(-15.0, abs=0.1))   # bonds fell too in 2022
-    assert worst_year(riskiest.holdings) == (2008, pytest.approx(-34.5, abs=0.2))
+    # VXUS and BND use their real returns; the US index of single companies is estimated as each company's
+    # beta x VTI's real return. Its average beta is about 1.09 (big, tech-heavy companies), so it comes out a
+    # little worse than VTI did (the old VTI core: -15.0% and -34.5%).
+    assert worst_year(steadiest.holdings) == (2022, pytest.approx(-15.4, abs=0.1))   # bonds fell too in 2022
+    assert worst_year(riskiest.holdings) == (2008, pytest.approx(-36.6, abs=0.2))
     assert set(RETURNS["VTI"]) == {2008, 2022}
 
 
