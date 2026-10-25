@@ -13,10 +13,7 @@
       <div>
         <p class="eyebrow">Auto-trade backtest · {{ profile.name }}'s fund</p>
         <h1 class="font-display text-2xl font-bold mt-1">How would auto-trading have done?</h1>
-        <p class="mt-1 text-sm text-ink/60">
-          All four strategies start with {{ bt.summary.total_contributed | money }} and receive the same paycheck deposits.
-          The only difference is rebalancing. Prices are {{ price_note }}.
-        </p>
+        <p class="mt-1 text-sm text-ink/60">Same {{ bt.summary.total_contributed | money }} and deposits — only difference is rebalancing. Prices: {{ price_note }}.</p>
         <p class="mt-1 text-xs text-ink/50">{{ bt.summary.start | replace("-", " ") }} → {{ bt.summary.end | replace("-", " ") }} · {{ bt.summary.days }} days · rebalance every {{ bt.summary.review_every_days }} days</p>
       </div>
       <nav class="flex flex-wrap gap-1" aria-label="Backtest period">
@@ -156,10 +153,8 @@
   {% endif %}
 
   <!-- Methodology note -->
-  <section class="card text-xs text-ink/50 space-y-1">
-    <p class="font-medium text-ink/70">How this works</p>
-    <p>Four separate simulated portfolios start with the same amount on {{ bt.summary.start }} and receive the same bi-weekly paycheck deposits. New money always goes to the most underweight holding first. The <strong>auto-trade</strong> strategy additionally rebalances drift every {{ bt.summary.review_every_days }} days, selling overweight holdings and buying underweight ones. The other strategies never rebalance. Returns are money-weighted (your actual dollars in vs out).</p>
-    <p>This is a simulation using the same price model the rest of the app uses. Past simulated performance doesn't predict future results.</p>
+  <section class="card text-xs text-ink/50">
+    <p><strong class="text-ink/70">How this works:</strong> Four portfolios, same deposits. Auto-trade rebalances drift every {{ bt.summary.review_every_days }} days; others never rebalance. Returns are money-weighted. Simulation only — past results don't predict future ones.</p>
   </section>
 
 </div>
