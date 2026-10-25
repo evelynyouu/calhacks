@@ -14,13 +14,8 @@ from core.portfolio import (BOND_MAX, BOND_MIN, BOND_STEP, CONCENTRATION_NOTE, L
                             PER_INTEREST_CAP, RISK_LABELS, STOCK_CAP_BY_RISK, STOCK_EACH, SWING_REF,
                             TILT_CAP_BY_RISK, US_SHARE, lookthrough, swing)
 from core.profile import get_profile
+from core.rebalance import DRIFT_ABS, DRIFT_REL
 from core.report import CONCENTRATION_TRIGGER
-
-try:   # the report-accuracy branch moves the drift band to core/rebalance.py (5 points, or 25% of target)
-    from core.rebalance import DRIFT_ABS, DRIFT_REL
-except ImportError:
-    from core.report import DRIFT_TRIGGER as DRIFT_ABS
-    DRIFT_REL = None
 from core.sim import simulate
 
 EXAMPLE_BALANCE = 1_000.0   # dollars shown when the fund is still empty
@@ -162,7 +157,7 @@ def _full(acct: FundAccount, p: Portfolio, balance: float, bonds: float) -> list
         {"title": "When the fund is rebalanced", "paras": [
             f"Your report checks the fund every {tier.review_every_days} days at your balance. If a holding drifts "
             f"{DRIFT_ABS * 100:.0f} points from its target"
-            + (f" (or {DRIFT_REL:.0%} of its target, if that's smaller)" if DRIFT_REL else "")
+            + f" (or {DRIFT_REL:.0%} of its target, if that's smaller)"
             + f", or one company passes {CONCENTRATION_TRIGGER:.0%} "
             "of the fund, it suggests trades. Nothing happens until you confirm."]},
         {"title": "What's simulated or approximate", "paras": [

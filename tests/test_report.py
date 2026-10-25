@@ -111,7 +111,7 @@ def test_benchmark_equals_the_fund_when_holdings_sit_at_core_weights_with_no_sli
 
 def test_a_bond_heavy_fund_is_not_measured_against_the_s_and_p_500():
     a = account(starting_amount=10_000, started_days_ago=60, risk_priority="protect", risk_range="narrow",
-                max_drop=0, swing_comfort=1, interests={"themes": [], "unmatched": []})
+                max_drop=0, horizon="lt3", interests={"themes": [], "unmatched": []})
     market.add_shock(a.today - timedelta(days=30), 20)                  # a rally the bond-heavy fund can't match
     w = build_report(a)["returns"]["since_start"]
     assert w["vs_spy_pts"] < -3                                          # it trails the S&P 500 ...
@@ -193,9 +193,11 @@ def test_estimated_income_accrues_daily_and_stays_out_of_the_balance():
     a = account(starting_amount=10_000, started_days_ago=365, interests={"themes": [], "unmatched": []})
     w = build_report(a)["returns"]["since_start"]
     assert w["start_value"] + w["deposits"] + w["market_gain"] == pytest.approx(w["end_value"], abs=0.02)   # price only
-    # a moderate core: 38% VTI at 1.2%, 17% VXUS at 3.0%, 45% BND at 4.0% = about 2.8% a year
-    assert w["income_estimate"] == pytest.approx(10_000 * 0.0277, rel=0.15)
-    assert w["twr_pct"] - w["twr_price_pct"] == pytest.approx(2.8, abs=0.4)
+    # the fund's own yield: each holding's target weight x its yearly yield (data/yields.csv). Computed from the
+    # targets because the mix now follows the answers smoothly (core/builder.py), not a fixed per-level table.
+    yearly = sum(h.weight * report_module.YIELDS.get(h.ticker, 0.0) for h in a.portfolio.holdings)
+    assert w["income_estimate"] == pytest.approx(10_000 * yearly, rel=0.15)
+    assert w["twr_pct"] - w["twr_price_pct"] == pytest.approx(yearly * 100, abs=0.4)
 
 
 # ---------- recommendations ----------
@@ -247,7 +249,7 @@ def all_recs() -> list[tuple[str, dict]]:
     out.append(("hold", build_report(account(interests={"themes": ["healthcare"], "unmatched": []}))))
     fresh()
     a = account(starting_amount=10_000, interests={"themes": ["tech", "financials"], "unmatched": []},
-                stocks=["NVDA", "AAPL"], risk_priority="max", risk_range="widest", max_drop=50, swing_comfort=10)
+                stocks=["NVDA", "AAPL"], risk_priority="max", risk_range="widest", max_drop=50, horizon="15plus")
     out.append(("explore", build_report(a)))
     return out
 
@@ -288,7 +290,7 @@ def test_sector_exposure_looks_through_the_broad_funds():
 
 
 def test_the_dip_rec_is_about_the_funds_own_stocks_and_says_how_big_a_share_that_is():
-    a = account(risk_priority="protect", risk_range="narrow", max_drop=0, swing_comfort=1,
+    a = account(risk_priority="protect", risk_range="narrow", max_drop=0, horizon="lt3",
                 interests={"themes": [], "unmatched": []})                         # about a third in stocks
     market.add_shock(a.today, -15)
     rep = build_report(a)
