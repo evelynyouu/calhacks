@@ -32,7 +32,7 @@
   <section class="card">
     {% set period_label = bt_periods | selectattr(0, 'equalto', bt_days) | map(attribute=1) | first | default(bt.summary.days ~ ' days') %}
     <p class="eyebrow mb-3">{{ period_label }} return comparison</p>
-    <dl class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+    <dl class="grid grid-cols-3 gap-4 text-center">
       <div class="stat bg-moss-50 rounded-lg py-3">
         <dt class="text-xs font-medium text-moss-700">Auto-trade</dt>
         <dd class="text-2xl font-bold {{ 'text-moss-600' if bt.summary.auto_return_pct >= 0 else 'text-clay-500' }}">{{ pv(bt.summary.auto_return_pct) }}</dd>
@@ -44,24 +44,9 @@
         <dd class="text-xs text-ink/50 mt-0.5">same fund, no rebalance</dd>
       </div>
       <div class="stat rounded-lg py-3 border border-ink/10">
-        <dt class="text-xs font-medium text-ink/60">Benchmark</dt>
-        <dd class="text-2xl font-bold">{{ pv(bt.summary.bench_return_pct) }}</dd>
-        <dd class="text-xs text-ink/50 mt-0.5">VTI/VXUS/BND baseline</dd>
-      </div>
-      <div class="stat rounded-lg py-3 border border-ink/10">
         <dt class="text-xs font-medium text-ink/60">S&amp;P 500</dt>
         <dd class="text-2xl font-bold">{{ pv(bt.summary.spy_return_pct) }}</dd>
         <dd class="text-xs text-ink/50 mt-0.5">100% SPY</dd>
-      </div>
-    </dl>
-    <dl class="mt-4 grid grid-cols-2 gap-3 text-center">
-      <div class="stat rounded-lg py-2 border border-ink/10">
-        <dt class="text-xs text-ink/60">Alpha vs buy &amp; hold</dt>
-        <dd class="text-lg font-bold {{ 'text-moss-600' if bt.summary.alpha_vs_hold_pct >= 0 else 'text-clay-500' }}">{{ pv(bt.summary.alpha_vs_hold_pct) }}</dd>
-      </div>
-      <div class="stat rounded-lg py-2 border border-ink/10">
-        <dt class="text-xs text-ink/60">Alpha vs benchmark</dt>
-        <dd class="text-lg font-bold {{ 'text-moss-600' if bt.summary.alpha_vs_bench_pct >= 0 else 'text-clay-500' }}">{{ pv(bt.summary.alpha_vs_bench_pct) }}</dd>
       </div>
     </dl>
   </section>
@@ -78,8 +63,7 @@
     <div class="mt-3 flex flex-wrap gap-4 text-xs text-ink/60">
       <span class="flex items-center gap-1.5"><span class="inline-block w-4 h-0.5 bg-moss-600 rounded"></span> Auto-trade</span>
       <span class="flex items-center gap-1.5"><span class="inline-block w-4 h-0.5 bg-ink rounded"></span> Buy &amp; hold</span>
-      <span class="flex items-center gap-1.5"><span class="inline-block w-4 h-0.5 bg-gray-400 rounded"></span> Benchmark (VTI/VXUS/BND)</span>
-      <span class="flex items-center gap-1.5"><span class="inline-block w-4 h-0.5 bg-gray-300 rounded border border-dashed"></span> SPY</span>
+<span class="flex items-center gap-1.5"><span class="inline-block w-4 h-0.5 bg-gray-300 rounded border border-dashed"></span> SPY</span>
       <span class="flex items-center gap-1.5"><span class="inline-block w-4 h-0.5 border-t border-dashed border-ink/40"></span> You put in</span>
     </div>
   </section>
@@ -104,11 +88,6 @@
           <td class="py-2 text-ink/70">Buy &amp; hold (same fund, no rebalance)</td>
           <td class="py-2 text-right tabular-nums">{{ bt.summary.hold_end | money }}</td>
           <td class="py-2 text-right tabular-nums">{{ pv(bt.summary.hold_return_pct) }}</td>
-        </tr>
-        <tr>
-          <td class="py-2 text-ink/70">Benchmark (VTI/VXUS/BND baseline)</td>
-          <td class="py-2 text-right tabular-nums">{{ bt.summary.bench_end | money }}</td>
-          <td class="py-2 text-right tabular-nums">{{ pv(bt.summary.bench_return_pct) }}</td>
         </tr>
         <tr>
           <td class="py-2 text-ink/70">S&amp;P 500 (SPY)</td>

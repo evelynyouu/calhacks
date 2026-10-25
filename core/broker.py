@@ -102,16 +102,14 @@ class AlpacaBroker:
 
 
 _broker = None
+_broker_mode: str | None = None   # set by the alpaca connect/disconnect routes; resets to None on hot-reload
 
 
 def get_broker():
     global _broker
     if _broker is None:
-        mode = os.getenv("BROKER", "sim").lower()
-        if mode == "robinhood" and os.getenv("ROBINHOOD_CRYPTO_API_KEY") and os.getenv("ROBINHOOD_CRYPTO_PRIVATE_KEY"):
-            from core.broker_robinhood import RobinhoodCryptoBroker
-            _broker = RobinhoodCryptoBroker()
-        elif mode == "alpaca" and os.getenv("ALPACA_API_KEY") and os.getenv("ALPACA_SECRET_KEY"):
+        mode = (_broker_mode or os.getenv("BROKER", "sim")).lower()
+        if mode == "alpaca" and os.getenv("ALPACA_API_KEY") and os.getenv("ALPACA_SECRET_KEY"):
             _broker = AlpacaBroker()
         else:
             _broker = SimBroker()

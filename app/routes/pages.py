@@ -7,6 +7,7 @@ HTMX endpoints return partials; extra panels refresh with hx-swap-oob, and app e
 """
 from __future__ import annotations
 
+import os
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -394,6 +395,33 @@ def got_raise(request: Request, cid: str):
                    oob=("fund", "account", "tier", "today", "targets"))
 
 
+@router.post("/p/{cid}/demo_rewind")
+def demo_rewind(request: Request, cid: str, months: int = Form(3)):
+    """Reset the fund to `months` months ago so fast-forward has a past to replay."""
+    s = _need_fund(cid)
+    months = max(1, min(months, 24))
+    fund.demo_rewind(s.fund, months)
+    return RedirectResponse(f"/p/{cid}/account#agentic", status_code=303)
+
+
+@router.post("/p/{cid}/simulate_weeks")
+def simulate_weeks(request: Request, cid: str, weeks: int = Form(4)):
+    """Advance the demo clock by `weeks` weeks, firing paychecks (and auto-trades) along the way."""
+    s = _need_fund(cid)
+    weeks = max(1, min(weeks, 52))
+    target_days = weeks * 7
+    days_advanced = 0
+    while days_advanced < target_days:
+        before_today = s.fund.today
+        fund.paycheck(s.fund)
+        days_advanced += max((s.fund.today - before_today).days, 1)
+        if s.alpaca_connected and s.fund.pending:
+            fund.confirm_pending(s.fund)
+        if days_advanced >= target_days:
+            break
+    return RedirectResponse(f"/p/{cid}/account#agentic", status_code=303)
+
+
 @router.post("/p/{cid}/pct", response_class=HTMLResponse)
 def set_pct(request: Request, cid: str, pct: float = Form(...)):
     s = _need_fund(cid)
@@ -570,7 +598,7 @@ def alpaca_connect(request: Request, cid: str):
     from core import broker as _broker_mod
     s = _session(cid)
     s.alpaca_connected = True
-    os.environ["BROKER"] = "alpaca"
+    _broker_mod._broker_mode = "alpaca"
     _broker_mod._broker = None  # force re-init on next get_broker() call
     return RedirectResponse(f"/p/{cid}/account#linked", status_code=303)
 
@@ -580,7 +608,7 @@ def alpaca_disconnect(request: Request, cid: str):
     from core import broker as _broker_mod
     s = _session(cid)
     s.alpaca_connected = False
-    os.environ["BROKER"] = "sim"
+    _broker_mod._broker_mode = None
     _broker_mod._broker = None
     return RedirectResponse(f"/p/{cid}/account#linked", status_code=303)
 

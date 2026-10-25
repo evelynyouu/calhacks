@@ -17,4 +17,4 @@ PyJWT[crypto]>=2.8
 # yfinance
 # pandas
 # numpy
-# alpaca-py   # only for BROKER=alpaca
+alpaca-py

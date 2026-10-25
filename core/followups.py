@@ -305,15 +305,15 @@ def contradictory_risk(answers, after, profile, asked):
     new_hi = _snap(qs[hi], mid, toward=pos[lo])      # picked the careful one: the bold answer comes down
     new_lo = _snap(qs[lo], pos[hi] - RISK_PULL * (pos[hi] - pos[lo]), toward=pos[hi])
     notes = {
-        "careful": (f"Two of your risk answers pointed different ways. You chose “{a}”, so your answer to "
-                    f"“{qs[hi].prompt}” moved halfway toward it, from {_shown(qs[hi], answers[hi])} "
-                    f"to {_shown(qs[hi], new_hi)}."),
-        "bold": (f"Two of your risk answers pointed different ways. You chose “{b}”, so your answer to "
-                 f"“{qs[lo].prompt}” moved halfway toward it, from {_shown(qs[lo], answers[lo])} "
-                 f"to {_shown(qs[lo], new_lo)}."),
+        "careful": (f'Two of your risk answers pointed different ways. You chose \"{a}\", so your answer to '
+                    f'\"{qs[hi].prompt}\" moved halfway toward it, from {_shown(qs[hi], answers[hi])} '
+                    f'to {_shown(qs[hi], new_hi)}.'),
+        "bold": (f'Two of your risk answers pointed different ways. You chose \"{b}\", so your answer to '
+                 f'\"{qs[lo].prompt}\" moved halfway toward it, from {_shown(qs[lo], answers[lo])} '
+                 f'to {_shown(qs[lo], new_lo)}.'),
     }
     return FollowUp("contradictory_risk", after,
-                    f"Two of your answers point different ways: “{a}” and “{b}”. Which sounds more like you?",
+                    f'Two of your answers point different ways: "{a}" and "{b}". Which sounds more like you?',
                     "choice", options=[("careful", a), ("bold", b)],
                     effects={"careful": {hi: new_hi}, "bold": {lo: new_lo}}, notes=notes,
                     help="No wrong answer. I'll move the other one halfway toward it.",
@@ -339,8 +339,8 @@ def near_term_high_risk(answers, after, profile, asked):
     label = "growth" if level == 3 else "aggressive growth"
     goal = typed[:60] or intake.GOAL_LABELS.get(g, "")
     fu = _horizon("near_term_high_risk", after,
-                  f"Your goal is “{goal}”, and your answers lean toward {label}. "
-                  "When do you expect to need this money?",
+                  f'Your goal is \"{goal}\", and your answers lean toward {label}. '
+                  'When do you expect to need this money?',
                   "Just so I can explain your fund for your timeline. Your answers stay as they are.",
                   [f"Goal: {goal}.", f"Risk answers point to level {level} of 4 ({label})."])
     if "horizon" in answers:   # they already said "Not sure yet": offer only actual timelines, plus Keep
@@ -349,19 +349,48 @@ def near_term_high_risk(answers, after, profile, asked):
 
 
 def unmatched_interests(answers, after, profile, asked):
-    """Typed interests that matched no fund: offer the closest themes as chips, plus Skip it."""
+    """Typed interests that matched no theme: resolve to themes/stocks automatically."""
     if after != "interests" or not isinstance(answers.get("interests"), dict):
         return None
-    picked = set(answers["interests"].get("themes", []))
-    suggestions = suggest_themes(answers["interests"].get("unmatched", []), exclude=picked)
-    if not suggestions:
+    unmatched = answers["interests"].get("unmatched", [])
+    if not unmatched:
         return None
-    phrases = list(dict.fromkeys(suggestions.values()))
-    quoted = " and ".join(f"“{p}”" for p in phrases)
-    return FollowUp("unmatched_interests", after,
-                    f"I don't have a fund for {quoted} yet. Any of these close enough to add?", "chips",
-                    options=[(t, THEME_LABELS[t]) for t in suggestions], sources=suggestions, target="interests",
-                    keep_label="Skip it", facts=[f"No fund matched: {', '.join(phrases)}."])
+    picked = set(answers["interests"].get("themes", []))
+    suggestions = suggest_themes(unmatched, exclude=picked)
+
+    # Try symbol search for phrases that have no theme match
+    matched_phrases = set(suggestions.values())
+    still_unmatched = [p for p in unmatched if p not in matched_phrases]
+    stock_hits = {}   # phrase -> {"symbol", "name"}
+    truly_unmatched = []
+    for phrase in still_unmatched:
+        try:
+            from core.feed import search as _search
+            results = _search(phrase)
+            if results:
+                stock_hits[phrase] = results[0]
+            else:
+                truly_unmatched.append(phrase)
+        except Exception:
+            truly_unmatched.append(phrase)
+
+    if not suggestions and not stock_hits:
+        return None
+
+    # Build display text for the confirmation message
+    added = [f"{THEME_LABELS[t]} for \"{p}\"" for t, p in suggestions.items()]
+    added += [f"{h['symbol']} ({h['name']}) for \"{p}\"" for p, h in stock_hits.items()]
+    note = "Added " + "; ".join(added) + "."
+    if truly_unmatched:
+        note += " Couldn't match: " + ", ".join(f'"{p}"' for p in truly_unmatched) + "."
+
+    # Store what to apply in sources/effects so apply() does the mutation, not check()
+    return FollowUp("unmatched_interests", after, note, "chips",
+                    options=[], keep_label="Got it", facts=[],
+                    sources=suggestions,
+                    effects={"_auto": {"_themes": list(suggestions.keys()),
+                                       "_stocks": [h["symbol"] for h in stock_hits.values()],
+                                       "_unmatched_clear": list(matched_phrases | set(stock_hits.keys()))}})
 
 
 # Order matters within a step: the first rule that fires is asked.
@@ -419,6 +448,17 @@ def apply(fu: FollowUp, answers: dict, value: str = "", values: list[str] | None
         _note(answers, fu.notes.get(value, ""))
         return labels[value]
     if fu.kind == "chips":
+        # Auto-resolve path: no options to pick, just apply what check() decided
+        auto = fu.effects.get("_auto")
+        if auto is not None and not keep:
+            interests = answers.setdefault("interests", {"themes": [], "unmatched": []})
+            new_themes = list(dict.fromkeys(list(interests.get("themes", [])) + auto["_themes"]))
+            interests["themes"] = new_themes
+            interests["unmatched"] = [u for u in interests.get("unmatched", []) if u not in auto["_unmatched_clear"]]
+            if auto["_stocks"]:
+                answers["stocks"] = list(dict.fromkeys(answers.get("stocks", []) + auto["_stocks"]))
+            return fu.keep_label
+        # Manual chip-selection path (legacy)
         picked = [t for t in dict.fromkeys(values or []) if t in fu.sources]
         if not picked:
             return fu.keep_label
@@ -427,7 +467,7 @@ def apply(fu: FollowUp, answers: dict, value: str = "", values: list[str] | None
         covered = {fu.sources[t] for t in picked}
         interests["unmatched"] = [u for u in interests.get("unmatched", []) if u not in covered]
         shown = ", ".join(THEME_LABELS[t] for t in picked)
-        _note(answers, f"You added {shown} in place of " + ", ".join(f"“{c}”" for c in covered) + ".")
+        _note(answers, f"You added {shown} in place of " + ", ".join(f'"{c}"' for c in covered) + ".")
         return shown
     stored, shown = intake.parse(fu.question, value)       # money / slider: same parsing as the intake
     answers[fu.target] = stored

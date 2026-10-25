@@ -171,6 +171,22 @@ def confirm_pending(acct: FundAccount, _msg: str | None = None) -> list[Trade]:
     return done
 
 
+def demo_rewind(acct: FundAccount, months: int) -> None:
+    """Reset the fund clock to `months` months ago and re-invest the starting amount from there.
+    Clears the trade log, deposits, pending trades, and broker positions so fast-forward replays cleanly."""
+    from core.broker import get_broker
+    get_broker().reset(acct.customer_id)
+    start_date = acct.today - timedelta(days=round(months * 30.44))
+    acct.today = start_date
+    acct.log.clear()
+    acct.deposits.clear()
+    acct.pending.clear()
+    acct.contributed = 0.0
+    acct.last_review = None
+    nessie.reset(acct.customer_id)
+    start(acct, on=start_date)
+
+
 def set_interests(acct: FundAccount, themes: list[str]) -> Portfolio:
     """New interests -> new targets. Nothing is sold; new money and the next rebalance move toward them."""
     acct.answers["interests"] = {"themes": list(dict.fromkeys(themes)),

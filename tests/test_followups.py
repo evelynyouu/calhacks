@@ -201,7 +201,7 @@ def test_with_the_horizon_question_near_term_asks_only_after_not_sure():
     assert fired(ans(goal="safety", horizon="15plus", **BOLD), "horizon") is None     # they said when: done
     assert fired(ans(goal="retirement", horizon="unsure", **BOLD), "horizon") is None  # not a near-term goal
     fu = check(ans(goal="safety", horizon="unsure", **BOLD), "horizon")
-    assert fu.key == "near_term_high_risk" and "“A safety net”" in fu.text
+    assert fu.key == "near_term_high_risk" and "A safety net" in fu.text
     assert "unsure" not in [v for v, _ in fu.options]          # they already said "Not sure yet"
     a = ans(goal="safety", horizon="unsure", **BOLD)
     apply(fu, a, "lt3")
@@ -213,12 +213,15 @@ def test_goal_no_timeline_was_removed():
 
 
 def test_unmatched_interests_offers_close_themes():
+    # New behavior: auto-adds theme matches without asking; returns a "Got it" confirmation
     a = ans(interests={"themes": ["tech"], "unmatched": ["helthcare", "solr"]})
     fu = check(a, "interests")
-    assert fu.key == "unmatched_interests" and fu.kind == "chips" and fu.keep_label == "Skip it"
-    assert [t for t, _ in fu.options] == ["healthcare", "clean_energy"]
-    assert apply(fu, a, values=["healthcare", "bogus"]) == "Healthcare"
-    assert a["interests"] == {"themes": ["tech", "healthcare"], "unmatched": ["solr"]}
+    assert fu is not None and fu.key == "unmatched_interests"
+    # Themes not yet mutated — apply() does the mutation
+    apply(fu, a)
+    assert "healthcare" in a["interests"]["themes"]
+    assert "clean_energy" in a["interests"]["themes"]
+    assert a["interests"]["unmatched"] == []
 
 
 def test_unmatched_interests_near_miss():
@@ -249,7 +252,7 @@ def test_every_rule_has_a_case_and_keep_changes_nothing(sam, no_horizon_question
         before = copy.deepcopy(a)
         assert apply(fu, a, keep=True) == fu.keep_label
         assert a == before, fu.key
-        assert fu.keep_label == ("Skip it" if fu.kind == "chips" else "Keep my answer")
+        assert fu.keep_label in ("Skip it", "Got it", "Keep my answer")
     assert keys == {r.__name__ for r in followups.RULES}
 
 
