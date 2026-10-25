@@ -1,10 +1,11 @@
 """Spending-based fund and risk insights from C1/Nessie banking data.  OWNER: Saahil.
 
-Two features:
-- Theme suggestions: map what a customer spends on (purchases + bills) to fund themes they might
-  care about. "You spend at restaurants → the consumer sector fund tracks those companies."
+Three features:
+- Direct stock mapping: map what a customer spends on to the actual companies they're buying
+  from. "You buy groceries at Costco -> hold COST." Weighted by actual dollars spent.
+- Theme suggestions: map spending patterns to fund themes for interest discovery.
 - Risk adjustment: use actual banking data (cushion months, debt, surplus share) to sanity-check
-  the risk level that came out of the intake questionnaire.
+  the risk level from the intake questionnaire.
 - Reinvestment signal: compare observed spending to the monthly baseline to surface money that
   could be invested right now.
 """
@@ -13,21 +14,123 @@ from __future__ import annotations
 from core import nessie
 from core.models import FinancialProfile
 
-# Purchase description text (lower-case substring) → fund theme (etfs.csv theme column)
+# ---------------------------------------------------------------------------
+# Direct merchant name -> list of investable tickers (ordered by conviction).
+# The first ticker in each list gets the highest weight when allocating spending.
+# We use substrings (lower-case) so "Berkeley Bowl" matches "berkeley bowl".
+# ---------------------------------------------------------------------------
+MERCHANT_TO_TICKERS: list[tuple[str, list[str]]] = [
+    # --- Groceries ---
+    ("berkeley bowl", ["COST", "WMT", "PG"]),
+    ("whole foods",   ["AMZN", "COST"]),
+    ("trader joe",    ["COST", "WMT"]),
+    ("safeway",       ["WMT", "COST"]),
+    ("kroger",        ["WMT", "COST"]),
+    ("costco",        ["COST"]),
+    ("walmart",       ["WMT"]),
+    ("sprouts",       ["COST", "WMT"]),
+    ("grocery",       ["COST", "WMT"]),
+    ("albertsons",    ["WMT", "COST"]),
+    # --- Dining / restaurants ---
+    ("starbucks",     ["SBUX"]),
+    ("sliver",        ["SBUX", "MCD"]),   # local pizza -> restaurant sector
+    ("pizza",         ["MCD", "SBUX"]),
+    ("chipotle",      ["MCD", "SBUX"]),   # no CMG in our universe
+    ("mcdonald",      ["MCD"]),
+    ("restaurant",    ["MCD", "SBUX"]),
+    ("cafe",          ["SBUX"]),
+    ("coffee",        ["SBUX"]),
+    ("dining",        ["MCD", "SBUX"]),
+    ("doordash",      ["AMZN", "GOOGL"]),  # delivery -> logistics + tech
+    ("grubhub",       ["MCD", "SBUX"]),
+    # --- Transit / transport ---
+    ("bay area transit", ["GE", "UNP"]),
+    ("bart",          ["GE", "UNP"]),
+    ("caltrain",      ["GE", "UNP"]),
+    ("transit",       ["GE", "UNP"]),
+    ("uber",          ["DAL", "GE"]),     # no UBER in our universe
+    ("lyft",          ["DAL", "GE"]),
+    ("airline",       ["DAL"]),
+    ("delta",         ["DAL"]),
+    ("united",        ["DAL"]),
+    ("southwest",     ["DAL"]),
+    ("amtrak",        ["GE", "UNP"]),
+    ("auto repair",   ["GE", "CAT"]),
+    # --- Tech / electronics ---
+    ("apple store",   ["AAPL"]),
+    ("best buy",      ["AAPL", "MSFT", "AMZN"]),
+    ("amazon",        ["AMZN"]),
+    ("microsoft",     ["MSFT"]),
+    ("google",        ["GOOGL"]),
+    ("newegg",        ["NVDA", "AMD"]),
+    ("software",      ["MSFT", "ORCL"]),
+    # --- Entertainment / streaming ---
+    ("netflix",       ["NFLX"]),
+    ("spotify",       ["DIS", "NFLX"]),
+    ("disney",        ["DIS"]),
+    ("hulu",          ["DIS"]),
+    ("youtube",       ["GOOGL"]),
+    ("twitch",        ["AMZN"]),
+    # --- Gaming ---
+    ("steam",         ["MSFT", "NVDA"]),
+    ("playstation",   ["MSFT", "AMD"]),
+    ("xbox",          ["MSFT"]),
+    ("nintendo",      ["NTDOY"]),
+    ("gaming",        ["MSFT", "NVDA", "AMD"]),
+    # --- Telecom / internet ---
+    ("verizon",       ["VZ"]),
+    ("at&t",          ["T"]),
+    ("t-mobile",      ["VZ", "T"]),
+    ("comcast",       ["T", "VZ"]),
+    ("xfinity",       ["T", "VZ"]),
+    # --- Energy / gas stations ---
+    ("shell",         ["XOM", "CVX"]),
+    ("chevron",       ["CVX"]),
+    ("exxon",         ["XOM"]),
+    ("gas station",   ["XOM", "CVX"]),
+    ("bp ",           ["XOM", "CVX"]),
+    # --- Healthcare ---
+    ("cvs",           ["CVS"]),
+    ("walgreens",     ["CVS"]),
+    ("pharmacy",      ["CVS"]),
+    ("hospital",      ["UNH", "JNJ"]),
+    ("medical",       ["UNH", "JNJ"]),
+    ("clinic",        ["UNH"]),
+    ("urgent care",   ["UNH"]),
+    # --- Finance / payments ---
+    ("visa",          ["V"]),
+    ("mastercard",    ["MA"]),
+    ("chase",         ["JPM"]),
+    ("bank of america", ["BAC"]),
+    ("insurance",     ["BRK.B", "V"]),
+    ("bank fee",      ["JPM", "BAC"]),
+    # --- Utilities ---
+    ("pg&e",          ["NEE", "SO"]),
+    ("electric",      ["NEE", "SO"]),
+    ("utility",       ["NEE", "DUK"]),
+    # --- Real estate (bill keywords) ---
+    ("rent",          ["PLD", "AMT"]),
+    ("mortgage",      ["PLD", "EQIX"]),
+    # --- Telecom bills ---
+    ("phone",         ["VZ", "T"]),
+    ("internet",      ["VZ", "T"]),
+]
+
+# Purchase description text (lower-case substring) -> fund theme (for theme suggestions)
 _PURCHASE_KEYWORDS: list[tuple[str, str]] = [
-    # groceries / food at home → consumer staples
+    # groceries / food at home -> consumer staples
     ("bowl", "staples"), ("grocery", "staples"), ("whole foods", "staples"),
     ("trader joe", "staples"), ("safeway", "staples"), ("albertsons", "staples"),
     ("sprouts", "staples"), ("costco", "staples"),
-    # dining out → consumer discretionary
+    # dining out -> consumer discretionary
     ("pizza", "consumer"), ("restaurant", "consumer"), ("cafe", "consumer"),
     ("dining", "consumer"), ("sliver", "consumer"), ("chipotle", "consumer"),
     ("coffee", "consumer"), ("starbucks", "consumer"), ("mcdonald", "consumer"),
-    # transit / transport → industrials
+    # transit / transport -> industrials
     ("transit", "industrials"), ("bart", "industrials"), ("caltrain", "industrials"),
     ("uber", "industrials"), ("lyft", "industrials"), ("airline", "industrials"),
     ("amtrak", "industrials"),
-    # auto services → industrials; fuel → oil & gas
+    # auto services -> industrials; fuel -> oil & gas
     ("auto repair", "industrials"), ("auto", "industrials"), ("mechanic", "industrials"),
     ("gas station", "oil_gas"), ("shell", "oil_gas"), ("chevron", "oil_gas"),
     ("exxon", "oil_gas"), ("bp ", "oil_gas"),
@@ -40,7 +143,7 @@ _PURCHASE_KEYWORDS: list[tuple[str, str]] = [
     ("urgent care", "healthcare"),
     # utilities
     ("pg&e", "utilities"), ("electric", "utilities"), ("utility", "utilities"),
-    # media / streaming → communications
+    # media / streaming -> communications
     ("netflix", "communications"), ("spotify", "communications"), ("hulu", "communications"),
     ("at&t", "communications"), ("verizon", "communications"), ("t-mobile", "communications"),
     ("comcast", "communications"), ("xfinity", "communications"),
@@ -51,9 +154,9 @@ _PURCHASE_KEYWORDS: list[tuple[str, str]] = [
     ("insurance", "financials"), ("bank fee", "financials"),
 ]
 
-# Bill name keywords → suggested theme (bills show you depend on these sectors)
+# Bill name keywords -> suggested theme
 _BILL_KEYWORDS: list[tuple[str, str]] = [
-    ("rent", "real_estate"),      # paying rent → REITs let you own a slice
+    ("rent", "real_estate"),
     ("phone", "communications"),
     ("utility", "utilities"),
     ("electric", "utilities"),
@@ -70,6 +173,50 @@ def _match_keywords(text: str, table: list[tuple[str, str]]) -> str | None:
         if keyword in t:
             return theme
     return None
+
+
+def _match_tickers(text: str) -> list[str]:
+    """Return list of tickers matched by the first matching merchant rule (order matters)."""
+    t = text.lower()
+    for keyword, tickers in MERCHANT_TO_TICKERS:
+        if keyword in t:
+            return tickers
+    return []
+
+
+def spending_stock_weights(cid: str) -> dict[str, float]:
+    """Map Nessie activity to {ticker: total_dollars} for portfolio building.
+
+    Pulls all spend and bill activity and maps merchant/payee names directly to
+    investable tickers. Returns raw dollar totals — callers normalize to weights.
+    A transaction can match multiple tickers; dollars are split equally across them.
+    """
+    return {t: v["amount"] for t, v in spending_stock_details(cid).items()}
+
+
+def spending_stock_details(cid: str) -> dict[str, dict]:
+    """Like spending_stock_weights but returns {ticker: {amount, source, label}} so callers
+    can generate human-readable reasons ('You pay rent' vs 'You shop at Costco')."""
+    items = nessie.recent_activity(cid, limit=None)
+    ticker_info: dict[str, dict] = {}
+
+    for item in items:
+        if item["tag"] not in ("spend", "bill"):
+            continue
+        tickers = _match_tickers(item["text"])
+        if not tickers:
+            continue
+        per_ticker = item["amount"] / len(tickers)
+        source = item["tag"]     # "spend" or "bill"
+        label = item["text"]     # e.g. "Berkeley Bowl", "Rent"
+        for ticker in tickers:
+            if ticker not in ticker_info:
+                ticker_info[ticker] = {"amount": 0.0, "source": source, "label": label}
+            ticker_info[ticker]["amount"] += per_ticker
+            # Upgrade source label: if the same ticker appears in both spend and bills,
+            # prefer the description with the higher amount (already accumulated).
+
+    return ticker_info
 
 
 def spending_breakdown(cid: str, profile: FinancialProfile) -> dict:
@@ -213,6 +360,44 @@ def banking_risk_adjustment(profile: FinancialProfile, current_level: int) -> di
             "card_apr": profile.card_apr,
         },
     }
+
+
+def spending_stock_suggestions(cid: str, profile: FinancialProfile) -> list[dict]:
+    """Map the customer's top spending categories to specific investable companies.
+
+    For each spending theme, returns the top 2 companies from that ETF's holdings —
+    the "invest in what you buy" angle. Capped at 6 total suggestions.
+
+    Returns [{ticker, name, etf, why, from_theme}]
+    """
+    from core.market import HOLDINGS, COMPANIES, ETFS
+    from core.portfolio import THEMES
+
+    breakdown = spending_breakdown(cid, profile)
+    suggestions: list[dict] = []
+    seen: set[str] = set()
+
+    for item in breakdown["theme_suggestions"]:
+        theme = item["theme"]
+        etf_ticker = THEMES.get(theme)
+        if not etf_ticker:
+            continue
+        top = sorted(HOLDINGS.get(etf_ticker, []), key=lambda x: -x[1])[:2]
+        etf_label = ETFS.get(etf_ticker, {}).get("label", etf_ticker)
+        for ticker, _ in top:
+            if ticker not in seen:
+                seen.add(ticker)
+                name = COMPANIES.get(ticker, {}).get("name", ticker)
+                suggestions.append({
+                    "ticker": ticker,
+                    "name": name,
+                    "etf": etf_ticker,
+                    "etf_label": etf_label,
+                    "why": f"{item['why']} — {name} is a top holding in {etf_label}",
+                    "from_theme": theme,
+                })
+
+    return suggestions[:6]
 
 
 # ---------- helpers ----------

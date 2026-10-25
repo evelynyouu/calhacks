@@ -18,7 +18,7 @@ from core.models import Portfolio, Trade
 from core.policy import tier_for
 
 AUTO_EXECUTE_TIER = 4   # Tier 4+ ($50K+): trades run immediately when auto_trade is on
-from core.portfolio import build_portfolio
+from core.portfolio import build_custom_portfolio, build_portfolio, build_spending_portfolio
 from core.profile import get_profile
 from core.rebalance import allocate_new_money
 
@@ -40,10 +40,26 @@ class FundAccount:
 
 
 def build(acct: FundAccount) -> Portfolio:
-    """(Re)build the fund from the intake answers."""
+    """(Re)build the fund from the intake answers.
+
+    Priority:
+      1. custom_mode=True  -> build_custom_portfolio (explicit ETF->stocks swap)
+      2. etf_mode=True     -> build_portfolio (force ETF mode)
+      3. default           -> build_spending_portfolio (Nessie-driven individual stocks;
+                              falls back to build_portfolio if no Nessie signals)
+    """
     acct.risk_score = intake.risk_score(acct.answers)
-    acct.portfolio = build_portfolio(intake.risk_level(acct.risk_score), intake.interests(acct.answers),
-                                     intake.stocks(acct.answers))
+    level = intake.risk_level(acct.risk_score)
+    interests = intake.interests(acct.answers)
+    stocks = intake.stocks(acct.answers)
+    if acct.answers.get("custom_mode"):
+        spending_stocks = acct.answers.get("spending_stocks", [])
+        acct.portfolio = build_custom_portfolio(level, interests, stocks, spending_stocks)
+    elif acct.answers.get("etf_mode"):
+        acct.portfolio = build_portfolio(level, interests, stocks)
+    else:
+        # Default: spending-driven individual stocks powered by Nessie data
+        acct.portfolio = build_spending_portfolio(acct.customer_id, level, interests, stocks)
     acct.invest_pct = float(acct.answers.get("paycheck_pct", acct.invest_pct))
     return acct.portfolio
 

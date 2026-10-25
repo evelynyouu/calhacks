@@ -82,6 +82,7 @@ class Portfolio:
     worst_year: int
     worst_year_return: float  # percent, negative
     overlap_warnings: list[str] = field(default_factory=list)
+    holding_reasons: dict[str, str] = field(default_factory=dict)   # ticker -> why it's here
 
     @property
     def core(self) -> Holding:
