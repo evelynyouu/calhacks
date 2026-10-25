@@ -32,6 +32,7 @@ US_SHARE = 0.70           # of the stock part; the rest is international, roughl
 INTL_SHARE = 1 - US_SHARE
 CORE_NAME_CAP = 0.06      # of the US index: about the biggest company's share of the whole US market
 COMPANY_CAP = 0.08        # of the fund, all slices together; matches the report's diversify rule
+MIN_INDEX_SHARE = 1 / 3   # of the US stocks: the personal slices never squeeze the US index below this
 # Where you spend: a share of the fund by risk level, the biggest SPEND_PICKS companies by dollars, none
 # under MIN_PICK. It personalizes the fund; it doesn't predict anything, and the reasons say so.
 SPEND_CAP_BY_RISK = {1: 0.05, 2: 0.08, 3: 0.10, 4: 0.12}
@@ -151,10 +152,39 @@ def _compose(risk_level: int, interests, stocks, bond_share: float, spending, re
     stocks_share = 1 - bond_share
     parts["bonds"] = {"BND": bond_share}
     parts["intl"] = {"VXUS": stocks_share * INTL_SHARE}
+    _keep_the_index(parts, stocks_share * US_SHARE, reasons)
     us_core = stocks_share * US_SHARE - sum(sum(parts[k].values()) for k in ("interest", "added", "spend"))
     parts["us_core"] = _core_weights(us_core)
     _cap_companies(parts, reasons)
+    _recap_core(parts)
     return parts, budgets
+
+
+def _keep_the_index(parts: dict, us: float, reasons: list[Reason]) -> None:
+    """If the personal slices (spend, interests, added) would leave the US index under MIN_INDEX_SHARE of the US
+    stocks, scale them all down by the same share: it should stay an index, covering every sector."""
+    personal = sum(sum(parts[k].values()) for k in ("interest", "added", "spend"))
+    room = us * (1 - MIN_INDEX_SHARE)
+    if personal <= room:
+        return
+    scale = room / personal
+    for k in ("interest", "added", "spend"):
+        parts[k] = {t: math.floor(w * scale * 1e4) / 1e4 for t, w in parts[k].items()}
+    reasons.append(Reason("cap", f"Your own picks (where you spend, your interests and the companies you added) "
+                                 f"would have been {share(personal)} of your fund, so each was scaled down by the same "
+                                 f"share to keep your US index at least a third of your US stocks.", None,
+                          {"before": round(personal, 4), "scale": round(scale, 4)}))
+
+
+def _recap_core(parts: dict) -> None:
+    """After the 8% cap moves weight into the US index, keep every index company at or under CORE_NAME_CAP of
+    the index: the names already at the cap keep it, the rest share what's left by their current weight."""
+    core = parts["us_core"]
+    total = sum(core.values())
+    if not total or max(core.values()) <= CORE_NAME_CAP * total + 1e-12:
+        return
+    shares = _capped_shares(core, CORE_NAME_CAP)
+    parts["us_core"] = {t: total * s for t, s in shares.items()}
 
 
 SLICE_ORDER = ("added", "spend", "interest", "us_core", "intl", "bonds")   # most personal first: a ticker's slice

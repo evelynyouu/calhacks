@@ -49,11 +49,11 @@ def build(acct: FundAccount) -> Portfolio:
 
 
 def _spending(cid: str):
-    """Where the customer spends, from the bank; None (no spend slice) for a customer the bank doesn't know."""
+    """Where the customer spends, from the bank; [] (no spend slice, with a note) for a customer it doesn't know."""
     try:
         return spending_profile(cid)
     except KeyError:
-        return None
+        return []   # no bank record: no purchases, and the fund says so
 
 
 def start(acct: FundAccount, on: date | None = None) -> list[Trade]:

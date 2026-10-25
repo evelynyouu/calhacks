@@ -48,10 +48,10 @@ def plan_persona(cid: str) -> dict:
 
     # Two months of spending in whole dollars (Nessie amounts are integers), spread as evenly as possible.
     total_spend = int(round(2 * p["monthly_spending"]))
-    base, extra = divmod(total_spend, PURCHASES)
     slots = _merchant_slots(p["merchants"], PURCHASES)
+    amounts = _amounts_by_share(p["merchants"], slots, total_spend)
     purchases = [{"merchant": slots[i], "on": SIM_START - timedelta(days=7 * (PURCHASES - i)),
-                  "amount": float(base + (i < extra))} for i in range(PURCHASES)]
+                  "amount": float(amounts[i])} for i in range(PURCHASES)]
 
     bills = [{"name": b["name"], "amount": b["amount"],
               "recurring_date": (SIM_START + timedelta(days=b["due_in_days"])).day} for b in p["upcoming_bills"]]
@@ -72,6 +72,22 @@ def plan_persona(cid: str) -> dict:
             raise ValueError(f"{cid}: opening {k} balance {v} must be a whole, non-negative dollar amount")
     return {"persona": p, "paydays": paydays, "purchases": purchases, "bills": bills,
             "bill_payments": bill_payments, "to_savings": to_savings, "opening": opening}
+
+
+def _amounts_by_share(merchants: list[dict], slots: list[str], total: int) -> list[int]:
+    """Whole-dollar purchase amounts so each merchant gets its share of `total` in dollars (largest remainder),
+    split evenly over that merchant's purchases. Adds up to `total` exactly."""
+    raw = {m["name"]: total * m["share"] for m in merchants}
+    dollars = {k: int(v) for k, v in raw.items()}
+    for k in sorted(raw, key=lambda k: raw[k] - int(raw[k]), reverse=True)[:total - sum(dollars.values())]:
+        dollars[k] += 1
+    out, seen = [], {}
+    for name in slots:
+        n, i = slots.count(name), seen.get(name, 0)
+        base, extra = divmod(dollars[name], n)
+        out.append(base + (i < extra))
+        seen[name] = i + 1
+    return out
 
 
 def _merchant_slots(merchants: list[dict], n: int) -> list[str]:
