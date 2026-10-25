@@ -108,8 +108,8 @@ def _changes(acct: FundAccount) -> list[str]:
 def _targets_paras(acct: FundAccount) -> list[str]:
     """The published glide schedule and the other triggers, from core/targets.py's constants."""
     st = targets.status(acct)
-    schedule = ", ".join(f"{y} year{'s' if y != 1 else ''} out {b:.0%}" for y, b in sorted(targets.GLIDE_PATH.items(),
-                                                                                           reverse=True))
+    schedule = ", ".join((f"{y} year{'s' if y != 1 else ''} out {b:.0%}" if y else f"at the goal date {b:.0%}")
+                         for y, b in sorted(targets.GLIDE_PATH.items(), reverse=True))
     goal = (f"We count your goal date as {st['target_date']:%B %Y}: the middle of “{st['horizon_label'].lower()}”, "
             f"from the day you set it (for “15 years or more” we assume {targets.HORIZON_YEARS['15plus']:.0f})."
             if st["target_date"] else "You're not sure when you'll need the money, so there's no goal date and no "
