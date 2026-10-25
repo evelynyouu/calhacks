@@ -1,0 +1,25 @@
+pattern,ticker
+walmart,WMT
+\btarget\b,TGT
+costco,COST
+amazon,AMZN
+starbucks,SBUX
+mcdonald,MCD
+\buber\b,UBER
+netflix,NFLX
+tesla,TSLA
+kroger,KR
+\bapple\b,AAPL
+\bnike\b,NKE
+home depot,HD
+lowe'?s,LOW
+verizon,VZ
+\bat&t\b,T
+t-mobile,TMUS
+disney,DIS
+airbnb,ABNB
+doordash,DASH
+\bebay\b,EBAY
+taco bell|kfc|pizza hut,YUM
+trader joe,
+berkeley bowl,
