@@ -44,7 +44,17 @@ def build(answers: dict, spending=None) -> Portfolio:
 
     override = bool(answers.get("override")) and ceiling < score
     used = score if override else ceiling
-    p = build_portfolio(level_for_score(used), themes, stocks, bond_share=bond_share_for(used), score=used,
+    bond = bond_share_for(used)
+    # When max_drop isn't already forcing a lower mix, use it to nudge bond share: low tolerance
+    # → more bonds, high tolerance → fewer. Fixes a UX issue where many answer combos gave identical bonds.
+    md = answers.get("max_drop")
+    if md is not None and "drop" not in why and not override:
+        from core.portfolio import BOND_MAX, BOND_MIN, BOND_STEP
+        q = intake.BY_KEY["max_drop"]
+        md_frac = (md - q.min) / (q.max - q.min)  # 0 (most careful) .. 1 (most adventurous)
+        adj = round((0.5 - md_frac) * 0.10 / BOND_STEP) * BOND_STEP  # ±1 step at extremes
+        bond = max(BOND_MIN, min(BOND_MAX, bond + adj))
+    p = build_portfolio(level_for_score(used), themes, stocks, bond_share=bond, score=used,
                         spending=spending)
     reasons += _horizon_reason(answers, cap, why, used, override)
     reasons += _drop_reason(answers, p, why, used, override)

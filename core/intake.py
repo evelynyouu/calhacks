@@ -286,7 +286,7 @@ def risk_parts(answers: dict) -> dict[str, float]:
 
 
 def risk_score(answers: dict) -> int:
-    """0 (most careful) .. 100 (most adventurous): the average of the two preference answers."""
+    """0 (most careful) .. 100 (most adventurous): the average of the choice answers."""
     prefs = [v for k, v in risk_parts(answers).items() if k in _CHOICE_SCORES]
     return round(100 * sum(prefs) / len(prefs)) if prefs else 50
 

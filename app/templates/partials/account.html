@@ -20,10 +20,32 @@
     </p>
   </form>
 
-  <div class="mt-4 flex flex-wrap gap-2">
-    <button class="btn" hx-post="/p/{{ cid }}/paycheck" hx-swap="none" hx-disabled-elt="this">Paycheck arrives</button>
-    <button class="btn-ghost" hx-post="/p/{{ cid }}/market_drop" hx-swap="none" hx-disabled-elt="this">Market drops 10%</button>
-    <button class="btn-ghost" hx-post="/p/{{ cid }}/raise" hx-swap="none" hx-disabled-elt="this">Got a raise</button>
+  <div class="mt-4 rounded-xl bg-paper px-3 py-2.5">
+    <p class="text-xs font-semibold uppercase tracking-wide text-ink/40">Simulate an event</p>
+    <p class="mt-0.5 text-xs text-ink/55">Try what happens when life changes.</p>
+    <div class="mt-3 space-y-2">
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <p class="text-sm font-medium">Paycheck arrives</p>
+          <p class="text-xs text-ink/55">Invests the % you chose, right now.</p>
+        </div>
+        <button class="btn shrink-0" hx-post="/p/{{ cid }}/paycheck" hx-swap="none" hx-disabled-elt="this">Run</button>
+      </div>
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <p class="text-sm font-medium">Market drops 10%</p>
+          <p class="text-xs text-ink/55">Drops all prices 10% and may trigger a recommendation.</p>
+        </div>
+        <button class="btn-ghost shrink-0" hx-post="/p/{{ cid }}/market_drop" hx-swap="none" hx-disabled-elt="this">Run</button>
+      </div>
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <p class="text-sm font-medium">Got a raise</p>
+          <p class="text-xs text-ink/55">Bumps your paycheck up $500 and recalculates.</p>
+        </div>
+        <button class="btn-ghost shrink-0" hx-post="/p/{{ cid }}/raise" hx-swap="none" hx-disabled-elt="this">Run</button>
+      </div>
+    </div>
   </div>
 
   {% if a.pending %}
