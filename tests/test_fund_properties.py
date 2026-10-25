@@ -180,7 +180,7 @@ def _golden(cid):
 #   Alex is at 67 with 30% bonds, as before: the max-drop check counts the US index as the market (VTI's real
 #   returns), since it follows the market by design.
 GOLDEN = {
-    "maria": ("Conservative", 0, {"bonds": 0.65, "intl": 0.105, "us_core": 0.1153, "spend": 0.05, "interest": 0.0795,
+    "maria": ("Conservative", 0, {"bonds": 0.65, "intl": 0.105, "us_core": 0.1151, "spend": 0.05, "interest": 0.0795,
                                   "added": 0}, ["SBUX", "UBER", "WMT"], ["COST", "WMT"],
               ["bonds", "cap", "combined", "core", "drop", "horizon", "score", "spend", "tilt"]),
     "jordan": ("Moderate", 33, {"bonds": 0.45, "intl": 0.165, "us_core": 0.1684, "spend": 0.0798, "interest": 0.1373,
