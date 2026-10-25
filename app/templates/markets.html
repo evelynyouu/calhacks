@@ -68,7 +68,7 @@
       {% if d.shares %}
       <div class="mt-4 rounded-xl bg-moss-50 px-4 py-3 text-sm">
         <p class="font-medium">You own {{ '%.4f' % d.shares }} shares, worth {{ d.value | money2 }}</p>
-        <p class="text-ink/65">You paid {{ d.cost | money2 }}; {{ '+' if d.value >= d.cost else '−' }}{{ (d.value - d.cost) | abs | money2 }}{% if d.cost %} ({{ ((d.value / d.cost - 1) * 100) | signed(2) }}){% endif %} since.</p>
+        <p class="text-ink/65" title="{{ defs.since_bought }}">You paid {{ d.cost | money2 }}; <span class="{{ 'text-moss-600' if d.gain >= 0 else 'text-clay-500' }}">{{ '+' if d.gain >= 0 else '−' }}{{ d.gain | abs | money2 }}{% if d.gain_pct is not none %} ({{ d.gain_pct | signed(2) }}){% endif %}</span> since you bought.</p>
       </div>
       {% endif %}
 

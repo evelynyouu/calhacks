@@ -18,7 +18,7 @@ from agent import claude_agent
 from agent.tools import INDEXES, news_tickers
 from app.routes.auth import auth_disabled, csrf_token
 from app import state
-from core import backtest, builder, explain, feed, followups, fund, intake, market, nessie
+from core import backtest, builder, explain, feed, figures, followups, fund, intake, market, nessie
 from core.broker import get_broker, values
 from core.intake import QUESTIONS, AnswerError, parse
 from core.market import ETFS
@@ -39,6 +39,7 @@ templates.env.filters["ago"] = lambda d: _ago(d)
 templates.env.globals["info"] = market.info
 templates.env.globals["price_label"] = market.price_label
 templates.env.globals["csrf_token"] = csrf_token
+templates.env.globals["defs"] = figures.DEFINITIONS   # one definition per return figure
 
 MARKET_DROP_PCT = -10.0
 RAISE_PCT = 10.0
@@ -83,7 +84,7 @@ def _ctx(request: Request, cid: str, **extra) -> dict:
     value = fund.value(a) if a.portfolio else 0.0
     return {
         "request": request, "cid": cid, "profile": get_profile(cid), "s": s, "a": a, "portfolio": a.portfolio,
-        "value": value, "tier": tier_for(value), "questions": QUESTIONS,
+        "value": value, "total": figures.total(value, a.contributed), "tier": tier_for(value), "questions": QUESTIONS,
         "pie_data": _pie(a.portfolio), "broker_mode": get_broker().mode,
         "activity": nessie.recent_activity(cid), "nessie_mode": nessie.mode(), "nessie_offline": nessie.offline_reason(),
         "etfs": ETFS, "theme_labels": THEME_LABELS, "live_market": market.source("SPY") == "live",
@@ -132,14 +133,9 @@ def dashboard(request: Request, cid: str):
 
 
 def _today(a) -> dict:
-    """Each holding's value and move today, and the fund's dollar move (from each price's day change)."""
-    vals = values(a.customer_id, a.today)
-    q = market.quotes(list(vals), a.today)
-    rows = [{"ticker": t, "info": market.info(t), "value": v, "quote": q.get(t)}
-            for t, v in sorted(vals.items(), key=lambda kv: -kv[1])]
-    day = sum(r["value"] * r["quote"]["change_pct"] / (100 + r["quote"]["change_pct"]) for r in rows if r["quote"])
-    before = sum(vals.values()) - day
-    return {"rows": rows, "day_change": day, "day_pct": day / before * 100 if before else 0.0}
+    """The fund's figures (core/figures.py): total since you started, today's move, and each holding's row."""
+    f = figures.fund_figures(a)
+    return {"fig": f, "rows": f["rows"], "day_change": f["day_change"], "day_pct": f["day_pct"]}
 
 
 @router.get("/p/{cid}/how", response_class=HTMLResponse)
@@ -178,6 +174,7 @@ def report(request: Request, cid: str):
     ctx["history"] = rep["history"]
     ctx["fan_data"] = to_dict(rep["projection"])
     ctx["gain_up"] = s["gain"] >= 0
+    ctx["fig"] = figures.fund_figures(ctx["a"])
     ctx["tab"] = "report"
     return _render("report.html", ctx)
 
@@ -391,12 +388,13 @@ def markets(request: Request, cid: str, s: str = "", r: str = "3M"):
     quote = q.get(sel) or market.quote(sel, end)
     shares = get_broker().positions(cid).get(sel, 0.0)
     cost = get_broker().cost_basis(cid).get(sel, 0.0)
+    worth = shares * market.raw_price(sel, end)
     detail = {
         "symbol": sel, "info": market.info(sel), "quote": quote, "range": r, "source": market.source(sel),
         "chart": {"labels": [d.isoformat() for d, _ in pts], "values": [round(p, 2) for _, p in pts]},
         "range_pct": (pts[-1][1] / pts[0][1] - 1) * 100 if len(pts) > 1 else 0.0,
         "high": max(year), "low": min(year),
-        "shares": shares, "value": shares * market.raw_price(sel, end), "cost": cost,
+        "shares": shares, "value": worth, "cost": cost, **figures.holding_gain(worth, cost),
         "example_shares": EXAMPLE_BUY / quote["price"],
         "in_fund": sel in held, "is_stock": sel in intake.stocks(a.answers),
         "can_add_stock": a.portfolio is not None and sel not in ETFS,

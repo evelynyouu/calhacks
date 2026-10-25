@@ -13,7 +13,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.routes.pages import _ctx, _render, _session, _today
-from core import fund, nessie
+from core import figures, fund, nessie
 
 router = APIRouter()
 
@@ -90,13 +90,14 @@ def money_context(s, profile, activity_all: list[dict]) -> dict:
     bills = bills_before(profile, a.today, nxt["days"])
     from_paychecks = round(sum(d["invested"] for d in a.deposits), 2)
     moved = round(sum(x["amount"] for x in activity_all if _bucket(x) == "invested"), 2)
-    inv = {"value": value, "contributed": a.contributed, "gain": round(value - a.contributed, 2),
+    tot = figures.total(value, a.contributed)   # the same "total" as every other screen
+    inv = {"value": value, "contributed": tot["put_in"], "gain": tot["total_gain"], "gain_pct": tot["total_gain_pct"],
            "starting": round(a.contributed - from_paychecks, 2), "from_paychecks": from_paychecks,
-           "moved_by_bank": moved, "top": [], "day_change": 0.0, "day_pct": 0.0}
+           "moved_by_bank": moved, "top": [], "day_change": 0.0, "day_pct": 0.0, "started": None}
     if has_fund:
-        t = _today(a)
-        inv.update(day_change=t["day_change"], day_pct=t["day_pct"],
-                   top=[dict(r, share=r["value"] / value if value else 0.0) for r in t["rows"][:TOP_HOLDINGS]])
+        f = _today(a)["fig"]
+        inv.update(day_change=f["day_change"], day_pct=f["day_pct"], started=f["started"],
+                   top=[dict(r, share=r["value"] / value if value else 0.0) for r in f["rows"][:TOP_HOLDINGS]])
     return {
         "accounts": bank_accounts(s.customer_id, profile, value, has_fund),
         "next_pay": nxt, "bills_due": bills, "bills_total": round(sum(b["amount"] for b in bills), 2),
