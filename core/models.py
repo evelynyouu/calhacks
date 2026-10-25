@@ -99,6 +99,8 @@ class Portfolio:
     worst_year_return: float  # percent, negative
     overlap_warnings: list[str] = field(default_factory=list)   # the reasons worth flagging (see WARNING_KINDS)
     reasons: list[Reason] = field(default_factory=list)
+    score: int | None = None          # 0..100, what the mix was built at (after any ceilings)
+    pointed_level: int | None = None  # the level the answers pointed to, if a ceiling lowered it
 
     @property
     def core(self) -> Holding:
@@ -112,7 +114,8 @@ class Portfolio:
         return balance * self.annual_fee_pct / 100
 
 
-WARNING_KINDS = ("dropped", "overlap", "concentration", "sector", "contradiction", "drop")
+# Reasons also listed as warnings on the fund card. Any other reason can opt in with facts["warn"].
+WARNING_KINDS = ("dropped", "overlap", "concentration", "sector", "contradiction")
 
 
 @dataclass

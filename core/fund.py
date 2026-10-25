@@ -15,7 +15,7 @@ from core import intake, market, nessie
 from core.broker import get_broker, values
 from core.models import Portfolio, Trade
 from core.policy import tier_for
-from core.portfolio import build_portfolio
+from core.builder import build as build_fund
 from core.profile import get_profile
 from core.rebalance import allocate_new_money
 
@@ -39,8 +39,7 @@ class FundAccount:
 def build(acct: FundAccount) -> Portfolio:
     """(Re)build the fund from the intake answers."""
     acct.risk_score = intake.risk_score(acct.answers)
-    acct.portfolio = build_portfolio(intake.risk_level(acct.risk_score), intake.interests(acct.answers),
-                                     intake.stocks(acct.answers))
+    acct.portfolio = build_fund(acct.answers)
     acct.invest_pct = float(acct.answers.get("paycheck_pct", acct.invest_pct))
     return acct.portfolio
 

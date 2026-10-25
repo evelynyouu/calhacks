@@ -4,7 +4,7 @@ from core import fund
 from core.intake import QUESTIONS
 
 ANSWERS = {"goal": "A house", "starting_amount": 3000, "paycheck_pct": 10, "risk_priority": "steady",
-           "risk_range": "medium", "max_drop": 15, "swing_comfort": 5,
+           "risk_range": "medium", "max_drop": 15, "horizon": "7to15",
            "interests": {"themes": ["tech"], "unmatched": []}}
 
 

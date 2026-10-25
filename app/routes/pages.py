@@ -47,7 +47,7 @@ EXAMPLE_BUY = 25.0   # "$25 buys 0.07 shares" on a stock's page
 # Personas that start with a fund already running, so the demo can jump straight to the report
 DEMO_PRESETS = {
     "alex": {"answers": {"goal": "Retire early", "starting_amount": 52_000, "paycheck_pct": 20,
-                         "risk_priority": "growth", "risk_range": "wide", "max_drop": 25, "swing_comfort": 7,
+                         "risk_priority": "growth", "risk_range": "wide", "max_drop": 25, "horizon": "15plus",
                          "interests": {"themes": ["healthcare", "tech"], "unmatched": []}},
              "started_days_ago": 365, "auto_trade": True},
 }
