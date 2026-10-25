@@ -23,10 +23,10 @@
 
     {% elif q.kind == 'money' %}
     <div class="composer-box">
-      <span class="pl-1 text-base text-muted">$</span>
+      <span class="self-center pl-1 text-base text-muted">$</span>
       <input name="value" inputmode="decimal" required autofocus placeholder="0" aria-label="{{ q.prompt }} (US dollars)"
 >
-      <span class="text-xs text-muted">USD</span>
+      <span class="self-center text-xs text-muted">USD</span>
       <button class="btn">Send</button>
     </div>
 
