@@ -4,9 +4,13 @@ from datetime import timedelta
 import pytest
 
 from core import fund, market
+from core import report as report_module
+from core.broker import get_broker
 from core.fund import FundAccount
 from core.models import Holding, Portfolio
 from core.report import benchmark_weights, build_report
+from core.rebalance import DRIFT_ABS, band, off_target
+from core.state import SIM_START
 from tests.fund_helpers import ANSWERS
 
 
@@ -145,9 +149,6 @@ def test_each_pick_is_compared_with_the_core_it_replaced():
 
 # ---------- price sources and income ----------
 
-from core.state import SIM_START   # noqa: E402
-
-
 def real_closes_through(monkeypatch, last, skip=()):
     """Pretend the feed has real closes up to `last` for every ticker except `skip`."""
     days = [last - timedelta(days=n) for n in range(30, -1, -1)]
@@ -195,3 +196,109 @@ def test_estimated_income_accrues_daily_and_stays_out_of_the_balance():
     # a moderate core: 38% VTI at 1.2%, 17% VXUS at 3.0%, 45% BND at 4.0% = about 2.8% a year
     assert w["income_estimate"] == pytest.approx(10_000 * 0.0277, rel=0.15)
     assert w["twr_pct"] - w["twr_price_pct"] == pytest.approx(2.8, abs=0.4)
+
+
+# ---------- recommendations ----------
+
+def test_bands_catch_a_small_slice_that_doubles_but_ignore_a_few_dollars():
+    p = _portfolio(VTI=0.50, VXUS=0.20, BND=0.28, XLK=0.02)
+    doubled = {"VTI": 4800.0, "VXUS": 2000.0, "BND": 2800.0, "XLK": 400.0}           # XLK 2% -> 4% of $10,000
+    gap = off_target(p, doubled)["XLK"]
+    assert gap == pytest.approx(0.02) and gap < DRIFT_ABS                              # the old 5-point rule missed it
+    tiny = {"VTI": 50.0, "VXUS": 20.0, "BND": 26.0, "XLK": 4.0}                        # same shape on $100: a $2 gap
+    assert "XLK" not in off_target(p, tiny)
+
+
+def test_the_band_is_5_points_for_big_holdings_and_25_percent_for_small_ones():
+    assert band(0.45) == DRIFT_ABS and band(0.02) == pytest.approx(0.005) and band(0.0) == 0.0
+
+
+def test_a_big_holding_inside_5_points_does_not_trigger():
+    p = _portfolio(VTI=0.50, VXUS=0.20, BND=0.30)
+    assert off_target(p, {"VTI": 5400.0, "VXUS": 1800.0, "BND": 2800.0}) == {}         # 4 points off
+
+
+def fresh() -> None:
+    get_broker().reset()
+    market.clear_shocks()
+
+
+def all_recs() -> list[tuple[str, dict]]:
+    """A report for each situation that should raise a different recommendation."""
+    out = []
+    a = account(starting_amount=20_000, started_days_ago=90, interests={"themes": ["ai_chips"], "unmatched": []})
+    market.add_shock(a.today - timedelta(days=30), 30)
+    out.append(("rebalance", build_report(a)))
+    fresh()
+    a = account(starting_amount=3_000, interests={"themes": ["ai_chips"], "unmatched": []})
+    market.add_shock(a.today, 30)
+    out.append(("steer", build_report(a)))
+    fresh()
+    a = account(paycheck_pct=10)
+    market.add_shock(a.today, -12)
+    out.append(("invest_more", build_report(a)))
+    fresh()
+    a = account(started_days_ago=60, interests={"themes": ["ai_chips"], "unmatched": []})
+    market.add_shock(a.today - timedelta(days=30), -30)
+    out.append(("hold", build_report(a)))
+    fresh()
+    out.append(("invest_less", build_report(account(paycheck_pct=60))))
+    fresh()
+    out.append(("hold", build_report(account(interests={"themes": ["healthcare"], "unmatched": []}))))
+    fresh()
+    a = account(starting_amount=10_000, interests={"themes": ["tech", "financials"], "unmatched": []},
+                stocks=["NVDA", "AAPL"], risk_priority="max", risk_range="widest", max_drop=50, swing_comfort=10)
+    out.append(("explore", build_report(a)))
+    return out
+
+
+def test_every_recommendation_shows_the_number_that_triggered_it_and_the_threshold():
+    seen = set()
+    for _, rep in all_recs():
+        for rec in rep["recommendations"]:
+            seen.add(rec["action"])
+            assert rec["trigger"], rec["title"]
+            for t in rec["trigger"]:
+                assert t["text"] in rec["facts"]
+                assert t["value_text"] in t["text"] and t["threshold_text"] in t["text"], t
+    assert {"rebalance", "steer", "invest_more", "hold", "invest_less", "explore"} <= seen
+
+
+def test_every_company_over_the_trigger_is_flagged_not_just_the_biggest(monkeypatch):
+    monkeypatch.setattr(report_module, "CONCENTRATION_TRIGGER", 0.04)
+    a = account(starting_amount=10_000, interests={"themes": ["tech"], "unmatched": []}, stocks=["NVDA", "AAPL", "MSFT"])
+    rep = build_report(a)
+    rec = next(r for r in rep["recommendations"] if r["action"] == "diversify")
+    over = [c for c in rep["companies"] if c["share"] >= 0.04]
+    assert len(over) >= 2 and len(rec["trigger"]) == len(over)
+    assert all(any(c["name"] in f for f in rec["facts"]) for c in over)
+
+
+def test_tech_check_counts_the_whole_fund_not_just_the_interest_slice():
+    rep = dict(all_recs())["explore"]
+    rec = next(r for r in rep["recommendations"] if r["action"] == "explore")
+    assert "whole fund" in rec["facts"][0] and "approximate" in rec["facts"][0]
+    assert len(rec["trigger"]) == 1                    # the picks are half tech, below the 60% line: only the fund-wide check fired
+
+
+def test_sector_exposure_looks_through_the_broad_funds():
+    sectors = report_module._sector_exposure({"VTI": 600.0, "BND": 400.0}, 1000.0)
+    assert sectors["Technology"] == pytest.approx(0.6 * 0.31) and "Bonds" not in sectors
+    assert sum(sectors.values()) == pytest.approx(0.6, abs=0.001)
+
+
+def test_the_dip_rec_is_about_the_funds_own_stocks_and_says_how_big_a_share_that_is():
+    a = account(risk_priority="protect", risk_range="narrow", max_drop=0, swing_comfort=1,
+                interests={"themes": [], "unmatched": []})                         # about a third in stocks
+    market.add_shock(a.today, -15)
+    rep = build_report(a)
+    rec = next(r for r in rep["recommendations"] if r["action"] == "invest_more")
+    stocks = sum(h["weight"] for h in rep["holdings"] if h["ticker"] not in ("BND", "GLD"))
+    assert f"Your stocks, {stocks:.0%} of your fund" in rec["facts"][0]
+    assert any("on the whole fund" in f for f in rec["facts"])
+
+
+def test_the_stock_sleeve_leaves_out_bonds_and_gold():
+    holdings = [{"ticker": "VTI", "weight": 0.5}, {"ticker": "BND", "weight": 0.4}, {"ticker": "GLD", "weight": 0.1}]
+    assert report_module._stock_sleeve(holdings, SIM_START)["share"] == 0.5
+    assert report_module._stock_sleeve([{"ticker": "BND", "weight": 1.0}], SIM_START) is None
