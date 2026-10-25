@@ -4,7 +4,7 @@
     <div>
       <p class="eyebrow">Your mix</p>
       <h2 class="font-display text-2xl font-bold mt-1">{{ portfolio.risk_label }}</h2>
-      <p class="text-sm text-ink/60">Risk score {{ portfolio.score if portfolio.score is not none else a.risk_score }}/100{% if portfolio.score is not none and portfolio.score != a.risk_score %} (your answers: {{ a.risk_score }}){% endif %} · {{ portfolio.holdings | length }} funds · fee {{ '%.2f' % portfolio.annual_fee_pct }}%/yr</p>
+      <p class="text-sm text-ink/60">Risk score {{ portfolio.score if portfolio.score is not none else a.risk_score }}/100{% if portfolio.score is not none and portfolio.score != a.risk_score %} (your answers: {{ a.risk_score }}){% endif %} · {{ portfolio.holdings | length }} holdings · fee {{ '%.2f' % portfolio.annual_fee_pct }}%/yr</p>
     </div>
     <div class="flex flex-col items-end gap-2">
       <a href="/p/{{ cid }}/report" class="btn">Report →</a>
@@ -32,20 +32,39 @@
 
   <div class="mt-4 grid sm:grid-cols-5 gap-5 items-center">
     <div class="sm:col-span-2 max-w-[11rem] mx-auto w-full">
-      <canvas data-chart="pie" data-payload='{{ pie_data | tojson }}' aria-label="Fund mix"></canvas>
+      <canvas data-chart="pie" data-payload='{{ pie_data | tojson }}' aria-label="Fund mix by part"></canvas>
     </div>
-    <ul class="sm:col-span-3 divide-y divide-ink/10 text-sm">
-      {% for h in portfolio.holdings %}
-      {% set i = info(h.ticker) %}
-      <li class="py-2" title="{{ i.about }}">
-        <div class="flex justify-between gap-3">
-          <span><span class="inline-block h-2 w-2 rounded-sm mr-1 align-middle" data-swatch="{{ loop.index0 }}"></span><strong>{{ h.ticker }}</strong> {{ i.label }}</span>
-          <span class="tabular-nums">{{ h.weight | pct(1) }}</span>
-        </div>
-        <p class="text-xs text-ink/55 mt-0.5">{% if h.role == 'tilt' %}Because you picked {{ i.label }}. {% elif h.role == 'stock' %}You added this company. {% endif %}{{ i.about }}</p>
-      </li>
+    <div class="sm:col-span-3 divide-y divide-ink/10 text-sm" id="fund-slices">
+      {% for sl in slices %}
+      <details class="slice py-2" data-slice="{{ sl.key }}">
+        <summary class="flex cursor-pointer list-none items-center justify-between gap-3">
+          <span><span class="inline-block h-2 w-2 rounded-sm mr-1 align-middle" data-swatch="{{ loop.index0 }}"></span><strong>{{ sl.label }}</strong>
+            <span class="text-xs text-ink/50">{{ sl.count }} {{ 'holding' if sl.count == 1 else 'holdings' }}</span></span>
+          <span class="tabular-nums">{{ sl.weight | pct(1) }}</span>
+        </summary>
+        <p class="mt-1.5 text-xs text-ink/60">{{ sl.blurb }}</p>
+        {% if sl.sectors %}
+        {% for g in sl.sectors %}
+        <details class="mt-1.5 rounded-lg bg-paper/60 px-2 py-1" data-sector="{{ g.sector }}">
+          <summary class="flex cursor-pointer list-none justify-between text-xs font-medium"><span>{{ g.sector }} <span class="font-normal text-ink/50">{{ g.count }}</span></span><span class="tabular-nums">{{ g.weight | pct(1) }}</span></summary>
+          <ul class="mt-1 divide-y divide-ink/10">
+            {% for r in g.rows %}<li class="flex justify-between gap-3 py-1 text-xs"><span><strong>{{ r.ticker }}</strong> {{ r.label }}</span><span class="tabular-nums">{{ r.weight | pct(1) }}</span></li>{% endfor %}
+          </ul>
+        </details>
+        {% endfor %}
+        {% else %}
+        <ul class="mt-1.5 divide-y divide-ink/10">
+          {% for r in sl.rows %}
+          <li class="py-1.5" title="{{ r.about }}">
+            <div class="flex justify-between gap-3"><span><strong>{{ r.ticker }}</strong> {{ r.label }}</span><span class="tabular-nums">{{ r.weight | pct(1) }}</span></div>
+            <p class="text-xs text-ink/55 mt-0.5">{% if r.role == 'tilt' %}Because you picked it. {% elif r.role == 'stock' %}You added this company. {% endif %}{{ r.about }}</p>
+          </li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </details>
       {% endfor %}
-    </ul>
+    </div>
   </div>
   {% else %}
   <p class="eyebrow">Your fund</p>

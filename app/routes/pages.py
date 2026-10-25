@@ -18,7 +18,7 @@ from agent import claude_agent
 from agent.tools import INDEXES, news_tickers
 from app.routes.auth import auth_disabled, csrf_token
 from app import state
-from core import backtest, builder, explain, feed, fund, intake, market, nessie
+from core import backtest, builder, explain, feed, fund, intake, market, nessie, slices
 from core.broker import get_broker, values
 from core.intake import QUESTIONS, AnswerError, parse
 from core.market import ETFS
@@ -81,7 +81,7 @@ def _ctx(request: Request, cid: str, **extra) -> dict:
     return {
         "request": request, "cid": cid, "profile": get_profile(cid), "s": s, "a": a, "portfolio": a.portfolio,
         "value": value, "tier": tier_for(value), "questions": QUESTIONS,
-        "pie_data": _pie(a.portfolio), "broker_mode": get_broker().mode,
+        "pie_data": _pie(a.portfolio), "slices": slices.view(a.portfolio) if a.portfolio else [], "broker_mode": get_broker().mode,
         "activity": nessie.recent_activity(cid), "nessie_mode": nessie.mode(), "nessie_offline": nessie.offline_reason(),
         "etfs": ETFS, "theme_labels": THEME_LABELS, "live_market": market.source("SPY") == "live",
         "fast_forwarded": a.today > market.today(), "claude_on": claude_agent._get_client() is not None,
@@ -91,10 +91,8 @@ def _ctx(request: Request, cid: str, **extra) -> dict:
 
 
 def _pie(p):
-    if not p:
-        return None
-    return {"labels": [f"{h.ticker} · {market.info(h.ticker)['label']}" for h in p.holdings],
-            "values": [round(h.weight * 100, 1) for h in p.holdings]}
+    """One wedge per slice (six at most), not one per holding: a custom fund has about 60 of those."""
+    return slices.pie(p)
 
 
 def _render(name: str, ctx: dict) -> HTMLResponse:
