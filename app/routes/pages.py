@@ -154,9 +154,12 @@ def report(request: Request, cid: str):
     s = rep["summary"]
     ctx["rep"] = rep
     ctx["narrative"] = claude_agent.explain(
-        rep["facts"], f"Write {ctx['profile'].name}'s fund report intro: 2 short paragraphs. First, how the fund did "
-                      "and why. Second, what the broad market did and what it means for this fund. No bullet points.",
-        fallback=" ".join(rep["facts"][:5]))
+        rep["facts"], f"Write {ctx['profile'].name}'s fund report intro: 2 short paragraphs, plain words, no bullet points. "
+                      "First: how the fund did over the period against its benchmark, what moved it, and what the customer's "
+                      "own choices added or cost. Second: how the fund fits their money (paycheck share, cash cushion, any "
+                      "card debt) and the one recommendation most worth reading. Use only the facts below: add no new numbers, "
+                      "never suggest buying or selling a specific stock, and say that prices are simulated if the facts say so.",
+        fallback=rep["narrative"])
     ctx["history"] = rep["history"]
     ctx["fan_data"] = to_dict(rep["projection"])
     ctx["gain_up"] = s["gain"] >= 0

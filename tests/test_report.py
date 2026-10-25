@@ -302,3 +302,97 @@ def test_the_stock_sleeve_leaves_out_bonds_and_gold():
     holdings = [{"ticker": "VTI", "weight": 0.5}, {"ticker": "BND", "weight": 0.4}, {"ticker": "GLD", "weight": 0.1}]
     assert report_module._stock_sleeve(holdings, SIM_START)["share"] == 0.5
     assert report_module._stock_sleeve([{"ticker": "BND", "weight": 1.0}], SIM_START) is None
+
+
+# ---------- the page, the tool, the facts ----------
+
+import json                                                                  # noqa: E402
+import re                                                                    # noqa: E402
+
+from fastapi.testclient import TestClient                                     # noqa: E402
+
+from agent import tools                                                       # noqa: E402
+from app import state                                                         # noqa: E402
+from app.main import app                                                      # noqa: E402
+from tests.fund_helpers import make_fund                                      # noqa: E402
+
+client = TestClient(app)
+
+
+def page_text(cid: str) -> str:
+    html = client.get(f"/p/{cid}/report").text
+    return " ".join(re.sub(r"<[^>]+>", " ", re.sub(r"<script.*?</script>", "", html, flags=re.S)).split())
+
+
+@pytest.mark.parametrize("cid", ["maria", "jordan", "sam", "alex"])
+def test_report_renders_for_every_persona(cid):
+    client.get(f"/p/{cid}")                       # alex's year-old fund is created on the first visit
+    if cid != "alex":
+        make_fund(cid, starting_amount=4_000)
+    r = client.get(f"/p/{cid}/report")
+    assert r.status_code == 200 and "Your finances, and where the fund fits" in r.text and "None" not in page_text(cid).replace("None of", "")
+
+
+def test_numbers_on_the_page_come_from_build_report():
+    make_fund("sam", starting_amount=8_000)
+    client.post("/p/sam/paycheck")
+    rep = build_report(state.get("sam").fund)
+    text = page_text("sam")
+    p, since, fin = rep["returns"]["period"], rep["returns"]["since_start"], rep["finances"]
+    for expected in (f"${rep['summary']['value']:,.2f}", f"${since['deposits']:,.2f}", f"${since['end_value']:,.2f}",
+                     f"${fin['budget']['surplus']:,.0f}", f"{fin['safety']['months']:.1f}",
+                     f"${rep['projection'].p50[-1]:,.0f}", f"${rep['projection_inputs']['monthly']:,.2f}"):
+        assert expected in text, expected
+    for h in rep["holdings"]:
+        assert f"${h['value']:,.2f}" in text, h["ticker"]
+
+
+def test_the_page_says_when_prices_are_simulated_and_when_a_fund_is_new():
+    make_fund("sam", starting_amount=3_000)
+    text = page_text("sam")
+    assert "All prices here are simulated" in text and "Your fund started today" in text
+
+
+def test_the_report_names_the_benchmark_it_uses():
+    make_fund("sam", starting_amount=3_000)
+    client.post("/p/sam/paycheck")
+    assert "Your benchmark" in page_text("sam") and "isn't the fair yardstick" in page_text("sam")
+
+
+def test_the_agent_tool_returns_json_with_python_numbers_only():
+    s = make_fund("sam", starting_amount=5_000)
+    client.post("/p/sam/paycheck")
+    out = tools.report_summary(s)
+    json.dumps(out)                                                           # dates and dataclasses are plain values
+    rep = build_report(s.fund)
+    assert out["period"]["twr_pct"] == rep["returns"]["period"]["twr_pct"]
+    assert out["projection"]["typical_10y"] == rep["projection"].p50[-1] and out["facts"] == rep["facts"]
+    assert out["finances"]["budget"]["per_paycheck"] == rep["finances"]["budget"]["per_paycheck"]
+
+
+def test_facts_put_the_customers_own_fund_first_and_carry_the_dates_and_benchmark():
+    a = account("alex", started_days_ago=365, starting_amount=60_000)
+    facts = build_report(a)["facts"]
+    assert facts[0].startswith("Fund value") and "VTI/VXUS/BND" in facts[2] and f"{(a.today - timedelta(days=7)).strftime('%b')}" in facts[1]
+    assert any("Looking ahead" in f for f in facts) and facts[-1].startswith("All prices here are simulated")
+    assert max(i for i, f in enumerate(facts) if "Fund value" in f or "benchmark" in f) < min(i for i, f in enumerate(facts) if "market is" in f)
+
+
+def test_offline_intro_reads_as_two_plain_paragraphs_from_the_same_numbers():
+    a = account("alex", started_days_ago=365, starting_amount=60_000)
+    rep = build_report(a)
+    first, second = rep["narrative"].split("\n\n")
+    assert f"${rep['summary']['value']:,.2f}" in first and "7 days" in first
+    assert "cash cushion" in second and "simulated" in second
+
+
+def test_picks_are_measured_from_the_date_shown_not_the_day_before():
+    a = account(starting_amount=3_000, interests={"themes": ["tech"], "unmatched": []})     # started today
+    pick = build_report(a)["returns"]["period"]["picks"][0]
+    assert pick["move_pct"] == 0 and pick["core_pct"] == 0 and pick["dollars"] == 0
+
+
+def test_a_fund_that_started_today_says_it_is_too_soon_instead_of_showing_returns():
+    make_fund("sam", starting_amount=3_000)
+    text = page_text("sam")
+    assert "shows once your money has been invested for a day" in text and "Returns show up once your money" in text
