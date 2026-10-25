@@ -436,3 +436,17 @@ def test_a_reply_with_text_is_used(monkeypatch):
     from agent import claude_agent
     monkeypatch.setattr(claude_agent, "_get_client", lambda: _Client(_Resp([_Block("thinking"), _Block("text", " Hello. ")], "end_turn")))
     assert claude_agent.explain(["a fact"], "intro", fallback="offline") == "Hello."
+
+
+def test_a_loss_puts_the_minus_sign_before_the_dollar_sign_in_the_facts():
+    a = account(starting_amount=5_000, started_days_ago=40)
+    market.add_shock(a.today - timedelta(days=10), -25)
+    rep = build_report(a)
+    text = " ".join(rep["facts"]) + rep["narrative"]
+    assert rep["summary"]["gain"] < 0 and "$-" not in text and "$+" not in text
+    assert f"gain {report_module._usd(rep['summary']['gain'])}" in rep["facts"][0] and "gain -$" in rep["facts"][0]
+
+
+def test_usd_formats_signs_before_the_dollar_sign():
+    assert report_module._usd(-192) == "-$192.00" and report_module._usd(1843.7, True) == "+$1,843.70"
+    assert report_module._usd(5) == "$5.00" and report_module._usd(-0.0) == "$0.00"
