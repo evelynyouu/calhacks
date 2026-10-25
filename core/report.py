@@ -8,6 +8,7 @@ recommendations (some with trades the customer can confirm), and the review sche
 from __future__ import annotations
 
 import csv
+import math
 from datetime import date, timedelta
 
 from core import intake, market, returns
@@ -16,11 +17,12 @@ from core.fund import FundAccount
 from core.market import ETFS, HOLDINGS
 from core.policy import tier_for
 from core.portfolio import THEME_LABELS, THEMES
-from core.profile import get_profile
+from core.profile import PAY_PERIOD_DAYS, get_profile
 from core.rebalance import band, drift as drift_of, off_target, rebalance_trades
-from core.sim import simulate
+from core.sim import portfolio_assumptions, simulate
 
 QUARTER_DAYS = 91
+PAYCHECKS_PER_YEAR = round(365 / PAY_PERIOD_DAYS)    # paid every 14 days: 26 a year, not 24
 # Approximate yearly income (distributions) per fund, from data/yields.csv. The price feed has no adjusted
 # closes, so income is estimated, accrued daily, and kept apart from the balance. Single companies count as 0.
 with (market.DATA / "yields.csv").open() as _f:
@@ -91,14 +93,19 @@ def build_report(acct: FundAccount) -> dict:
     recs = _recommendations(acct, vals, total, holdings, all_companies, interests, mkt, tier)
 
     paycheck = get_profile(cid).paycheck_amount
-    monthly = round(paycheck * acct.invest_pct / 100 * 2, 2)   # two paychecks a month
+    per_paycheck = math.floor(paycheck * acct.invest_pct / 100)        # Nessie moves whole dollars, as fund.paycheck does
+    monthly = round(per_paycheck * PAYCHECKS_PER_YEAR / 12, 2)
     sim = simulate(p, total, monthly)
+    assumptions = portfolio_assumptions(p)
     next_review = (acct.last_review or today) + timedelta(days=tier.review_every_days)
     rep = {
         "as_of": today, "period_days": period["days"] if period else tier.review_every_days, "summary": summary,
         "returns": rets, "holdings": holdings,
         "companies": companies, "interests": interests, "market": mkt, "relation": relation,
         "recommendations": recs, "projection": sim, "history": value_history(acct),
+        "projection_inputs": {"per_paycheck": per_paycheck, "paychecks_per_year": PAYCHECKS_PER_YEAR, "monthly": monthly,
+                              "return_pct": sim.expected_return_pct, "vol_pct": sim.volatility_pct,
+                              "fee_pct": p.annual_fee_pct, "rows": assumptions["rows"]},
         "schedule": {"tier": tier, "review_every_days": tier.review_every_days, "auto_allowed": tier.auto_trades,
                      "auto_on": acct.auto_trade, "next_review": next_review},
         "broker_mode": get_broker().mode,

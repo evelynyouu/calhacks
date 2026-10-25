@@ -104,6 +104,8 @@ class SimResult:
     monthly_contribution: float
     starting_balance: float
     total_contributed: float
+    expected_return_pct: float = 0.0   # the assumptions behind the range (yearly, after fees), shown to the customer
+    volatility_pct: float = 0.0
 
 
 @dataclass
