@@ -4,7 +4,7 @@
     <div>
       <p class="eyebrow">Your mix</p>
       <h2 class="font-display text-2xl font-bold mt-1">{{ portfolio.risk_label }}</h2>
-      <p class="text-sm text-ink/60">Risk score {{ a.risk_score }}/100 · {{ portfolio.holdings | length }} funds · fee {{ '%.2f' % portfolio.annual_fee_pct }}%/yr</p>
+      <p class="text-sm text-ink/60">Risk score {{ portfolio.score if portfolio.score is not none else a.risk_score }}/100{% if portfolio.score is not none and portfolio.score != a.risk_score %} (your answers: {{ a.risk_score }}){% endif %} · {{ portfolio.holdings | length }} funds · fee {{ '%.2f' % portfolio.annual_fee_pct }}%/yr</p>
     </div>
     <div class="flex flex-col items-end gap-2">
       <a href="/p/{{ cid }}/report" class="btn">Report →</a>

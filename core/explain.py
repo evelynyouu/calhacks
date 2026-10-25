@@ -14,7 +14,13 @@ from core.portfolio import (BOND_MAX, BOND_MIN, BOND_STEP, CONCENTRATION_NOTE, L
                             PER_INTEREST_CAP, RISK_LABELS, STOCK_CAP_BY_RISK, STOCK_EACH, SWING_REF,
                             TILT_CAP_BY_RISK, US_SHARE, lookthrough, swing)
 from core.profile import get_profile
-from core.report import CONCENTRATION_TRIGGER, DRIFT_TRIGGER
+from core.report import CONCENTRATION_TRIGGER
+
+try:   # the report-accuracy branch moves the drift band to core/rebalance.py (5 points, or 25% of target)
+    from core.rebalance import DRIFT_ABS, DRIFT_REL
+except ImportError:
+    from core.report import DRIFT_TRIGGER as DRIFT_ABS
+    DRIFT_REL = None
 from core.sim import simulate
 
 EXAMPLE_BALANCE = 1_000.0   # dollars shown when the fund is still empty
@@ -93,7 +99,8 @@ def _changes(acct: FundAccount) -> list[str]:
     out = ["Add or drop industries (Account tab or chat), or single companies (Markets tab or chat). Targets "
            "change now; nothing is sold until you confirm a rebalance.",
            f"Change how much of each paycheck goes in, now {acct.invest_pct:g}% (Account tab or chat).",
-           "Change your risk answers by retaking the questions (Account tab); the fund is rebuilt from them."]
+           "Retaking the questions (Account tab) clears your simulated fund and chat and starts over; the new fund "
+           "is built from your new answers."]
     if acct.portfolio.pointed_level or acct.answers.get("override"):
         out.append("Use the mix your answers pointed to instead of the one within your limits (fund card).")
     return out
@@ -118,7 +125,8 @@ def _full(acct: FundAccount, p: Portfolio, balance: float, bonds: float) -> list
         {"title": "Why index funds", "paras": [
             "An index fund buys every company in a market (or a slice of it) at once, so one company's bad news "
             "barely moves it, and the yearly fee stays low because nobody is paid to pick stocks.",
-            f"Your fund is built from {len(p.holdings)} of them" + (" plus the single companies you added." if stocks else ".")]},
+            f"Your fund is built from {len(p.holdings) - len(stocks)} of them"
+            + (" plus the single companies you added." if stocks else ".")]},
         {"title": "US and international stocks", "paras": [
             f"The stock part is split about {US_SHARE:.0%} US (VTI) and {1 - US_SHARE:.0%} international (VXUS), "
             "roughly how the world's stock markets divide. Owning both means one country's slump isn't all of your fund."]},
@@ -153,14 +161,16 @@ def _full(acct: FundAccount, p: Portfolio, balance: float, bonds: float) -> list
             "on target without selling anything."]},
         {"title": "When the fund is rebalanced", "paras": [
             f"Your report checks the fund every {tier.review_every_days} days at your balance. If a holding drifts "
-            f"{DRIFT_TRIGGER * 100:.0f} points from its target, or one company passes {CONCENTRATION_TRIGGER:.0%} "
+            f"{DRIFT_ABS * 100:.0f} points from its target"
+            + (f" (or {DRIFT_REL:.0%} of its target, if that's smaller)" if DRIFT_REL else "")
+            + f", or one company passes {CONCENTRATION_TRIGGER:.0%} "
             "of the fund, it suggests trades. Nothing happens until you confirm."]},
         {"title": "What's simulated or approximate", "paras": [
             "Worst years for VTI, VXUS and BND are their real 2008 and 2022 returns (VXUS's 2008 is its index "
             "twin, VGTSX). For interest funds and single companies we estimate them from how much each moves "
             "with the market.",
-            "The typical one-year range comes from FirstFund's simulator, which uses placeholder returns until "
-            "real price history is cached.",
+            "The typical one-year range comes from FirstFund's simulator, which uses assumed returns, not real "
+            "price history.",
             "Look-through counts only each fund's biggest holdings, and prices after the last real close are "
             "simulated."]},
     ]

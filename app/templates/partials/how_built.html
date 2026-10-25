@@ -49,7 +49,7 @@
       <div class="stat px-3 py-2.5"><dt>A typical year could end between</dt><dd class="text-lg">{{ how.expect.low | money }} and {{ how.expect.high | money }}</dd></div>
       <div class="stat px-3 py-2.5"><dt>In its real worst year ({{ how.expect.worst_year }})</dt><dd class="text-lg">down {{ (-how.expect.worst_dollars) | money }} ({{ how.expect.worst_pct }}%)</dd></div>
     </div>
-    <p class="mt-2 text-xs text-ink/55">On {{ how.balance | money }}{% if how.example_balance %}, an example amount since your fund is still empty{% endif %}. The typical range is a rough estimate from FirstFund's simulator (placeholder returns). The worst year uses real 2008 and 2022 returns for the core funds; interest funds and companies are estimated.</p>
+    <p class="mt-2 text-xs text-ink/55">On {{ how.balance | money }}{% if how.example_balance %}, an example amount since your fund is still empty{% endif %}. The typical range is a rough estimate from FirstFund's simulator (assumed returns, not real history). The worst year uses real 2008 and 2022 returns for the core funds; interest funds and companies are estimated.</p>
   </section>
 
   {% if how.adjusted %}

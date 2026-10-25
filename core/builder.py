@@ -43,8 +43,8 @@ def build(answers: dict) -> Portfolio:
     override = bool(answers.get("override")) and ceiling < score
     used = score if override else ceiling
     p = build_portfolio(level_for_score(used), themes, stocks, bond_share=bond_share_for(used), score=used)
-    reasons += _horizon_reason(answers, cap, "horizon" in why and not override)
-    reasons += _drop_reason(answers, p, score, "drop" in why and not override)
+    reasons += _horizon_reason(answers, cap, why, used, override)
+    reasons += _drop_reason(answers, p, why, used, override)
     if override:
         built = build_portfolio(level_for_score(ceiling), themes, stocks, bond_share=bond_share_for(ceiling))
         reasons.append(Reason("override", f"You chose the {RISK_LABELS[p.risk_level].lower()} mix your answers "
@@ -100,10 +100,12 @@ def _lean_careful(answers: dict, score: int, reasons: list[Reason]) -> int:
     if parts[hi] - parts[lo] < CONTRADICTION_SPREAD:
         return score
     prefs = {k: v for k, v in parts.items() if k != "max_drop"}
+    leaned = round(100 * (sum(prefs.values()) / len(prefs) + min(prefs.values())) / 2) if prefs else score
     if lo == "max_drop" or not prefs:
-        leaned, how = score, "Your drop answer already works as a limit, so the fund stays within it."
+        how = "Your drop answer works as a limit on the mix rather than lowering your score (see the note on drops)."
+    elif leaned == score:
+        how = "Your preference answers are the careful ones, so we went with them; the drop answer doesn't raise the score."
     else:
-        leaned = round(100 * (sum(prefs.values()) / len(prefs) + min(prefs.values())) / 2)
         how = f"We leaned toward the careful one, so your score is {leaned} instead of {score}."
     reasons.append(Reason("contradiction",
                           f"Two of your answers pull in different directions: for {_PART_NAMES[lo]} you said "
@@ -114,39 +116,49 @@ def _lean_careful(answers: dict, score: int, reasons: list[Reason]) -> int:
     return leaned
 
 
-def _horizon_reason(answers: dict, cap: int | None, lowered: bool) -> list[Reason]:
+def _horizon_reason(answers: dict, cap: int | None, why: list[str], used: int, override: bool) -> list[Reason]:
     h = answers.get("horizon")
     if h is None:
         return []
-    when = intake.answer_label("horizon", answers).lower()
+    when = intake.answer_label("horizon", answers).lower()   # "in 3 to 7 years"
+    lowered = "horizon" in why
+    keep = (f"we'd keep the fund {RISK_LABELS[cap].lower()} or steadier: a big drop right before you need the money "
+            f"might not have time to recover") if cap else ""
     if cap is None:
         text = "You're not sure yet when you'll need the money, so it doesn't limit the mix."
+    elif lowered and override:
+        text = f"You'll need most of this money {when}, so {keep}. You chose the mix your answers pointed to instead."
     elif lowered:
-        text = (f"You'll need most of this money {when.removeprefix('in ')}, so we kept the fund at "
-                f"{RISK_LABELS[cap].lower()} or steadier: a big drop right before you need the money might not "
-                f"have time to recover.")
+        at = f"a risk score of {used}" if "drop" not in why else f"a risk score of at most {cap * 25 - 1}"
+        text = f"You'll need most of this money {when}, so {keep}. We built it at {at}."
     else:
-        text = f"You'll need most of this money {when.removeprefix('in ')}, which leaves time to ride out drops."
-    return [Reason("horizon", text, facts={"horizon": h, "max_level": cap, "lowered": lowered})]
+        text = f"You'll need most of this money {when}, which leaves time to ride out drops."
+    return [Reason("horizon", text, facts={"horizon": h, "max_level": cap, "lowered": lowered and not override})]
 
 
-def _drop_reason(answers: dict, p: Portfolio, score: int, lowered: bool) -> list[Reason]:
+def _drop_reason(answers: dict, p: Portfolio, why: list[str], used: int, override: bool) -> list[Reason]:
     d = answers.get("max_drop")
     if d is None:
         return []
     within = p.worst_year_return >= -d
     worst = f"{p.worst_year}, {abs(p.worst_year_return):g}%"
-    if not within:
+    bonds = next((h.weight for h in p.holdings if h.ticker == "BND"), 0.0)
+    lowered = "drop" in why and not override
+    if override and not within:
+        text = (f"This mix's worst real year was {worst}, more than the {d:g}% drop you said you could live with. "
+                f"You chose it over our suggestion.")
+    elif not within:
         text = (f"You said you could live with a {d:g}% drop in a year. No mix of these funds stayed within that in "
-                f"both 2008 and 2022 (in 2022 bonds fell too), so we built the steadiest one. Its worst year was "
-                f"{worst}.")
+                f"both 2008 and 2022 (in 2022 bonds fell too), so we built the steadiest one ({bonds:.0%} bonds). "
+                f"Its worst year was {worst}.")
     elif lowered:
         text = (f"You said you could live with a {d:g}% drop in a year, so we used the riskiest mix that never fell "
-                f"further than that in 2008 or 2022. Its worst year was {worst}.")
+                f"further than that in 2008 or 2022: a risk score of {used}, {bonds:.0%} bonds. Its worst year was "
+                f"{worst}.")
     else:
         text = f"This mix's worst real year was {worst}, within the {d:g}% drop you said you could live with."
-    return [Reason("drop", text, facts={"max_drop": d, "worst_year": p.worst_year,
-                                        "worst_return": p.worst_year_return, "lowered": lowered, "warn": not within})]
+    return [Reason("drop", text, facts={"max_drop": d, "worst_year": p.worst_year, "worst_return": p.worst_year_return,
+                                        "lowered": lowered, "warn": not within})]
 
 
 def _limits(why: list[str]) -> str:

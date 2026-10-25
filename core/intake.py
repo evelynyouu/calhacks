@@ -16,7 +16,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Literal
 
-from core.portfolio import THEME_LABELS, level_for_score
+from core.portfolio import BOND_MAX, THEME_LABELS, build_portfolio, level_for_score, worst_year
 
 QuestionKind = Literal["text", "money", "slider", "scale", "choice", "chips"]
 
@@ -38,6 +38,8 @@ class Question:
 
 
 INTEREST_OPTIONS = sorted(THEME_LABELS.items(), key=lambda kv: kv[1])
+# The steadiest mix's real worst year (2022, when bonds fell too): no answer below this can be met.
+STEADIEST_WORST = abs(worst_year(build_portfolio(1, [], bond_share=BOND_MAX).holdings)[1])
 MAX_MONEY = 10_000_000
 
 QUESTIONS: list[Question] = [
@@ -62,9 +64,10 @@ QUESTIONS: list[Question] = [
         ("widest", "Ends between $700 and $1,400"),
     ]),
     Question("max_drop", "slider", "How big a drop in one year could you live with?",
-             help="As a percent of your fund. Everyone has a different number. We won't build a mix that has "
-                  "really fallen further than this in a single year.",
-             min=0, max=50, step=5, default=15, unit="%", risk=True),
+             help=f"As a percent of your fund. We build the riskiest mix whose real worst year (2008 or 2022) stayed "
+                  f"within this. Even the steadiest mix lost {STEADIEST_WORST:g}% in 2022, so a smaller number gets "
+                  f"the steadiest mix.",
+             min=0, max=50, step=5, default=20, unit="%", risk=True),
     Question("horizon", "choice", "When will you need most of this money?",
              help="Money you need soon has less time to recover from a drop, so it sets a limit on the mix.", options=[
         ("lt3", "In under 3 years"),
