@@ -45,6 +45,8 @@ def link_and_answer(cid: str):
     for form, _ in INTAKE:
         r = client.post(f"/p/{cid}/answer", data=form)
         assert r.status_code == 200
+        while state.get(cid).followup:   # e.g. "that's more than your balances": keep the answer
+            assert client.post(f"/p/{cid}/answer", data={"keep": "1"}).status_code == 200
     assert state.get(cid).done
 
 

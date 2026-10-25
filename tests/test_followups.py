@@ -254,6 +254,7 @@ INTAKE = [{"value": "a car"}, {"value": "$2,500"}, {"value": "12"}, {"value": "m
 
 
 def test_full_intake_with_a_followup_in_the_middle_builds_the_fund():
+    client.post("/p/sam/link", data={"checking": "checking", "investing": "investing"})
     client.get("/p/sam")
     for i, form in enumerate(INTAKE):
         r = client.post("/p/sam/answer", data=form)
@@ -272,6 +273,7 @@ def test_full_intake_with_a_followup_in_the_middle_builds_the_fund():
 
 
 def test_keep_through_the_route_and_bad_followup_answer():
+    client.post("/p/sam/link", data={"checking": "checking", "investing": "investing"})
     client.get("/p/sam")
     client.post("/p/sam/answer", data={"value": "idk"})
     s = state.get("sam")
@@ -284,6 +286,7 @@ def test_keep_through_the_route_and_bad_followup_answer():
 
 
 def test_money_followup_keep_skips_validation():
+    client.post("/p/sam/link", data={"checking": "checking", "investing": "investing"})
     client.get("/p/sam")
     client.post("/p/sam/answer", data={"value": "A house in 2035"})
     r = client.post("/p/sam/answer", data={"value": "$50,000"})

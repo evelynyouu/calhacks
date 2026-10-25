@@ -18,7 +18,7 @@
   </div>
   <div class="flex flex-wrap gap-1.5">
     {{ bank_badge() }}
-    {% if has_fund %}<span class="rounded-full px-2 py-0.5 text-xs {{ 'bg-moss-50 text-moss-700' if live_market and not fast_forwarded else 'bg-ink/5 text-ink/60' }}">{{ price_note }}</span>{% endif %}
+    {% if has_fund %}<span class="rounded-full px-2 py-0.5 text-xs {{ 'bg-moss-50 text-moss-700' if live_market and not fast_forwarded else 'bg-ink/5 text-ink/60' }}">{{ price_label(a.today) }}</span>{% endif %}
   </div>
 </div>
 
@@ -117,7 +117,7 @@
               {% if x.tag == 'firstfund' %}<span class="ml-1 rounded-full bg-moss-50 px-2 py-0.5 text-xs font-medium text-moss-700">Moved to investing</span>{% endif %}</p>
             <p class="text-xs text-ink/55">{{ x.on }} · {{ x.account }}{% if x.to %} → {{ x.to }}{% endif %}</p>
           </div>
-          <span class="tabular-nums shrink-0 {{ 'text-moss-600' if x.flow == 'in' else '' }}">{% if x.flow == 'in' %}+{% elif x.flow == 'out' %}−{% endif %}{{ x.amount | money2 }}</span>
+          <span class="tabular-nums shrink-0 {{ 'text-moss-600' if x.flow == 'in' else 'text-ink/50' if x.flow not in ('in', 'out') else '' }}">{% if x.flow == 'in' %}+{% elif x.flow == 'out' %}−{% endif %}{{ x.amount | money2 }}</span>
         </li>
         {% endfor %}
       </ul>

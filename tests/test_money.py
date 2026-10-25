@@ -49,7 +49,12 @@ def test_sidebar_on_every_tab_with_the_active_one_marked(key):
     assert "Switch customer" in page and ">Sam<" in page
 
 
+def link(cid: str) -> None:
+    client.post(f"/p/{cid}/link", data={"checking": "checking", "investing": "investing"})
+
+
 def test_sidebar_during_the_intake_shows_only_the_chat_and_money():
+    link("maria")
     page = client.get("/p/maria").text
     keys = re.findall(r'data-nav-key="(\w+)"', page)
     assert keys == ["intake", "money"] and active_key(page) == "intake"
@@ -57,10 +62,8 @@ def test_sidebar_during_the_intake_shows_only_the_chat_and_money():
 
 
 def test_money_link_hidden_until_a_bank_is_linked():
-    s = state.get("maria")
-    s.linked = False   # the onboarding step's flag; absent means linked
-    page = client.get("/p/maria").text
-    assert re.findall(r'data-nav-key="(\w+)"', page) == ["intake"]
+    page = client.get("/p/maria").text   # not linked yet: the link step, and no Money in the sidebar
+    assert re.findall(r'data-nav-key="(\w+)"', page) in ([], ["intake"])
     r = client.get("/p/maria/money", follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/p/maria"
 
@@ -79,7 +82,7 @@ def test_no_sidebar_on_sign_in_pages(monkeypatch):
 
 
 def test_finishing_the_intake_swaps_in_the_full_sidebar():
-    s = make_fund("sam")
+    s = make_fund("sam", goal="A house in 10 years")   # a timeline, so no follow-up before the fund is built
     s.step -= 1   # one question left
     r = client.post("/p/sam/answer", data={"values": ["tech"], "other": ""})
     assert '<aside id="nav" hx-swap-oob="true"' in r.text
@@ -100,6 +103,8 @@ def test_collapse_toggle_and_storage_are_wired():
 @pytest.mark.parametrize("cid", PERSONAS)
 def test_money_renders_before_and_after_the_fund(cid):
     p = get_profile(cid)
+    if cid != "alex":
+        link(cid)
     page = client.get(f"/p/{cid}/money").text
     if cid != "alex":   # alex starts with a fund
         assert "Your fund isn't built yet" in page

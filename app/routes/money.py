@@ -104,13 +104,6 @@ def money_context(s, profile, activity_all: list[dict]) -> dict:
     }
 
 
-def price_note(ctx: dict) -> str:
-    """Same wording as the Portfolio tab's price badge."""
-    if ctx["fast_forwarded"]:
-        return f"Demo date {ctx['a'].today.strftime('%b %-d, %Y')}: prices simulated"
-    return "Live prices · Nasdaq, delayed" if ctx["live_market"] else "Simulated prices"
-
-
 @router.get("/p/{cid}/money", response_class=HTMLResponse)
 def money(request: Request, cid: str):
     s = _session(cid)
@@ -119,5 +112,4 @@ def money(request: Request, cid: str):
     ctx = _ctx(request, cid, tab="money")
     activity_all = nessie.recent_activity(cid, limit=None)
     ctx.update(money_context(s, ctx["profile"], activity_all))
-    ctx["price_note"] = price_note(ctx)
     return _render("money.html", ctx)
