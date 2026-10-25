@@ -38,6 +38,16 @@ class FundAccount:
     pending: list[dict] = field(default_factory=list)    # trades waiting for the customer's OK
     last_review: date | None = None
     log: list[str] = field(default_factory=list)          # plain-words history, newest first
+    # Targets that follow the customer (core/targets.py): goal date, accepted glide step, the bank situation the
+    # paycheck percent was chosen in, the pending proposal, "Not now" memory, and accepted changes (newest first).
+    started: date | None = None
+    target_date: date | None = None
+    glide_bonds: float | None = None
+    glide_on: date | None = None
+    baseline: dict = field(default_factory=dict)
+    proposal: dict | None = None
+    snoozed: dict = field(default_factory=dict)
+    target_history: list[dict] = field(default_factory=list)
 
 
 def build(acct: FundAccount) -> Portfolio:
@@ -59,14 +69,17 @@ def build(acct: FundAccount) -> Portfolio:
         acct.portfolio = build_spending_portfolio(acct.customer_id, level, intake.interests(acct.answers),
                                                   intake.stocks(acct.answers))
     else:
-        acct.portfolio = build_fund(acct.answers)
+        from core import targets   # targets reads this module
+        acct.portfolio = targets.apply_glide(acct, build_fund(acct.answers))   # keeps an accepted glide step
     acct.invest_pct = float(acct.answers.get("paycheck_pct", acct.invest_pct))
     return acct.portfolio
 
 
 def start(acct: FundAccount, on: date | None = None) -> list[Trade]:
     """Build the fund and invest the starting amount."""
+    from core import targets
     build(acct)
+    targets.begin(acct, on or acct.today)
     amount = float(acct.answers.get("starting_amount", 0))
     if amount <= 0:
         return []
@@ -105,6 +118,8 @@ def paycheck(acct: FundAccount) -> dict:
     acct.deposits.insert(0, entry)
     acct.log.insert(0, f"Paycheck of {_money(pay)}: invested {_money(amount)} ({acct.invest_pct:g}%).")
     review_if_due(acct)
+    from core import targets
+    targets.review(acct)   # pay, spending or the goal date may move the targets: a proposal, never a change
     return entry
 
 
@@ -177,8 +192,15 @@ def set_stocks(acct: FundAccount, tickers: list[str]) -> Portfolio:
 def set_override(acct: FundAccount, use_answers: bool) -> Portfolio:
     """Build what the answers pointed to (True) or our suggestion within the limits (False). Like interests:
     targets change now, trades follow new money or a rebalance."""
+    from core import targets
+    before = acct.portfolio
     acct.answers["override"] = bool(use_answers)
-    return build(acct)
+    p = build(acct)
+    if before and p.risk_label != before.risk_label:   # the click on the fund card is the acceptance: record it
+        targets.record(acct, "override", f"Your mix moved from {before.risk_label} to {p.risk_label} because you "
+                       f"chose {'the mix your answers pointed to' if use_answers else 'our suggestion within your limits'}.",
+                       before, p)
+    return p
 
 
 def set_invest_pct(acct: FundAccount, pct: float) -> None:

@@ -67,7 +67,9 @@ HoldingRole = Literal["core", "tilt", "stock"]
 # down because it moves a lot), dropped (left out). Notes: overlap, concentration, sector. How the mix was
 # chosen: score, contradiction, horizon, drop, override.
 ReasonKind = Literal["core", "bonds", "tilt", "stock", "cap", "swing", "dropped", "overlap", "concentration",
-                     "sector", "score", "contradiction", "horizon", "drop", "override"]
+                     "sector", "score", "contradiction", "horizon", "drop", "override",
+                     # accepted target changes (core/targets.py)
+                     "glide", "income", "spending", "answers"]
 
 
 @dataclass
