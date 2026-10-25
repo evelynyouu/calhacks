@@ -9,14 +9,16 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 from agent.prompts import RUNDOWN_INSTRUCTION, SUGGESTED_PROMPTS, SYSTEM_PROMPT
 from agent.tools import TOOLS, headlines, market_today, news_tickers, run_tool
 from app.state import Session
+from core import market, slices
 from core.explain import fallback_intro, intro_facts, slice_facts
 from core.intake import QUESTIONS
-from core import market
 from core.market import ETFS
+from core.models import SLICES
 from core.report import build_report
 
 MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-5-5")
@@ -227,8 +229,12 @@ def _offline_turn(session: Session, text: str) -> str:
                 "Drag the slider in the Paycheck autopilot panel to change it.")
     if any(w in t for w in ("why", "fund", "hold", "own", "explain")):
         p = session.fund.portfolio
-        return f"Your fund is {p.risk_label.lower()}: " + " ".join(
-            f"{h.ticker} ({h.weight:.0%}): {market.info(h.ticker)['about']}." for h in p.holdings[:4])
+        named = next((h for h in p.holdings if re.search(rf"\b{re.escape(h.ticker)}\b", text, re.I)), None)
+        if named:   # "why do I own TGT?": the builder's own reasons for that holding
+            why = " ".join(r.text for r in p.reasons if r.ticker == named.ticker and r.kind not in ("cap", "dropped"))
+            return f"{named.ticker} is in the “{dict(SLICES)[p.slice_of(named)]}” part of your fund, {named.weight:.1%} of it. {why}".strip()
+        return (f"Your fund is {p.risk_label.lower()}: {slices.describe(p)}. Ask “why do I own” and a ticker for the "
+                "reason behind any holding.")
     return ("I'm in offline mode right now, so I can answer about your fund, your report, recommendations, your "
             "spending, or your paycheck percent. Try “how am I doing?” or “what should I do next?”")
 

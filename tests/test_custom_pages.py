@@ -9,7 +9,7 @@ from app.main import app
 from core import slices
 from core.report import benchmark_weights, build_report
 from core.models import SLICES
-from tests.fund_helpers import make_custom_fund, make_portfolio_fixture
+from tests.fund_helpers import make_custom_fund, make_legacy_etf_fund, make_legacy_fund, make_portfolio_fixture
 
 client = TestClient(app)
 
@@ -46,8 +46,7 @@ def test_the_us_index_groups_by_sector_biggest_first_and_other_slices_do_not():
 
 
 def test_an_older_etf_fund_has_no_sector_groups():
-    from core.portfolio import build_portfolio
-    by_key = {s["key"]: s for s in slices.view(build_portfolio(2, ["tech"]))}
+    by_key = {s["key"]: s for s in slices.view(make_legacy_etf_fund())}
     assert by_key["us_core"]["sectors"] is None and by_key["us_core"]["rows"][0]["ticker"] == "VTI"
 
 
@@ -112,8 +111,7 @@ def test_the_days_dollar_move_still_sums_every_holding_not_only_the_ten_shown(mo
 
 def test_a_small_fund_has_no_show_all():
     from app.routes import pages
-    from tests.fund_helpers import make_fund
-    s = make_fund("sam")                                           # five or six holdings
+    s = make_legacy_fund("sam")                                    # five holdings
     assert pages._today(s.fund)["rest"] == [] and 'id="all-positions"' not in client.get("/p/sam").text
 
 
@@ -148,8 +146,7 @@ def test_the_us_index_collapses_to_sectors_on_the_how_page():
 
 
 def test_the_how_page_still_works_for_an_older_etf_fund():
-    from tests.fund_helpers import make_fund
-    make_fund("sam")
+    make_legacy_fund("sam")
     html = client.get("/p/sam/how").text
     assert [m for m in re.findall(r'data-slice="(\w+)"', html)][:3] == ["bonds", "intl", "us_core"]
     assert 'data-holding="VTI"' in html and 'data-sector=' not in html
@@ -173,20 +170,23 @@ def test_explains_own_slices_win_over_the_fallback(monkeypatch):
 def test_the_benchmark_of_a_custom_fund_needs_no_vti_holding():
     p = make_portfolio_fixture()
     assert not any(h.ticker == "VTI" for h in p.holdings)
-    w = benchmark_weights(p)
-    assert sum(w.values()) == pytest.approx(1)
-    assert w["BND"] == pytest.approx(0.25) and w["VXUS"] == pytest.approx(0.225) and w["VTI"] == pytest.approx(0.525)
-    assert w["VTI"] == pytest.approx(1 - p.slice_weights()["bonds"] - p.slice_weights()["intl"])    # the US part, whatever is in it
+    w = benchmark_weights(p)                                    # a fund that records its parts: bonds, VXUS, the plain US index
+    assert sum(w.values()) == pytest.approx(1, abs=1e-4)
+    assert w["BND"] == pytest.approx(0.25) and w["VXUS"] == pytest.approx(0.225)
+    us = {t: x for t, x in w.items() if t not in ("BND", "VXUS")}
+    assert sum(us.values()) == pytest.approx(1 - 0.25 - 0.225, abs=1e-4) and len(us) > 20
+    assert not {"TGT", "SBUX", "VRTX", "PYPL"} & set(w)         # nothing personal: that's what "vs benchmark" measures
 
 
-def test_the_benchmark_matches_the_funds_stock_bond_split_for_every_bond_share():
+def test_the_older_funds_three_fund_benchmark_is_unchanged_for_any_bond_share():
     for bonds in (0.10, 0.301, 0.45, 0.65):
-        p = make_portfolio_fixture()
-        scale = (1 - bonds) / (1 - 0.25)
+        p = make_legacy_etf_fund()
+        scale = (1 - bonds) / (1 - 0.45)
         for h in p.holdings:
             h.weight = bonds if h.ticker == "BND" else h.weight * scale
         w = benchmark_weights(p)
         assert w["BND"] == pytest.approx(bonds) and sum(w.values()) == pytest.approx(1)
+        assert set(w) == {"VTI", "VXUS", "BND"}                  # every non-bond, non-VXUS holding counts as US stock
 
 
 def test_the_report_of_a_custom_fund_builds_and_its_benchmark_gets_the_same_deposits():
@@ -279,3 +279,84 @@ def test_income_counts_dividends_from_companies_by_sector():
     w = build_report(s.fund)["returns"]["since_start"]
     rate = sum(h.weight * report_module._yields(s.fund.portfolio).get(h.ticker, 0.0) for h in s.fund.portfolio.holdings)
     assert rate > 0.012 and w["income_estimate"] == pytest.approx(10_000 * rate, rel=0.2)
+
+
+# ---------- every page, for every persona ----------
+
+@pytest.mark.parametrize("cid", ["maria", "jordan", "sam", "alex"])
+def test_every_page_renders_for_every_persona_with_a_58_holding_fund(cid):
+    make_custom_fund(cid, 10_000)
+    for path in ("", "/how", "/report", "/chat", "/account", "/backtest"):
+        r = client.get(f"/p/{cid}{path}")
+        assert r.status_code == 200, (cid, path)
+    page = client.get(f"/p/{cid}").text
+    assert len(pie_payload(page)["labels"]) <= 6 and "Show all 58 positions" in text(page)
+
+
+# ---------- chat tools ----------
+
+def test_get_fund_returns_slices_with_their_holdings_not_a_flat_list():
+    from agent.tools import run_tool
+    s = make_custom_fund("sam")
+    out, _ = run_tool(s, "get_fund", {})
+    json.dumps(out)
+    assert "holdings" not in out and out["holding_count"] == 58
+    assert [x["key"] for x in out["slices"]] == [k for k, _ in SLICES]
+    by = {x["key"]: x for x in out["slices"]}
+    assert [h["ticker"] for h in by["bonds"]["holdings"]] == ["BND"] and len(by["spend"]["holdings"]) == 3
+    assert "personalizes" in by["spend"]["note"] and "isn't a prediction" in by["spend"]["note"]
+    us = by["us_core"]
+    assert "holdings" not in us and len(us["sectors"]) == 11 and len(us["biggest_holdings"]) == 10 and us["count"] == 50
+    assert len(json.dumps(out)) < 12_000                                    # a flat list of sixty would be far longer
+
+
+def test_get_fund_still_lists_a_small_fund_in_full():
+    from agent.tools import run_tool
+    s = make_legacy_fund("sam")
+    out, _ = run_tool(s, "get_fund", {})
+    by = {x["key"]: x for x in out["slices"]}
+    assert [h["ticker"] for h in by["us_core"]["holdings"]] == ["VTI"] and "sectors" not in by["us_core"]
+
+
+def test_why_do_i_own_x_names_the_slice_and_sector_and_gives_the_rule():
+    from agent.tools import run_tool
+    s = make_custom_fund("sam")
+    out, _ = run_tool(s, "get_fund_explanation", {"ticker": "tgt"})
+    assert out["slice"] == "Where you spend" and out["sector"] == "Consumer" and out["target_pct"] == 4.0
+    assert out["reasons"] and all(r["ticker"] == "TGT" for r in out["reasons"])
+    assert "personalizes your fund; it isn't a prediction" in out["reasons"][0]["text"]
+    nvda, _ = run_tool(s, "get_fund_explanation", {"ticker": "NVDA"})
+    assert nvda["slice"] == "Your US index" and nvda["sector"] == "Technology" and "biggest US company" in nvda["reasons"][0]["text"]
+
+
+def test_the_explanation_without_a_ticker_gives_the_slice_weights():
+    from agent.tools import run_tool
+    out, _ = run_tool(make_custom_fund("sam"), "get_fund_explanation", {})
+    assert out["slice_weights_pct"]["Bonds"] == 25.0 and out["slice_weights_pct"]["Where you spend"] == 8.0
+
+
+def test_the_prompt_says_the_engine_picked_by_rule_and_claude_does_not_endorse():
+    from agent.prompts import SYSTEM_PROMPT
+    p = " ".join(SYSTEM_PROMPT.split())
+    assert "six parts, called slices" in p and "never say a company is a good buy" in p
+    assert "personalization, not a prediction" in p and "stated rule" in p and "get_fund_explanation" in p
+
+
+def test_the_offline_chat_explains_a_holding_from_its_reasons_and_never_lists_sixty_tickers(monkeypatch):
+    from agent import claude_agent
+    monkeypatch.setattr(claude_agent, "_get_client", lambda: None)
+    s = make_custom_fund("sam")
+    one = claude_agent._offline_turn(s, "why do I own TGT?")
+    assert one.startswith("TGT is in the “Where you spend” part") and "personalizes your fund" in one
+    general = claude_agent._offline_turn(s, "why is my fund built this way?")
+    assert "Your US index 36% (50 companies)" in general and "AAPL" not in general and general.count("(") <= 6
+    facts = " ".join(claude_agent.fund_facts(s))
+    assert "50 companies" in facts and "isn't a prediction" in facts and facts.count("(") < 25      # not one entry per company
+
+
+def test_the_first_message_describes_the_parts_not_the_tickers(monkeypatch):
+    from agent import claude_agent
+    monkeypatch.setattr(claude_agent, "_get_client", lambda: None)
+    msg = claude_agent.fund_ready(make_custom_fund("sam"))
+    assert msg.startswith("Your fund is ready: growth.") and "Your US index: 35.5%, 50 companies" in msg
+    assert "isn't a prediction" in msg and msg.count("(") < 14                                  # the biggest few, not all 58

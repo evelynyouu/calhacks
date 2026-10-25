@@ -143,7 +143,7 @@ def how_built(request: Request, cid: str, full: bool = False):
     """How your fund was built: every number and reason comes from core/explain.py. ?full=1 opens the full version."""
     s = _need_fund(cid)
     how = explain.build(s.fund)
-    how.setdefault("slices", slices.explained(s.fund.portfolio, explain.ADJUST_KINDS))   # explain.py's own wins once it has one
+    how["slices"] = slices.complete(how.get("slices") or slices.explained(s.fund.portfolio, explain.ADJUST_KINDS))
     return _render("how_built.html", _ctx(request, cid, tab="portfolio", how=how,
                                           intro=claude_agent.fund_intro(s), full=full))
 

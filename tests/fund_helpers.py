@@ -144,3 +144,16 @@ def make_legacy_etf_fund() -> Portfolio:
          Holding("BND", "Vanguard Total Bond Market", 0.45, "core", 0.03), Holding("XLK", "Technology Select Sector SPDR", 0.10, "tilt", 0.08),
          Holding("AAPL", "Apple", 0.05, "stock", 0.0)]
     return Portfolio(2, "Moderate", h, 0.04, 2022, -15.6, [], [], score=40)
+
+
+def make_legacy_fund(cid: str = "sam", amount: float = 4_000) -> state.Session:
+    """A persona holding the hand-built older ETF fund (5 holdings, no slices): pages must still read it."""
+    s = state.get(cid)
+    s.fund.answers = {**ANSWERS}
+    s.fund.portfolio = make_legacy_etf_fund()
+    s.fund.risk_score, s.fund.invest_pct = s.fund.portfolio.score, 10.0
+    fund.invest(s.fund, amount)
+    s.fund.contributed = amount
+    s.step = len(QUESTIONS)
+    s.say("Your fund is ready.")
+    return s

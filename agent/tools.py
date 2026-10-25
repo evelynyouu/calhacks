@@ -5,10 +5,11 @@ from dataclasses import asdict, is_dataclass
 from datetime import date, datetime
 
 from app.state import Session
-from core import feed, fund, intake, market, spending
-from core.market import ETFS
-from core.portfolio import THEMES
+from core import feed, fund, intake, market, slices, spending
 from core.explain import explain_for_chat
+from core.market import ETFS
+from core.models import SLICES
+from core.portfolio import THEMES
 from core.profile import get_profile
 from core.report import build_report
 
@@ -19,15 +20,18 @@ THEME_ENUM = sorted(THEMES)
 TOOLS = [
     {
         "name": "get_fund",
-        "description": "The customer's fund: each holding with its target weight and what it is, the risk level "
-                       "and score, their interests, any overlap notes, the yearly fee, and their paycheck percent.",
+        "description": "The customer's fund, in its parts (slices): bonds, international, their own US index, "
+                       "companies where they spend, their interests, and companies they added. Each slice has its target "
+                       "weight and holdings; the US index comes as its sectors plus its ten biggest. Also the risk level "
+                       "and score, any overlap notes, the yearly fee, and their paycheck percent.",
         "input_schema": {"type": "object", "properties": {}},
     },
     {
         "name": "get_fund_explanation",
         "description": "Why the fund is built the way it is: the builder's own reasons for the risk score, the "
                        "bond share, each holding, and anything it capped, shrank, dropped or flagged. Pass a ticker "
-                       "to answer \"why do I own X?\". Same text as the How your fund was built page.",
+                       "to answer \"why do I own X?\": the reasons say which rule put it in the fund, and the result "
+                       "names its slice and sector. Same text as the How your fund was built page.",
         "input_schema": {"type": "object", "properties": {"ticker": {"type": "string"}}},
     },
     {
@@ -109,6 +113,9 @@ TOOLS = [
 
 
 def fund_summary(session: Session) -> dict:
+    """The fund as slices (bonds, international, the US index, where they spend, interests, companies added), each
+    with its holdings, so Claude isn't handed a flat list of 60. The US index, which is about 50 companies, is
+    given as its sectors plus its ten biggest."""
     a = session.fund
     p = a.portfolio
     return {
@@ -120,11 +127,44 @@ def fund_summary(session: Session) -> dict:
         "interests_without_a_fund": a.answers.get("interests", {}).get("unmatched", []),
         "single_companies": intake.stocks(a.answers),
         "fund_mode": "custom index: your US index of big companies, where you spend, your interests",
-        "holdings": [{"ticker": h.ticker, "what": market.info(h.ticker)["about"],
-                      "target_pct": round(h.weight * 100, 1), "role": h.role,
-                      "why": p.holding_reasons.get(h.ticker, "")} for h in p.holdings],
+        "holding_count": len(p.holdings),
+        "slices": [_slice_summary(sl) for sl in slices.view(p)],
         "yearly_fee_pct": p.annual_fee_pct, "overlap_notes": p.overlap_warnings,
     }
+
+
+US_INDEX_LISTED = 10   # how many of the US index's companies the chat tool names; the rest come as sectors
+
+
+def _slice_summary(sl: dict) -> dict:
+    def one(r: dict) -> dict:
+        return {"ticker": r["ticker"], "name": r["name"], "what": r["about"], "target_pct": round(r["weight"] * 100, 1),
+                "sector": r["sector"] or None}
+
+    out = {"slice": sl["label"], "key": sl["key"], "target_pct": round(sl["weight"] * 100, 1), "count": sl["count"],
+           "what_it_is": sl["blurb"]}
+    if sl["sectors"] and sl["count"] > US_INDEX_LISTED:
+        out["sectors"] = [{"sector": g["sector"], "target_pct": round(g["weight"] * 100, 1), "count": g["count"]}
+                          for g in sl["sectors"]]
+        out["biggest_holdings"] = [one(r) for r in sl["rows"][:US_INDEX_LISTED]]
+    else:
+        out["holdings"] = [one(r) for r in sl["rows"]]
+    if sl["personalized"]:
+        out["note"] = "Picked from the customer's bank purchases. This personalizes the fund; it isn't a prediction."
+    return out
+
+
+def fund_explanation(session: Session, ticker: str | None) -> dict:
+    """get_fund_explanation: the builder's reasons (core/explain.py), plus which slice and sector the holding is in."""
+    p = session.fund.portfolio
+    out = explain_for_chat(p, ticker)
+    if ticker:
+        h = next((h for h in p.holdings if h.ticker == ticker.upper()), None)
+        if h:
+            out["slice"], out["sector"], out["target_pct"] = dict(SLICES)[p.slice_of(h)], h.sector or None, round(h.weight * 100, 1)
+    else:
+        out["slice_weights_pct"] = {dict(SLICES)[k]: round(w * 100, 1) for k, w in p.slice_weights().items() if w}
+    return out
 
 
 def _plain(x):
@@ -199,7 +239,7 @@ def run_tool(session: Session, name: str, args: dict) -> tuple[dict, list[str]]:
     if name == "get_fund":
         return fund_summary(session), []
     if name == "get_fund_explanation":
-        return explain_for_chat(session.fund.portfolio, args.get("ticker") or None), []
+        return fund_explanation(session, args.get("ticker") or None), []
     if name == "get_report":
         return report_summary(session), []
     if name == "update_interests":

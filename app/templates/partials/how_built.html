@@ -43,7 +43,7 @@
             <summary class="flex cursor-pointer list-none justify-between text-sm font-medium"><span>{{ g.sector }} <span class="font-normal text-ink/50">{{ g.count }}</span></span><span class="tabular-nums">{{ g.weight | pct(1) }}</span></summary>
             <ul class="mt-1 divide-y divide-ink/10">
               {% for h in g.rows %}
-              <li class="py-1.5 text-sm" data-holding="{{ h.ticker }}" data-weight="{{ '%.4f' % h.weight }}">
+              <li class="py-1.5 text-sm" data-holding="{{ h.ticker }}" data-weight="{{ '%.4f' % (h.position if h.position is defined else h.weight) }}">
                 <div class="flex justify-between gap-3"><span><strong>{{ h.ticker }}</strong> {{ h.name }}</span><span class="tabular-nums">{{ h.weight | pct(1) }}</span></div>
                 {% for t in h.texts %}<p class="text-xs text-ink/60 mt-0.5 leading-relaxed">{{ t }}</p>{% endfor %}
               </li>
@@ -55,7 +55,7 @@
         {% else %}
         <ul class="mt-2 divide-y divide-ink/10 text-sm">
           {% for h in sl.holdings %}
-          <li class="py-2" data-holding="{{ h.ticker }}" data-weight="{{ '%.4f' % h.weight }}">
+          <li class="py-2" data-holding="{{ h.ticker }}" data-weight="{{ '%.4f' % (h.position if h.position is defined else h.weight) }}">
             <div class="flex justify-between gap-3"><span><strong>{{ h.ticker }}</strong> {{ h.name }}</span><span class="tabular-nums font-medium">{{ h.weight | pct(1) }}</span></div>
             {% for t in h.texts %}<p class="text-xs text-ink/60 mt-1 leading-relaxed">{{ t }}</p>{% endfor %}
           </li>

@@ -85,3 +85,29 @@ def explained(p: Portfolio, hidden_kinds: tuple[str, ...] = ()) -> list[dict]:
                     "personalized": sl["personalized"], "holdings": holdings,
                     "sectors": sector_groups(holdings) if sl["key"] == "us_core" else None})
     return out
+
+
+NAMED_UP_TO = 3        # a slice with this many holdings or fewer is listed by ticker in a one-line description
+
+
+def describe(p: Portfolio) -> str:
+    """The fund in one plain line, by slice: "Bonds 25% (BND); Your US index 36% (50 companies); Where you spend 8%
+    (TGT, SBUX, COST)". A small slice names its holdings; a big one says how many. For the chat's facts and its
+    offline answers, so neither lists sixty tickers."""
+    parts = []
+    for sl in view(p):
+        names = ", ".join(r["ticker"] for r in sl["rows"]) if sl["count"] <= NAMED_UP_TO else \
+            f"{sl['count']} {'companies' if sl['rows'][0]['sector'] else 'holdings'}"
+        parts.append(f"{sl['label']} {sl['weight']:.0%} ({names})")
+    return "; ".join(parts)
+
+
+def complete(how_slices: list[dict]) -> list[dict]:
+    """Fill in what the page needs on slices from core/explain.py, without overriding anything it supplied: the one-line
+    description, whether the slice is personalized, and the US index grouped by sector."""
+    for sl in how_slices:
+        sl.setdefault("blurb", BLURBS.get(sl["key"], ""))
+        sl.setdefault("personalized", sl["key"] == "spend")
+        if "sectors" not in sl:
+            sl["sectors"] = sector_groups(sl["holdings"]) if sl["key"] == "us_core" else None
+    return how_slices
