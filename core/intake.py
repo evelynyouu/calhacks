@@ -3,10 +3,12 @@
 Each question says what input the chat shows for it:
   text   open-ended, typed            money   a dollar amount, typed
   slider a number in a range          scale   1 to 10
-  choice up to 4 options              chips   pick many, plus "Other" (typed)
+  choice up to 5 options              chips   pick many, plus "Other" (typed)
 
 The risk questions ask what the customer is comfortable with, not what they'd "do" in a test:
-there are no wrong answers. Each maps to 0..1 and the average sets the risk level.
+there are no wrong answers. The two preference answers (what matters most, the $1,000 range) map to
+0..1 and their average is the risk score. The time horizon and the biggest drop they can live with
+are limits, not preferences: core/builder.py uses them as ceilings on the mix.
 """
 from __future__ import annotations
 
@@ -14,7 +16,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Literal
 
-from core.portfolio import THEME_LABELS
+from core.portfolio import BOND_MAX, THEME_LABELS, level_for_score, worst_return_for
 
 QuestionKind = Literal["text", "money", "slider", "scale", "choice", "chips"]
 
@@ -36,6 +38,8 @@ class Question:
 
 
 INTEREST_OPTIONS = sorted(THEME_LABELS.items(), key=lambda kv: kv[1])
+# The steadiest mix's real worst year (2022, when bonds fell too): no answer below this can be met.
+STEADIEST_WORST = abs(worst_return_for(1, [], [], bond_share=BOND_MAX))   # the same check the builder uses
 MAX_MONEY = 10_000_000
 
 QUESTIONS: list[Question] = [
@@ -60,10 +64,18 @@ QUESTIONS: list[Question] = [
         ("widest", "Ends between $700 and $1,400"),
     ]),
     Question("max_drop", "slider", "How big a drop in one year could you live with?",
-             help="As a percent of your fund. Everyone has a different number.",
-             min=0, max=50, step=5, default=15, unit="%", risk=True),
-    Question("swing_comfort", "scale", "How comfortable are you with investments whose value moves around a lot?",
-             min=1, max=10, step=1, default=5, ends=("Not at all", "Totally fine"), risk=True),
+             help=f"As a percent of your fund. We build the riskiest mix whose real worst year (2008 or 2022) stayed "
+                  f"within this. Even the steadiest mix lost {STEADIEST_WORST:g}% in 2022, so a smaller number gets "
+                  f"the steadiest mix.",
+             min=0, max=50, step=5, default=20, unit="%", risk=True),
+    Question("horizon", "choice", "When will you need most of this money?",
+             help="Money you need soon has less time to recover from a drop, so it sets a limit on the mix.", options=[
+        ("lt3", "In under 3 years"),
+        ("3to7", "In 3 to 7 years"),
+        ("7to15", "In 7 to 15 years"),
+        ("15plus", "In 15 years or more"),
+        ("unsure", "Not sure yet"),
+    ]),
     Question("interests", "chips", "Which industries or themes are you excited about?",
              help="Pick as many as you like, or none to keep it broad. Use Other for anything not listed.",
              options=INTEREST_OPTIONS),
@@ -172,24 +184,35 @@ def match_interests(text: str) -> tuple[list[str], list[str]]:
     return themes, unmatched
 
 
-def risk_score(answers: dict) -> int:
-    """0 (most careful) .. 100 (most adventurous): the average of the risk answers."""
-    parts = []
-    for key, order in _CHOICE_SCORES.items():
-        if key in answers:
-            parts.append(order.index(answers[key]) / (len(order) - 1))
+def risk_parts(answers: dict) -> dict[str, float]:
+    """Each risk answer on a 0 (most careful) .. 1 (most adventurous) scale."""
+    parts = {key: order.index(answers[key]) / (len(order) - 1)
+             for key, order in _CHOICE_SCORES.items() if answers.get(key) in order}
     if "max_drop" in answers:
         q = BY_KEY["max_drop"]
-        parts.append((answers["max_drop"] - q.min) / (q.max - q.min))
-    if "swing_comfort" in answers:
-        q = BY_KEY["swing_comfort"]
-        parts.append((answers["swing_comfort"] - q.min) / (q.max - q.min))
-    return round(100 * sum(parts) / len(parts)) if parts else 50
+        parts["max_drop"] = (answers["max_drop"] - q.min) / (q.max - q.min)
+    return parts
+
+
+def risk_score(answers: dict) -> int:
+    """0 (most careful) .. 100 (most adventurous): the average of the two preference answers."""
+    prefs = [v for k, v in risk_parts(answers).items() if k in _CHOICE_SCORES]
+    return round(100 * sum(prefs) / len(prefs)) if prefs else 50
 
 
 def risk_level(score: int) -> int:
     """Score -> 1 Conservative .. 4 Aggressive, in equal bands of 25."""
-    return min(4, 1 + score // 25)
+    return level_for_score(score)
+
+
+def answer_label(key: str, answers: dict) -> str:
+    """How an answer reads on screen ("Steady growth with small dips", "15%")."""
+    q, v = BY_KEY[key], answers.get(key)
+    if q.kind == "choice":
+        return dict(q.options).get(v, "")
+    if q.kind == "slider":
+        return f"{v:g}{q.unit}" if v is not None else ""
+    return str(v or "")
 
 
 def interests(answers: dict) -> list[str]:

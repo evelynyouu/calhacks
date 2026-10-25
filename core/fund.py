@@ -16,11 +16,12 @@ from core import intake, market, nessie
 from core.broker import get_broker, values
 from core.models import Portfolio, Trade
 from core.policy import tier_for
-
-AUTO_EXECUTE_TIER = 4   # Tier 4+ ($50K+): trades run immediately when auto_trade is on
-from core.portfolio import build_custom_portfolio, build_portfolio, build_spending_portfolio
+from core.builder import build as build_fund
+from core.spending import spending_profile
 from core.profile import get_profile
 from core.rebalance import allocate_new_money
+
+AUTO_EXECUTE_TIER = 4   # Tier 4+ ($50K+): trades run immediately when auto_trade is on
 
 
 @dataclass
@@ -40,28 +41,19 @@ class FundAccount:
 
 
 def build(acct: FundAccount) -> Portfolio:
-    """(Re)build the fund from the intake answers.
-
-    Priority:
-      1. custom_mode=True  -> build_custom_portfolio (explicit ETF->stocks swap)
-      2. etf_mode=True     -> build_portfolio (force ETF mode)
-      3. default           -> build_spending_portfolio (Nessie-driven individual stocks;
-                              falls back to build_portfolio if no Nessie signals)
-    """
+    """(Re)build the fund from the intake answers and the customer's spending (core/builder.py)."""
     acct.risk_score = intake.risk_score(acct.answers)
-    level = intake.risk_level(acct.risk_score)
-    interests = intake.interests(acct.answers)
-    stocks = intake.stocks(acct.answers)
-    if acct.answers.get("custom_mode"):
-        spending_stocks = acct.answers.get("spending_stocks", [])
-        acct.portfolio = build_custom_portfolio(level, interests, stocks, spending_stocks)
-    elif acct.answers.get("etf_mode"):
-        acct.portfolio = build_portfolio(level, interests, stocks)
-    else:
-        # Default: spending-driven individual stocks powered by Nessie data
-        acct.portfolio = build_spending_portfolio(acct.customer_id, level, interests, stocks)
+    acct.portfolio = build_fund(acct.answers, spending=_spending(acct.customer_id))
     acct.invest_pct = float(acct.answers.get("paycheck_pct", acct.invest_pct))
     return acct.portfolio
+
+
+def _spending(cid: str):
+    """Where the customer spends, from the bank; None (no spend slice) for a customer the bank doesn't know."""
+    try:
+        return spending_profile(cid)
+    except KeyError:
+        return None
 
 
 def start(acct: FundAccount, on: date | None = None) -> list[Trade]:
@@ -156,6 +148,13 @@ def set_interests(acct: FundAccount, themes: list[str]) -> Portfolio:
 def set_stocks(acct: FundAccount, tickers: list[str]) -> Portfolio:
     """Single companies to hold. Like interests: targets change now, trades follow new money or a rebalance."""
     acct.answers["stocks"] = list(dict.fromkeys(t.upper() for t in tickers))
+    return build(acct)
+
+
+def set_override(acct: FundAccount, use_answers: bool) -> Portfolio:
+    """Build what the answers pointed to (True) or our suggestion within the limits (False). Like interests:
+    targets change now, trades follow new money or a rebalance."""
+    acct.answers["override"] = bool(use_answers)
     return build(acct)
 
 

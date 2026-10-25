@@ -24,7 +24,24 @@
         "due_in_days": 9
       }
     ],
-    "expected_readiness": "not_yet"
+    "expected_readiness": "not_yet",
+    "merchants": [
+      {
+        "name": "Walmart",
+        "category": "Groceries",
+        "share": 0.5
+      },
+      {
+        "name": "Starbucks",
+        "category": "Restaurants",
+        "share": 0.25
+      },
+      {
+        "name": "Uber",
+        "category": "Transportation",
+        "share": 0.25
+      }
+    ]
   },
   "jordan": {
     "name": "Jordan",
@@ -46,7 +63,24 @@
         "due_in_days": 5
       }
     ],
-    "expected_readiness": "start_small"
+    "expected_readiness": "start_small",
+    "merchants": [
+      {
+        "name": "Target",
+        "category": "Shopping",
+        "share": 0.45
+      },
+      {
+        "name": "McDonald's",
+        "category": "Restaurants",
+        "share": 0.3
+      },
+      {
+        "name": "Corner Cafe",
+        "category": "Restaurants",
+        "share": 0.25
+      }
+    ]
   },
   "sam": {
     "name": "Sam",
@@ -73,7 +107,24 @@
         "due_in_days": 7
       }
     ],
-    "expected_readiness": "ready"
+    "expected_readiness": "ready",
+    "merchants": [
+      {
+        "name": "Trader Joe's",
+        "category": "Groceries",
+        "share": 0.5
+      },
+      {
+        "name": "Target",
+        "category": "Shopping",
+        "share": 0.3
+      },
+      {
+        "name": "Netflix",
+        "category": "Streaming",
+        "share": 0.2
+      }
+    ]
   },
   "alex": {
     "name": "Alex",
@@ -95,6 +146,23 @@
         "due_in_days": 10
       }
     ],
-    "expected_readiness": "ready"
+    "expected_readiness": "ready",
+    "merchants": [
+      {
+        "name": "Costco",
+        "category": "Groceries",
+        "share": 0.5
+      },
+      {
+        "name": "Amazon",
+        "category": "Shopping",
+        "share": 0.3
+      },
+      {
+        "name": "Tesla Supercharger",
+        "category": "Transportation",
+        "share": 0.2
+      }
+    ]
   }
 }

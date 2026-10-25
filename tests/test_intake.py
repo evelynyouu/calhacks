@@ -7,7 +7,7 @@ from core.intake import BY_KEY, QUESTIONS, AnswerError, match_interests, parse, 
 def test_question_kinds_follow_the_input_rules():
     for q in QUESTIONS:
         if q.kind == "choice":
-            assert 2 <= len(q.options) <= 4, q.key       # fewer than 5 answers -> multiple choice
+            assert 2 <= len(q.options) <= 5, q.key       # 5 or fewer answers -> multiple choice (horizon has 5)
         if q.kind in ("slider", "scale"):
             assert q.min < q.max and q.step > 0, q.key
         if q.kind == "chips":
@@ -38,7 +38,8 @@ def test_slider_rounds_to_step_and_checks_range():
 
 
 def test_scale_shows_out_of_ten():
-    assert parse(BY_KEY["swing_comfort"], "7") == (7, "7 out of 10")
+    from core.intake import Question   # no intake question is a scale since horizon replaced swing_comfort
+    assert parse(Question("x", "scale", "?", min=1, max=10), "7") == (7, "7 out of 10")
 
 
 def test_choice_must_be_an_option():
@@ -73,9 +74,11 @@ def test_match_interests(text, themes):
 
 
 def test_risk_score_bounds_and_levels():
-    careful = {"risk_priority": "protect", "risk_range": "narrow", "max_drop": 0, "swing_comfort": 1}
-    bold = {"risk_priority": "max", "risk_range": "widest", "max_drop": 50, "swing_comfort": 10}
+    # The score averages the two preference answers; max_drop and horizon are ceilings (core/builder.py).
+    careful = {"risk_priority": "protect", "risk_range": "narrow", "max_drop": 0}
+    bold = {"risk_priority": "max", "risk_range": "widest", "max_drop": 50}
     assert risk_score(careful) == 0 and risk_level(0) == 1
     assert risk_score(bold) == 100 and risk_level(100) == 4
-    middle = {"risk_priority": "steady", "risk_range": "medium", "max_drop": 15, "swing_comfort": 4}
-    assert risk_level(risk_score(middle)) == 2
+    middle = {"risk_priority": "steady", "risk_range": "medium", "max_drop": 15}
+    assert risk_score(middle) == 33 and risk_level(risk_score(middle)) == 2
+    assert risk_score({**middle, "max_drop": 50}) == 33          # the drop answer doesn't move the score

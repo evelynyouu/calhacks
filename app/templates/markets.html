@@ -78,7 +78,7 @@
           <button class="btn-ghost">{{ 'Remove from watchlist' if d.watching else '☆ Add to watchlist' }}</button></form>
         {% if d.is_stock %}
         <form method="post" action="/p/{{ cid }}/stocks"><input type="hidden" name="symbol" value="{{ d.symbol }}"><input type="hidden" name="op" value="remove"><button class="btn-ghost">Remove from my fund</button></form>
-        {% elif d.can_add_stock and not d.in_fund %}
+        {% elif d.can_add_stock %}{# you may already own a little through your US index; adding it is a separate, personal pick #}
         <form method="post" action="/p/{{ cid }}/stocks"><input type="hidden" name="symbol" value="{{ d.symbol }}"><input type="hidden" name="op" value="add"><button class="btn">Add to my fund</button></form>
         {% elif d.theme and not d.in_fund %}
         <form method="post" action="/p/{{ cid }}/rec"><input type="hidden" name="action" value="add_interest"><input type="hidden" name="value" value="{{ d.theme }}"><button class="btn">Add {{ d.info.label }} to my interests</button></form>

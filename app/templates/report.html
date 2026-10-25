@@ -26,11 +26,11 @@
     </p>
     <dl class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
       <div class="stat" title="The fund's return with the timing of your deposits taken out, including estimated income."><dt>Your fund</dt><dd class="{{ tone(p.twr_pct) }}">{{ pv(p.twr_pct) }}</dd></div>
-      <div class="stat" title="VTI, VXUS and BND at your fund's own stock/bond split, getting the same deposits on the same days."><dt>Your benchmark</dt><dd>{{ pv(p.benchmark_pct) }}</dd></div>
+      <div class="stat" title="Your plain mix: your US index at its normal weights, VXUS and BND, at your fund's own stock/bond split, getting the same deposits on the same days."><dt>Your benchmark</dt><dd>{{ pv(p.benchmark_pct) }}</dd></div>
       <div class="stat" title="What your choices (interests, companies, drift) added or cost, in percentage points."><dt>You vs benchmark</dt><dd class="{{ tone(p.vs_benchmark_pts) }}">{% if p.vs_benchmark_pts is none %}—{% else %}{{ '%+.2f' | format(p.vs_benchmark_pts) }} pts{% endif %}</dd></div>
       <div class="stat" title="100% US stocks. Shown for context; a fund with bonds isn't expected to match it."><dt>S&amp;P 500, the market</dt><dd>{{ pv(p.spy_pct) }}</dd></div>
     </dl>
-    <p class="mt-2 text-xs text-ink/55">Your benchmark is the same core funds you own (VTI, VXUS, BND) at your fund's own {{ ((1 - rep.returns.benchmark.BND) * 100) | round | int }}% stock / {{ (rep.returns.benchmark.BND * 100) | round | int }}% bond split, with your interest and company picks put back into the stock funds. Comparing with it shows what your choices did; the S&amp;P 500 is all stocks, so it isn't the fair yardstick for a fund with bonds.</p>
+    <p class="mt-2 text-xs text-ink/55">Your benchmark is your plain mix: your US index at its normal weights, VXUS and BND, at your fund's own {{ ((1 - rep.returns.benchmark.BND) * 100) | round | int }}% stock / {{ (rep.returns.benchmark.BND * 100) | round | int }}% bond split, with your spending, interest and company picks put back into the index. Comparing with it shows what your choices did; the S&amp;P 500 is all stocks, so it isn't the fair yardstick for a fund with bonds.</p>
     {% elif p %}
     <p class="mt-1 text-sm text-ink/70">Your fund started today, so there's no return to show yet.</p>
     {% else %}
@@ -94,7 +94,7 @@
     <ul class="mt-2 text-sm divide-y divide-ink/10">{% for x in p.picks %}<li class="py-2"><strong>{{ x.label }}</strong> <span class="text-ink/50">{{ x.ticker }} · {{ x.weight | pct(1) }} of fund</span></li>{% endfor %}</ul>
     <p class="mt-2 text-xs text-ink/55">How each pick does against the core fund it replaced shows once your money has been invested for a day.</p>
     {% elif p and p.picks %}
-    <p class="text-xs text-ink/50 mt-0.5">Each interest fund and company, over the same {{ p.days }} days, against the core stock funds (VTI and VXUS) it replaced. "Vs core" in dollars is what the same money would have made there instead.</p>
+    <p class="text-xs text-ink/50 mt-0.5">Each interest fund and company, over the same {{ p.days }} days, against the plain index it replaced (your US index at its normal weights, and VXUS). "Vs core" in dollars is what the same money would have made there instead.</p>
     <ul class="mt-2 text-sm divide-y divide-ink/10">
       {% for x in p.picks %}
       <li class="py-2">
@@ -259,7 +259,7 @@
       </ol>
       <ul class="mt-3 text-sm space-y-1.5 text-ink/80">
         <li>Your fund is <strong>{{ role.fund_value | money }}</strong>{% if role.fund_share_of_net_worth_pct is not none %}, {{ '%g' % role.fund_share_of_net_worth_pct }}% of your net worth of {{ role.net_worth | money }} (fund, cash and checking, minus card debt){% endif %}.</li>
-        <li>Most of it, {{ ((1 - role.bond_share - role.interest_share) * 100) | round | int }}%, is the broad core: thousands of companies in VTI and VXUS, owned cheaply ({{ role.fee_dollars | money2 }} a year in fees). Bonds, {{ (role.bond_share * 100) | round | int }}%, soften the dips. {{ (role.interest_share * 100) | round | int }}% is your own picks.</li>
+        <li>Most of it, {{ ((1 - role.bond_share - role.interest_share) * 100) | round | int }}%, is the broad core: your US index of big companies plus thousands more abroad in VXUS, owned cheaply ({{ role.fee_dollars | money2 }} a year in fees). Bonds, {{ (role.bond_share * 100) | round | int }}%, soften the dips. {{ (role.interest_share * 100) | round | int }}% is your own picks.</li>
         <li>Each paycheck buys at that day's prices, so you buy more shares when prices are low and fewer when they're high, without having to time anything.</li>
         <li>If the market fell {{ '%g' % role.crash_pct }}%, your fund would typically fall about {{ '%g' % role.crash_fund_drop_pct }}% (about {{ role.crash_dollars | money }}), approximately.{% if role.comfort_drop_pct is not none %} You said you could live with a {{ '%g' % role.comfort_drop_pct }}% drop, so that is {{ 'within' if role.within_comfort else 'beyond' }} your comfort level.{% endif %}</li>
         {% if role.goal and role.typical_in_10_years %}<li>For "{{ role.goal }}": at this pace the typical 10-year result is {{ role.typical_in_10_years | money }}, an assumption, not a promise.</li>{% endif %}

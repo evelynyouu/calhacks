@@ -1,18 +1,91 @@
-"""Spending-based fund and risk insights from C1/Nessie banking data.  OWNER: Saahil.
+"""What the customer spends money on, from C1/Nessie banking data.  OWNER: Evelyn (spending profile), Saahil (insights).
 
-Three features:
-- Direct stock mapping: map what a customer spends on to the actual companies they're buying
-  from. "You buy groceries at Costco -> hold COST." Weighted by actual dollars spent.
-- Theme suggestions: map spending patterns to fund themes for interest discovery.
-- Risk adjustment: use actual banking data (cushion months, debt, surplus share) to sanity-check
-  the risk level from the intake questionnaire.
-- Reinvestment signal: compare observed spending to the monthly baseline to surface money that
-  could be invested right now.
+The fund's "where you spend" slice (core/portfolio.py) uses spending_profile(): [spend] purchases in the
+last WINDOW_DAYS of the sim clock, by dollars, read from the activity feed (so live Nessie, demo data and
+the offline fallback agree). Bills and one-off [event] purchases don't count. Fast-forward's lump of
+day-to-day spending is spread over the persona's usual merchants (personas.json "merchants"). A merchant
+maps to its company by name (data/merchants.csv); a private or local one falls back to its category's
+biggest public companies (data/category_leaders.csv).
+
+Saahil's insights below (the chat's get_spending_insights tool and the Spending page) read the same feed:
+theme suggestions from spending, a risk sanity-check from banking data, and a reinvestment signal.
+MERCHANT_TO_TICKERS is his richer merchant table; spending_stock_details() is kept for those features.
 """
 from __future__ import annotations
 
-from core import nessie
+import csv
+import re
+from dataclasses import dataclass
+from datetime import date, timedelta
+from typing import Literal
+
+from core import nessie, seed
+from core.market import COMPANIES, DATA
 from core.models import FinancialProfile
+from core.state import SIM_START
+
+WINDOW_DAYS = 90
+LUMP = "day-to-day spending"   # fast-forward's [spend] text
+
+with (DATA / "merchants.csv").open() as _f:
+    BRANDS = [(re.compile(r["pattern"], re.I), r["ticker"] or None) for r in csv.DictReader(_f)]
+with (DATA / "category_leaders.csv").open() as _f:
+    CATEGORY_LEADERS = {r["category"]: r["tickers"].split(";") for r in csv.DictReader(_f)}
+
+
+@dataclass(frozen=True)
+class Spend:
+    merchant: str
+    category: str
+    dollars: float
+    ticker: str | None                              # the merchant's own company, if it has one we hold
+    via: Literal["brand", "category", "none"]       # how it maps to companies
+
+
+def spending_profile(cid: str, days: int = WINDOW_DAYS) -> list[Spend]:
+    """One Spend per merchant, most dollars first."""
+    feed = nessie.recent_activity(cid, None)
+    as_of = max([date.fromisoformat(i["on"]) for i in feed] + [SIM_START])
+    start = as_of - timedelta(days=days)
+    usual = nessie.persona_seed(cid).get("merchants", [])
+    dollars: dict[str, float] = {}
+    for item in feed:
+        if item["tag"] != "spend" or not start < date.fromisoformat(item["on"]) <= as_of:
+            continue
+        if item["text"] == LUMP and usual:
+            for m in usual:
+                dollars[m["name"]] = dollars.get(m["name"], 0.0) + item["amount"] * m["share"]
+        else:
+            dollars[item["text"]] = dollars.get(item["text"], 0.0) + item["amount"]
+    out = [_spend(name, round(d, 2)) for name, d in dollars.items() if d > 0]
+    return sorted(out, key=lambda s: (-s.dollars, s.merchant))
+
+
+def company_spend(profile: list[Spend]) -> dict[str, float]:
+    """{ticker: dollars}. A category fallback splits its dollars evenly over the category's leaders."""
+    return {t: sum(d for _, d, _ in parts) for t, parts in company_spend_detail(profile).items()}
+
+
+def company_spend_detail(profile: list[Spend]) -> dict[str, list[tuple[str, float, str]]]:
+    """{ticker: [(merchant, dollars, via)]}: where each company's dollars came from."""
+    out: dict[str, list[tuple[str, float, str]]] = {}
+    for s in profile:
+        tickers = [s.ticker] if s.ticker else CATEGORY_LEADERS.get(s.category, []) if s.via == "category" else []
+        for t in tickers:
+            out.setdefault(t, []).append((s.merchant, s.dollars / len(tickers), s.via))
+    return out
+
+
+def _spend(merchant: str, dollars: float) -> Spend:
+    category = {name: cat for name, cat in seed.MERCHANTS.values()}.get(merchant, "")
+    ticker = next((t for rx, t in BRANDS if rx.search(merchant)), None)
+    if ticker and ticker in COMPANIES:
+        return Spend(merchant, category, dollars, ticker, "brand")
+    return Spend(merchant, category, dollars, None, "category" if category in CATEGORY_LEADERS else "none")
+
+
+# ---------- Saahil: insights from spending and banking data ----------
+
 
 # ---------------------------------------------------------------------------
 # Direct merchant name -> list of investable tickers (ordered by conviction).

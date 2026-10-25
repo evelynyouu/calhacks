@@ -92,6 +92,9 @@ def test_payment_below_interest_never_promises_a_date():
 
 @pytest.mark.parametrize("risk,cap", [(1, 0.10), (2, 0.15), (3, 0.20), (4, 0.25)])
 def test_tilt_cap_scales_with_risk(risk, cap):
-    from core.portfolio import build_portfolio
-    tilt = sum(h.weight for h in build_portfolio(risk, ["healthcare"]).holdings if h.role == "tilt")
-    assert tilt == pytest.approx(cap)
+    # One interest gets at most PER_INTEREST_CAP (8%) at any level; many interests fill up to the level's cap.
+    from core.portfolio import PER_INTEREST_CAP, build_portfolio
+    one = build_portfolio(risk, ["healthcare"]).tilt_share   # the interest part (its companies are also in the US index)
+    assert one == pytest.approx(min(cap, PER_INTEREST_CAP))
+    many = ["healthcare", "staples", "financials", "utilities", "industrials", "dividends"]
+    assert build_portfolio(risk, many).tilt_share == pytest.approx(cap, abs=1e-3)

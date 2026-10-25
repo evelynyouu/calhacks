@@ -6,9 +6,9 @@ from datetime import date, datetime
 
 from app.state import Session
 from core import feed, fund, intake, market, spending
-from core.portfolio import build_custom_portfolio, custom_fund_preview
 from core.market import ETFS
 from core.portfolio import THEMES
+from core.explain import explain_for_chat
 from core.profile import get_profile
 from core.report import build_report
 
@@ -22,6 +22,13 @@ TOOLS = [
         "description": "The customer's fund: each holding with its target weight and what it is, the risk level "
                        "and score, their interests, any overlap notes, the yearly fee, and their paycheck percent.",
         "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_fund_explanation",
+        "description": "Why the fund is built the way it is: the builder's own reasons for the risk score, the "
+                       "bond share, each holding, and anything it capped, shrank, dropped or flagged. Pass a ticker "
+                       "to answer \"why do I own X?\". Same text as the How your fund was built page.",
+        "input_schema": {"type": "object", "properties": {"ticker": {"type": "string"}}},
     },
     {
         "name": "get_report",
@@ -78,36 +85,6 @@ TOOLS = [
                          "required": ["percent"]},
     },
     {
-        "name": "get_custom_fund_preview",
-        "description": "Show what a custom fund would look like: the exact individual stocks that would replace "
-                       "the sector ETFs for the customer's current interests, plus company suggestions from their "
-                       "spending history. Does not change anything. Call this before switch_to_custom_fund so the "
-                       "customer can see the holdings first.",
-        "input_schema": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "switch_to_custom_fund",
-        "description": "Rebuild the fund using individual stocks instead of sector ETFs. Each interest's slice "
-                       "becomes its top 3 companies (e.g. tech → NVDA + MSFT + AAPL). Optionally include "
-                       "spending-derived stocks. Only call when the customer confirms they want this.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "spending_stocks": {
-                    "type": "array", "items": {"type": "string"},
-                    "description": "Company tickers to add from spending history (e.g. ['COST', 'WMT']). "
-                                   "Leave empty to use only interest-derived stocks.",
-                },
-            },
-        },
-    },
-    {
-        "name": "switch_to_etf_fund",
-        "description": "Switch to sector ETF mode (VTI/VXUS/BND + sector tilts) instead of individual stocks. "
-                       "Only call when the customer explicitly asks for ETFs over individual stocks.",
-        "input_schema": {"type": "object", "properties": {}},
-    },
-    {
         "name": "get_spending_insights",
         "description": "Spending breakdown from the customer's C1/Nessie bank data: what categories they spend on, "
                        "up to 5 fund themes that match their real spending habits (e.g. dining → consumer sector), "
@@ -136,12 +113,13 @@ def fund_summary(session: Session) -> dict:
     p = a.portfolio
     return {
         "risk_label": p.risk_label, "risk_level": p.risk_level, "risk_score_out_of_100": a.risk_score,
+        "risk_score_used": p.score,
+        "limits": [r.text for r in p.reasons if r.kind in ("contradiction", "horizon", "drop", "override")],
         "paycheck_percent": a.invest_pct, "goal": a.answers.get("goal"),
         "interests": [THEMES[t] + " " + ETFS[THEMES[t]]["label"] for t in intake.interests(a.answers)],
         "interests_without_a_fund": a.answers.get("interests", {}).get("unmatched", []),
         "single_companies": intake.stocks(a.answers),
-        "fund_mode": ("custom" if a.answers.get("custom_mode") else
-                      "etf" if a.answers.get("etf_mode") else "spending"),
+        "fund_mode": "custom index: your US index of big companies, where you spend, your interests",
         "holdings": [{"ticker": h.ticker, "what": market.info(h.ticker)["about"],
                       "target_pct": round(h.weight * 100, 1), "role": h.role,
                       "why": p.holding_reasons.get(h.ticker, "")} for h in p.holdings],
@@ -176,7 +154,8 @@ def report_summary(session: Session) -> dict:
         "as_of": rep["as_of"], "summary": rep["summary"],
         "period": window(ret["period"]), "since_start": window(ret["since_start"]),
         "benchmark_weights": ret["benchmark"],
-        "benchmark_note": "The benchmark is VTI/VXUS/BND at this fund's own stock/bond split, with the same deposits.",
+        "benchmark_note": "The benchmark is this fund's plain mix: the same stock/bond split with nothing personal (the US "
+                          "index at its normal weights, VXUS and BND), with the same deposits.",
         "holdings": [{k: h[k] for k in ("ticker", "label", "value", "weight", "target", "off_target", "day_pct",
                                         "period_pct", "gain_pct", "simulated")} for h in rep["holdings"]],
         "top_companies": [{k: c[k] for k in ("name", "ticker", "share", "via", "period_pct")} for c in rep["companies"][:5]],
@@ -219,6 +198,8 @@ def run_tool(session: Session, name: str, args: dict) -> tuple[dict, list[str]]:
         return {"error": "No fund yet; the customer is still answering the intake questions."}, []
     if name == "get_fund":
         return fund_summary(session), []
+    if name == "get_fund_explanation":
+        return explain_for_chat(session.fund.portfolio, args.get("ticker") or None), []
     if name == "get_report":
         return report_summary(session), []
     if name == "update_interests":
@@ -245,36 +226,6 @@ def run_tool(session: Session, name: str, args: dict) -> tuple[dict, list[str]]:
     if name == "set_paycheck_percent":
         fund.set_invest_pct(session.fund, args["percent"])
         return {"paycheck_percent": session.fund.invest_pct}, ["account"]
-    if name == "get_custom_fund_preview":
-        from core.intake import risk_level as _rl
-        level = _rl(session.fund.risk_score or 50) if session.fund.risk_score is not None else 2
-        ints = intake.interests(session.fund.answers)
-        profile = get_profile(session.fund.customer_id)
-        spend_suggestions = spending.spending_stock_suggestions(session.fund.customer_id, profile)
-        preview = custom_fund_preview(level, ints, spending_stocks=None)
-        current_mode = "custom" if session.fund.answers.get("custom_mode") else "etf"
-        return _plain({
-            "current_mode": current_mode,
-            "interest_stocks": preview,
-            "spending_suggestions": spend_suggestions,
-            "note": (f"Your {len(ints)} interest(s) would become {len(preview)} individual stocks. "
-                     "Call switch_to_custom_fund to apply, or add spending_stocks tickers from the suggestions."),
-        }), []
-    if name == "switch_to_custom_fund":
-        tickers = [t.upper().strip() for t in args.get("spending_stocks", []) if t.strip()]
-        session.fund.answers["custom_mode"] = True
-        session.fund.answers["spending_stocks"] = tickers
-        fund.build(session.fund)
-        n = len(session.fund.portfolio.holdings)
-        session.fund.log.insert(0, f"Switched to custom fund: {n} individual stocks.")
-        return {**fund_summary(session), "mode": "custom", "holdings_count": n}, ["fund", "account"]
-    if name == "switch_to_etf_fund":
-        session.fund.answers.pop("custom_mode", None)
-        session.fund.answers.pop("spending_stocks", None)
-        session.fund.answers.pop("etf_mode", None)   # clear to re-enable spending mode
-        fund.build(session.fund)   # will use spending portfolio (the new default)
-        session.fund.log.insert(0, "Rebuilt fund with Nessie spending data.")
-        return {**fund_summary(session), "mode": "spending"}, ["fund", "account"]
     if name == "get_spending_insights":
         profile = get_profile(session.fund.customer_id)
         breakdown = spending.spending_breakdown(session.fund.customer_id, profile)

@@ -36,41 +36,48 @@ def test_shock_moves_stocks_by_beta_and_barely_moves_bonds():
 
 
 @pytest.mark.parametrize("level", [1, 2, 3, 4])
-def test_weights_add_up_and_interests_get_the_cap(level):
+def test_weights_add_up_and_interests_stay_within_the_cap(level):
+    # Each interest now gets up to 8% (less if it swings more), so two interests no longer fill the cap.
     p = build_portfolio(level, ["tech", "healthcare"])
     assert sum(h.weight for h in p.holdings) == pytest.approx(1.0, abs=1e-4)
-    assert p.tilt_share == pytest.approx(TILT_CAP_BY_RISK[level], abs=1e-3)
+    assert 2 * MIN_TILT <= p.tilt_share <= TILT_CAP_BY_RISK[level] + 1e-4
 
 
 def test_too_many_interests_are_trimmed_with_a_note():
     themes = ["tech", "healthcare", "biotech", "financials", "real_estate", "gold", "gaming", "utilities"]
     p = build_portfolio(1, themes)
-    assert len([h for h in p.holdings if h.role == "tilt"]) == round(TILT_CAP_BY_RISK[1] / MIN_TILT)
+    # interests are companies now (several per interest), so count the interests left out, not holdings
+    left_out = [r for r in p.reasons if r.kind == "dropped"]
+    assert len(themes) - len(left_out) == round(TILT_CAP_BY_RISK[1] / MIN_TILT)
     assert any("left out" in w for w in p.overlap_warnings)
 
 
-def test_overlap_warning_from_look_through():
+def test_a_company_held_for_two_reasons_is_one_position_and_says_so():
+    # interests are companies now, so "two funds hold the same company" became "one company, two reasons"
     p = build_portfolio(3, ["tech", "ai_chips"])
-    assert any("XLK and SMH both hold NVDA" in w for w in p.overlap_warnings)
+    assert sum(h.ticker == "NVDA" for h in p.holdings) == 1
+    assert any(r.kind == "combined" and r.ticker == "NVDA" for r in p.reasons)
 
 
 def test_single_companies_are_capped_and_come_out_of_stocks():
     p = build_portfolio(2, ["tech"], ["aapl", "NVDA", "MSFT", "AMZN", "META"])
-    picks = [h for h in p.holdings if h.role == "stock"]
-    assert [h.ticker for h in picks] == ["AAPL", "NVDA", "MSFT", "AMZN"]       # moderate: 8% room, 2% each
-    assert sum(h.weight for h in picks) == pytest.approx(0.08, abs=1e-3)
+    added = p.parts["added"]                      # the added part only; these companies are also in the US index
+    assert list(added) == ["AAPL", "NVDA", "MSFT", "AMZN"]                    # moderate: 8% room, 2% each
+    assert sum(added.values()) == pytest.approx(0.08, abs=1e-3)
     assert next(h for h in p.holdings if h.ticker == "BND").weight == 0.45      # bonds untouched
-    assert all(h.expense_ratio == 0 for h in picks) and any("left out: META" in w for w in p.overlap_warnings)
+    held = {h.ticker: h for h in p.holdings}
+    assert all(held[t].expense_ratio == 0 for t in added) and any("left out: META" in w for w in p.overlap_warnings)
 
 
 def test_one_company_gets_at_most_5_percent():
     p = build_portfolio(4, [], ["AAPL"])
-    assert next(h for h in p.holdings if h.ticker == "AAPL").weight == 0.05
+    assert p.parts["added"]["AAPL"] == 0.05       # the added part; Apple's US-index part comes on top
 
 
 def test_no_interests_is_just_the_core():
+    from core.universe import core_companies
     p = build_portfolio(2, [])
-    assert [h.ticker for h in p.holdings] == ["VTI", "VXUS", "BND"]
+    assert [h.ticker for h in p.holdings] == ["BND", "VXUS", *core_companies()]   # bonds, international, the US index
 
 
 def test_rebalance_sells_dropped_funds_and_nets_to_zero():

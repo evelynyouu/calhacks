@@ -1,67 +1,107 @@
-ticker,name,etf,price
-AAPL,Apple,XLK,347.725
-MSFT,Microsoft,XLK,524.51
-NVDA,NVIDIA,SMH,210.96
-AMZN,Amazon,XLY,248
-AVGO,Broadcom,SMH,321.68
-AMD,AMD,SMH,516.79
-TSM,Taiwan Semiconductor,SMH,418.51
-ASML,ASML,SMH,1571.8
-NVO,Novo Nordisk,XLV,39.05
-TM,Toyota,XLY,196.79
-ORCL,Oracle,IGV,126.16
-CRM,Salesforce,IGV,248.57
-PLTR,Palantir,IGV,196.75
-CSCO,Cisco,CIBR,106.5
-CRWD,CrowdStrike,CIBR,257.57
-PANW,Palo Alto Networks,CIBR,380.55
-ISRG,Intuitive Surgical,BOTZ,452.29
-TER,Teradyne,BOTZ,308.85
-LLY,Eli Lilly,XLV,1273.46
-JNJ,Johnson & Johnson,XLV,263.81
-ABBV,AbbVie,XLV,285.64
-UNH,UnitedHealth,XLV,418.09
-VRTX,Vertex Pharmaceuticals,XBI,523.93
-REGN,Regeneron,XBI,805.02
-ALNY,Alnylam,XBI,224.03
-FSLR,First Solar,ICLN,171.99
-ENPH,Enphase Energy,ICLN,31.6
-XOM,Exxon Mobil,XLE,183.21
-CVX,Chevron,XLE,233.21
-COP,ConocoPhillips,XLE,150.8
-BRK.B,Berkshire Hathaway,XLF,542.19
-JPM,JPMorgan Chase,XLF,331.58
-V,Visa,XLF,407.92
-PLD,Prologis,VNQ,126.45
-AMT,American Tower,VNQ,188.97
-EQIX,Equinix,VNQ,955.03
-TSLA,Tesla,XLY,372.22
-HD,Home Depot,XLY,319.83
-COST,Costco,XLP,1003.32
-WMT,Walmart,XLP,119.89
-PG,Procter & Gamble,XLP,161.02
-KO,Coca-Cola,XLP,92.71
-PEP,PepsiCo,XLP,135.77
-GE,GE Aerospace,XLI,285.64
-CAT,Caterpillar,XLI,687
-RTX,RTX,ITA,191.01
-BA,Boeing,ITA,188.35
-META,Meta Platforms,XLC,642.62
-GOOGL,Alphabet,XLC,320.21
-NFLX,Netflix,XLC,65.85
-NEE,NextEra Energy,XLU,82.1
-SO,Southern Company,XLU,92.89
-DUK,Duke Energy,XLU,124.98
-RBLX,Roblox,ESPO,52.89
-NTDOY,Nintendo,ESPO,20
-BABA,Alibaba,VWO,99.64
-SBUX,Starbucks,XLP,99.76
-MCD,McDonald's,XLY,295.74
-DIS,The Walt Disney Company,XLC,95.47
-MA,Mastercard,XLF,512.69
-BAC,Bank of America,XLF,43.52
-VZ,Verizon,XLC,41.23
-CVS,CVS Health,XLV,52.16
-T,AT&T,XLC,20.71
-UNP,Union Pacific,XLI,223.45
-DAL,Delta Air Lines,XLI,53.82
+ticker,name,etf,price,sector,market_cap_b,country,core
+AAPL,Apple,XLK,347.725,Technology,5074,US,1
+MSFT,Microsoft,XLK,524.51,Technology,3894,US,1
+NVDA,NVIDIA,SMH,210.96,Technology,5094,US,1
+AMZN,Amazon,XLY,248,Consumer,2675,US,1
+AVGO,Broadcom,SMH,321.68,Technology,1535,US,1
+AMD,AMD,SMH,516.79,Technology,843.64,US,1
+TSM,Taiwan Semiconductor,SMH,418.51,Technology,2170,TW,0
+ASML,ASML,SMH,1571.8,Technology,605.79,NL,0
+NVO,Novo Nordisk,XLV,39.05,Healthcare,172.28,DK,0
+TM,Toyota,XLY,196.79,Consumer,231.78,JP,0
+ORCL,Oracle,IGV,126.16,Technology,382.45,US,1
+CRM,Salesforce,IGV,248.57,Technology,204.57,US,0
+PLTR,Palantir,IGV,196.75,Technology,472.8,US,1
+CSCO,Cisco,CIBR,106.5,Technology,419.88,US,1
+CRWD,CrowdStrike,CIBR,257.57,Technology,263.73,US,1
+PANW,Palo Alto Networks,CIBR,380.55,Technology,311.28,US,1
+ISRG,Intuitive Surgical,BOTZ,452.29,Healthcare,159.78,US,0
+TER,Teradyne,BOTZ,308.85,Technology,48.28,US,0
+LLY,Eli Lilly,XLV,1273.46,Healthcare,1135,US,1
+JNJ,Johnson & Johnson,XLV,263.81,Healthcare,635.07,US,1
+ABBV,AbbVie,XLV,285.64,Healthcare,504.75,US,1
+UNH,UnitedHealth,XLV,418.09,Healthcare,375.27,US,1
+VRTX,Vertex Pharmaceuticals,XBI,523.93,Healthcare,132.71,US,0
+REGN,Regeneron,XBI,805.02,Healthcare,82.88,US,0
+ALNY,Alnylam,XBI,224.03,Healthcare,29.97,US,0
+FSLR,First Solar,ICLN,171.99,Technology,18.48,US,0
+ENPH,Enphase Energy,ICLN,31.6,Technology,4.16,US,0
+XOM,Exxon Mobil,XLE,183.21,Energy,753.34,US,1
+CVX,Chevron,XLE,233.21,Energy,457.46,US,1
+COP,ConocoPhillips,XLE,150.8,Energy,181.16,US,1
+BRK.B,Berkshire Hathaway,XLF,542.19,Financials,1160,US,1
+JPM,JPMorgan Chase,XLF,331.58,Financials,880.54,US,1
+V,Visa,XLF,407.92,Financials,765.81,US,1
+PLD,Prologis,VNQ,126.45,Real estate,122.92,US,1
+AMT,American Tower,VNQ,188.97,Real estate,88.05,US,0
+EQIX,Equinix,VNQ,955.03,Real estate,94.23,US,1
+TSLA,Tesla,XLY,372.22,Consumer,1471,US,1
+HD,Home Depot,XLY,319.83,Consumer,319.09,US,1
+COST,Costco,XLP,1003.32,Everyday essentials,444.6,US,1
+WMT,Walmart,XLP,119.89,Everyday essentials,951.17,US,1
+PG,Procter & Gamble,XLP,161.02,Everyday essentials,373.2,US,1
+KO,Coca-Cola,XLP,92.71,Everyday essentials,398.88,US,1
+PEP,PepsiCo,XLP,135.77,Everyday essentials,185.01,US,0
+GE,GE Aerospace,XLI,285.64,Industrials,296.36,US,1
+CAT,Caterpillar,XLI,687,Industrials,315.79,US,1
+RTX,RTX,ITA,191.01,Industrials,257.75,US,1
+BA,Boeing,ITA,188.35,Industrials,148.75,US,0
+META,Meta Platforms,XLC,642.62,Communication,1637,US,1
+GOOGL,Alphabet,XLC,320.21,Communication,3880,US,1
+NFLX,Netflix,XLC,65.85,Communication,274.19,US,1
+NEE,NextEra Energy,XLU,82.1,Utilities,172.18,US,1
+SO,Southern Company,XLU,92.89,Utilities,106.85,US,1
+DUK,Duke Energy,XLU,124.98,Utilities,97.44,US,1
+RBLX,Roblox,ESPO,52.89,Communication,37.78,US,0
+NTDOY,Nintendo,ESPO,20,Communication,63.1,JP,0
+BABA,Alibaba,VWO,99.64,Consumer,247.87,CN,0
+MU,Micron Technology,SMH,877.55,Technology,992.88,US,1
+MA,Mastercard,XLF,623.6,Financials,546.27,US,1
+BAC,Bank of America,XLF,50.56,Financials,353.55,US,1
+MS,Morgan Stanley,XLF,179.49,Financials,281.9,US,1
+GS,Goldman Sachs,XLF,875.68,Financials,254.97,US,1
+WFC,Wells Fargo,XLF,82.39,Financials,247.3,US,1
+MRK,Merck,XLV,145.27,Healthcare,358.4,US,1
+TMO,Thermo Fisher Scientific,XLV,673.82,Healthcare,249.14,US,1
+AMGN,Amgen,XLV,439.26,Healthcare,237.47,US,0
+ABT,Abbott Laboratories,XLV,103.7,Healthcare,180.62,US,0
+CVS,CVS Health,XLV,93.47,Healthcare,119.54,US,0
+PM,Philip Morris International,XLP,199.47,Everyday essentials,310.89,US,1
+KR,Kroger,XLP,66.77,Everyday essentials,39.43,US,0
+MNST,Monster Beverage,XLP,46.19,Everyday essentials,90.48,US,0
+INTC,Intel,SMH,86.96,Technology,459.67,US,1
+AMAT,Applied Materials,SMH,377.24,Technology,299.37,US,1
+TXN,Texas Instruments,SMH,284.69,Technology,259.99,US,1
+QCOM,Qualcomm,SMH,175.91,Technology,187.84,US,0
+IBM,IBM,XLK,253.56,Technology,239.64,US,1
+UNP,Union Pacific,XLI,292.87,Industrials,173.98,US,0
+DE,Deere & Company,XLI,646.15,Industrials,174.21,US,0
+UBER,Uber,XLI,66.7,Industrials,136.23,US,0
+LMT,Lockheed Martin,ITA,604.18,Industrials,139.56,US,0
+WELL,Welltower,VNQ,237.32,Real estate,171.0,US,1
+SPG,Simon Property Group,VNQ,211.63,Real estate,80.33,US,0
+CEG,Constellation Energy,XLU,253.45,Utilities,89.79,US,0
+AEP,American Electric Power,XLU,129.69,Utilities,70.6,US,0
+SCCO,Southern Copper,XLI,185.01,Materials,156.21,US,1
+NEM,Newmont,XLI,108.87,Materials,113.13,US,1
+FCX,Freeport-McMoRan,XLI,65.18,Materials,93.59,US,1
+SHW,Sherwin-Williams,XLI,337.06,Materials,81.82,US,0
+ECL,Ecolab,XLI,288.53,Materials,80.88,US,0
+TGT,Target,XLY,152.76,Consumer,69.39,US,0
+SBUX,Starbucks,XLY,100.8,Consumer,114.91,US,0
+MCD,McDonald's,XLY,248.46,Consumer,175.82,US,0
+YUM,Yum! Brands,XLY,149.7,Consumer,40.85,US,0
+NKE,Nike,XLY,37.3,Consumer,55.4,US,0
+LOW,Lowe's,XLY,198.68,Consumer,111.47,US,0
+ABNB,Airbnb,XLY,172.01,Consumer,102.99,US,0
+DASH,DoorDash,XLY,179.38,Consumer,77.72,US,0
+BKNG,Booking Holdings,XLY,155.83,Consumer,120.74,US,0
+MAR,Marriott International,XLY,390.71,Consumer,101.88,US,0
+EBAY,eBay,XLY,121.41,Consumer,54.02,US,0
+GM,General Motors,XLY,75.92,Consumer,66.61,US,0
+DIS,Walt Disney,XLC,112.52,Communication,194.28,US,0
+VZ,Verizon,XLC,44.66,Communication,185.55,US,0
+T,AT&T,XLC,20.93,Communication,140.99,US,0
+TMUS,T-Mobile US,XLC,146.54,Communication,157.18,US,0
+CMCSA,Comcast,XLC,22.69,Communication,80.51,US,0
+DAL,Delta Air Lines,XLI,76.78,Industrials,50.51,US,0

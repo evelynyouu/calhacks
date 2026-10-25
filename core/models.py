@@ -61,7 +61,27 @@ class Readiness:
 
 # ---------- Engine side (Saahil: portfolio.py / sim.py / rebalance.py / broker.py) ----------
 
-HoldingRole = Literal["core", "tilt", "stock"]
+HoldingRole = Literal["core", "tilt", "stock", "spend"]
+# The parts of a fund, in display order: (key, label). Every Holding is in exactly one. A company held for
+# two reasons (in the US index and where you spend) is one Holding, in its most personal slice.
+SLICES = (("bonds", "Bonds"), ("intl", "International"), ("us_core", "Your US index"),
+          ("spend", "Where you spend"), ("interest", "Your interests"), ("added", "Companies you added"))
+
+# What a reason explains. Holdings: core, bonds, tilt, stock. Adjustments: cap (shrunk to fit), swing (sized
+# down because it moves a lot), dropped (left out). Notes: overlap, concentration, sector. How the mix was
+# chosen: score, contradiction, horizon, drop, override.
+ReasonKind = Literal["core", "bonds", "tilt", "stock", "cap", "swing", "dropped", "overlap", "concentration",
+                     "sector", "score", "contradiction", "horizon", "drop", "override", "spend", "combined"]
+
+
+@dataclass
+class Reason:
+    """One decision the fund builder made, in plain words. The "How your fund was built" page and the
+    chat's get_fund_explanation tool are generated from these, so the explanation can't drift from the code."""
+    kind: ReasonKind
+    text: str
+    ticker: str | None = None     # the holding (or left-out fund/company) it's about
+    facts: dict = field(default_factory=dict)   # the numbers behind the text, for templates and tests
 
 
 @dataclass
@@ -69,8 +89,10 @@ class Holding:
     ticker: str
     name: str
     weight: float             # 0..1, all holdings sum to 1
-    role: HoldingRole         # core: VTI/VXUS/BND; tilt: one fund per interest; stock: a single company
+    role: HoldingRole         # core: the US index, VXUS, BND; spend; tilt: an interest; stock: a company you added
     expense_ratio: float      # percent, e.g. 0.15 means 0.15%
+    sector: str = ""          # a company's sector (core/universe.SECTORS); "" for funds
+    slice: str = ""           # one of SLICES' keys
 
 
 @dataclass
@@ -81,8 +103,20 @@ class Portfolio:
     annual_fee_pct: float     # weighted expense ratio, percent
     worst_year: int
     worst_year_return: float  # percent, negative
-    overlap_warnings: list[str] = field(default_factory=list)
-    holding_reasons: dict[str, str] = field(default_factory=dict)   # ticker -> why it's here
+    overlap_warnings: list[str] = field(default_factory=list)   # the reasons worth flagging (see WARNING_KINDS)
+    reasons: list[Reason] = field(default_factory=list)
+    parts: dict = field(default_factory=dict)   # slice -> {ticker: weight}: each slice's exact share of each position
+    score: int | None = None          # 0..100, what the mix was built at (after any ceilings)
+    pointed_level: int | None = None  # the level the answers pointed to, if a ceiling lowered it
+
+    @property
+    def holding_reasons(self) -> dict[str, str]:
+        """ticker -> why it's here, in one line: the holding's own reasons joined (read by the chat tools)."""
+        out: dict[str, list[str]] = {}
+        for r in self.reasons:
+            if r.ticker and r.kind in ("core", "bonds", "tilt", "stock", "spend", "combined"):
+                out.setdefault(r.ticker, []).append(r.text)
+        return {t: " ".join(texts) for t, texts in out.items()}
 
     @property
     def core(self) -> Holding:
@@ -90,10 +124,27 @@ class Portfolio:
 
     @property
     def tilt_share(self) -> float:
+        """The interest slice. A company held for an interest and in the US index counts only its interest part."""
+        if self.parts:
+            return round(sum(self.parts.get("interest", {}).values()), 4)
         return sum(h.weight for h in self.holdings if h.role == "tilt")
+
+    def slice_weights(self) -> dict[str, float]:
+        """Each slice's share of the fund, in SLICES order (0.0 for an empty slice). Exact when the builder
+        recorded parts: a company in two slices counts toward each by its part, not its whole position."""
+        if self.parts:
+            return {k: round(sum(self.parts.get(k, {}).values()), 4) for k, _ in SLICES}
+        return {k: round(sum(h.weight for h in self.holdings if h.slice == k), 4) for k, _ in SLICES}
+
+    def by_slice(self) -> dict[str, list[Holding]]:
+        return {k: [h for h in self.holdings if h.slice == k] for k, _ in SLICES}
 
     def annual_fee_dollars(self, balance: float) -> float:
         return balance * self.annual_fee_pct / 100
+
+
+# Reasons also listed as warnings on the fund card. Any other reason can opt in with facts["warn"].
+WARNING_KINDS = ("dropped", "overlap", "concentration", "sector", "contradiction")
 
 
 @dataclass

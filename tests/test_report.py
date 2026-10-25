@@ -88,7 +88,17 @@ def _portfolio(**weights) -> Portfolio:
 def test_benchmark_puts_slices_back_into_the_stock_funds_and_keeps_the_bond_share():
     w = benchmark_weights(_portfolio(VTI=0.30, VXUS=0.13, BND=0.45, XLK=0.12))
     assert w["BND"] == pytest.approx(0.45) and sum(w.values()) == pytest.approx(1)
-    assert w["VTI"] / w["VXUS"] == pytest.approx(0.30 / 0.13)           # the fund's own US/international split
+    # personal slices come out of the US part (core/portfolio.py), so they go back into US stocks
+    assert w["VTI"] / w["VXUS"] == pytest.approx((0.30 + 0.12) / 0.13)
+
+
+def test_a_custom_index_is_measured_against_its_plain_index():
+    from core.portfolio import build_portfolio
+    from core.spending import Spend
+    p = build_portfolio(3, ["tech"], spending=[Spend("Target", "Shopping", 500.0, "TGT", "brand")])
+    w = benchmark_weights(p)
+    assert sum(w.values()) == pytest.approx(1, abs=1e-4) and w["BND"] == p.slice_weights()["bonds"]
+    assert w["VXUS"] == pytest.approx(p.slice_weights()["intl"], abs=1e-4) and "TGT" not in w   # nothing personal
 
 
 def test_benchmark_reads_target_weights_so_a_smooth_bond_share_works():
@@ -101,7 +111,8 @@ def test_benchmark_for_a_fund_with_no_core_stocks_falls_back_to_70_30():
     assert w == {"VTI": 0.0, "VXUS": 0.0, "BND": 1.0}
 
 
-def test_benchmark_equals_the_fund_when_holdings_sit_at_core_weights_with_no_slices():
+def test_benchmark_equals_the_fund_when_holdings_sit_at_core_weights_with_no_slices(monkeypatch):
+    monkeypatch.setattr(fund, "_spending", lambda cid: [])              # no purchases: no "where you spend" slice
     a = account(starting_amount=10_000, started_days_ago=60, interests={"themes": [], "unmatched": []})
     market.add_shock(a.today - timedelta(days=20), 15)
     w = build_report(a)["returns"]["since_start"]
@@ -109,16 +120,18 @@ def test_benchmark_equals_the_fund_when_holdings_sit_at_core_weights_with_no_sli
     assert w["benchmark_value"] == pytest.approx(w["end_value"], abs=0.05)
 
 
-def test_a_bond_heavy_fund_is_not_measured_against_the_s_and_p_500():
+def test_a_bond_heavy_fund_is_not_measured_against_the_s_and_p_500(monkeypatch):
+    monkeypatch.setattr(fund, "_spending", lambda cid: [])              # nothing personal: the fund is its own mix
     a = account(starting_amount=10_000, started_days_ago=60, risk_priority="protect", risk_range="narrow",
-                max_drop=0, swing_comfort=1, interests={"themes": [], "unmatched": []})
+                max_drop=0, horizon="lt3", interests={"themes": [], "unmatched": []})
     market.add_shock(a.today - timedelta(days=30), 20)                  # a rally the bond-heavy fund can't match
     w = build_report(a)["returns"]["since_start"]
     assert w["vs_spy_pts"] < -3                                          # it trails the S&P 500 ...
     assert abs(w["vs_benchmark_pts"]) < 0.01                             # ... but matches what its own mix would do
 
 
-def test_vs_benchmark_isolates_the_customers_choices():
+def test_vs_benchmark_isolates_the_customers_choices(monkeypatch):
+    monkeypatch.setattr(fund, "_spending", lambda cid: [])              # only the chips interest differs from the plain index
     a = account(starting_amount=10_000, started_days_ago=60, interests={"themes": ["ai_chips"], "unmatched": []})
     market.add_shock(a.today - timedelta(days=20), 30)                  # chips (beta 1.5) run ahead of the core
     w = build_report(a)["returns"]["since_start"]
@@ -142,8 +155,9 @@ def test_attribution_sums_to_the_market_gain_through_paychecks_and_a_rebalance()
 def test_each_pick_is_compared_with_the_core_it_replaced():
     a = account(starting_amount=10_000, started_days_ago=60, interests={"themes": ["ai_chips"], "unmatched": []})
     market.add_shock(a.today - timedelta(days=20), 30)
-    pick = build_report(a)["returns"]["since_start"]["picks"][0]
-    assert pick["ticker"] == "SMH" and pick["vs_core_pts"] == pytest.approx(pick["move_pct"] - pick["core_pct"], abs=0.01)
+    picks = build_report(a)["returns"]["since_start"]["picks"]
+    pick = next(x for x in picks if x["ticker"] == "NVDA")               # chips is its biggest companies now, not SMH
+    assert pick["vs_core_pts"] == pytest.approx(pick["move_pct"] - pick["core_pct"], abs=0.01)
     assert pick["vs_core_pts"] > 0 and pick["vs_core_dollars"] > 0 and pick["dollars"] > pick["vs_core_dollars"]
 
 
@@ -185,7 +199,7 @@ def test_a_ticker_with_no_real_data_is_flagged_on_its_own_row(monkeypatch):
     a = account(starting_amount=3_000, stocks=["NTDOY"])
     rep = build_report(a)
     rows = {h["ticker"]: h["simulated"] for h in rep["holdings"]}
-    assert rows["NTDOY"] and not rows["VTI"]
+    assert rows["NTDOY"] and not rows["VXUS"]
     assert "NTDOY has no real price data" in rep["data_notes"]["price"]
 
 
@@ -194,10 +208,11 @@ def test_estimated_income_accrues_daily_and_stays_out_of_the_balance():
     rep = build_report(a)
     w = rep["returns"]["since_start"]
     assert w["start_value"] + w["deposits"] + w["market_gain"] == pytest.approx(w["end_value"], abs=0.02)   # price only
-    # the fund's yearly income rate is its holdings' yields weighted by what it holds (whatever mix the builder chose)
-    rate = sum(h["target"] * report_module.YIELDS[h["ticker"]] for h in rep["holdings"])
-    assert w["income_estimate"] == pytest.approx(10_000 * rate, rel=0.15)
-    assert w["twr_pct"] - w["twr_price_pct"] == pytest.approx(rate * 100, abs=0.4)
+    # the fund's own yield: each holding's target weight x its yearly yield (data/yields.csv). Computed from the
+    # targets because the mix now follows the answers smoothly (core/builder.py), not a fixed per-level table.
+    yearly = sum(h.weight * report_module.YIELDS.get(h.ticker, 0.0) for h in a.portfolio.holdings)
+    assert w["income_estimate"] == pytest.approx(10_000 * yearly, rel=0.15)
+    assert w["twr_pct"] - w["twr_price_pct"] == pytest.approx(yearly * 100, abs=0.4)
 
 
 # ---------- recommendations ----------
@@ -251,7 +266,7 @@ def all_recs(monkeypatch=None) -> list[tuple[str, dict]]:
     if monkeypatch:   # the builder decides how much tech a fund holds; put the fund-wide line below that so only it fires
         monkeypatch.setattr(report_module, "TECH_FUND_TRIGGER", 0.05)
     a = account(starting_amount=10_000, interests={"themes": ["tech", "financials"], "unmatched": []},
-                stocks=["NVDA", "AAPL"], risk_priority="max", risk_range="widest", max_drop=50, swing_comfort=10)
+                stocks=["NVDA", "AAPL"], risk_priority="max", risk_range="widest", max_drop=50, horizon="15plus")
     out.append(("explore", build_report(a)))
     return out
 
@@ -270,7 +285,9 @@ def test_every_recommendation_shows_the_number_that_triggered_it_and_the_thresho
 
 def test_every_company_over_the_trigger_is_flagged_not_just_the_biggest(monkeypatch):
     monkeypatch.setattr(report_module, "CONCENTRATION_TRIGGER", 0.04)
-    a = account(starting_amount=10_000, interests={"themes": ["tech"], "unmatched": []}, stocks=["NVDA", "AAPL", "MSFT"])
+    # a bold fund, so the companies are big enough to pass a 4% line (the default answers build 65% bonds)
+    a = account(starting_amount=10_000, interests={"themes": ["tech"], "unmatched": []}, stocks=["NVDA", "AAPL", "MSFT"],
+                risk_priority="max", risk_range="widest", max_drop=50, horizon="15plus")
     rep = build_report(a)
     rec = next(r for r in rep["recommendations"] if r["action"] == "diversify")
     over = [c for c in rep["companies"] if c["share"] >= 0.04]
@@ -292,7 +309,7 @@ def test_sector_exposure_looks_through_the_broad_funds():
 
 
 def test_the_dip_rec_is_about_the_funds_own_stocks_and_says_how_big_a_share_that_is():
-    a = account(risk_priority="protect", risk_range="narrow", max_drop=0, swing_comfort=1,
+    a = account(risk_priority="protect", risk_range="narrow", max_drop=0, horizon="lt3",
                 interests={"themes": [], "unmatched": []})                         # about a third in stocks
     market.add_shock(a.today, -15)
     rep = build_report(a)
@@ -377,7 +394,7 @@ def test_the_agent_tool_returns_json_with_python_numbers_only():
 def test_facts_put_the_customers_own_fund_first_and_carry_the_dates_and_benchmark():
     a = account("alex", started_days_ago=365, starting_amount=60_000)
     facts = build_report(a)["facts"]
-    assert facts[0].startswith("Fund value") and "VTI/VXUS/BND" in facts[2] and f"{(a.today - timedelta(days=7)).strftime('%b')}" in facts[1]
+    assert facts[0].startswith("Fund value") and "plain mix" in facts[2] and f"{(a.today - timedelta(days=7)).strftime('%b')}" in facts[1]
     assert any("Looking ahead" in f for f in facts) and facts[-1].startswith("All prices here are simulated")
     assert max(i for i, f in enumerate(facts) if "Fund value" in f or "benchmark" in f) < min(i for i, f in enumerate(facts) if "market is" in f)
 
