@@ -15,7 +15,7 @@ from agent.tools import TOOLS
 from core.intake import BY_KEY, INTEREST_WORDS
 from core.models import FinancialProfile
 from core.policy import tier_for
-from core.portfolio import CORE_MIX_BY_RISK, THEMES
+from core.portfolio import LEVEL_BONDS, RETURNS, THEMES
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 PERSONAS = json.loads((DATA / "personas.json").read_text())
@@ -51,14 +51,15 @@ def test_listed_bills_fit_inside_monthly_bills(cid):
     assert all(b["due_in_days"] >= 0 for b in p["upcoming_bills"])
 
 
-def test_core_mixes_use_core_funds_and_add_up():
-    for level, mix in CORE_MIX_BY_RISK.items():
-        assert all(ETFS[t]["role"] == "core" for t in mix), level
-        assert sum(mix.values()) == pytest.approx(1.0), level
+def test_core_funds_are_core_in_the_csv():
+    # The fixed per-level mixes became a smooth bond share (core/portfolio.py); the core funds are the
+    # ones with real 2008/2022 returns.
+    assert all(ETFS[t]["role"] == "core" for t in RETURNS)
+    assert {t for t, r in ETFS.items() if r["role"] == "core"} == set(RETURNS)
 
 
 def test_more_risk_never_means_more_bonds():
-    bonds = [CORE_MIX_BY_RISK[level]["BND"] for level in sorted(CORE_MIX_BY_RISK)]
+    bonds = [LEVEL_BONDS[level] for level in sorted(LEVEL_BONDS)]
     assert bonds == sorted(bonds, reverse=True)
 
 

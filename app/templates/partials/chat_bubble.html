@@ -3,6 +3,9 @@
 {% else %}
 <div class="flex gap-3">
   <div class="mt-0.5 h-7 w-7 shrink-0 rounded-full bg-moss-600 text-white grid place-items-center font-display text-sm font-bold" aria-hidden="true">F</div>
-  <p class="max-w-[90%] text-[.95rem] leading-relaxed whitespace-pre-line pt-0.5">{{ m.text }}</p>
+  <div class="max-w-[90%] pt-0.5">
+    <p class="text-[.95rem] leading-relaxed whitespace-pre-line">{{ m.text }}</p>
+    {% if m.link %}<a href="{{ m.link.href }}" class="mt-2 inline-block text-sm font-medium text-moss-600">{{ m.link.label }}</a>{% endif %}
+  </div>
 </div>
 {% endif %}

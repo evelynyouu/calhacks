@@ -4,10 +4,27 @@
     <div>
       <p class="eyebrow">Your mix</p>
       <h2 class="font-display text-2xl font-bold mt-1">{{ portfolio.risk_label }}</h2>
-      <p class="text-sm text-ink/60">Risk score {{ a.risk_score }}/100 · {{ portfolio.holdings | length }} funds · fee {{ '%.2f' % portfolio.annual_fee_pct }}%/yr</p>
+      <p class="text-sm text-ink/60">Risk score {{ portfolio.score if portfolio.score is not none else a.risk_score }}/100{% if portfolio.score is not none and portfolio.score != a.risk_score %} (your answers: {{ a.risk_score }}){% endif %} · {{ portfolio.holdings | length }} funds · fee {{ '%.2f' % portfolio.annual_fee_pct }}%/yr</p>
     </div>
-    <a href="/p/{{ cid }}/report" class="btn">Report →</a>
+    <div class="flex flex-col items-end gap-2">
+      <a href="/p/{{ cid }}/report" class="btn">Report →</a>
+      <a href="/p/{{ cid }}/how" class="text-sm font-medium text-moss-600">How it was built →</a>
+    </div>
   </div>
+
+  {% if override %}
+  <div class="mt-3 rounded-xl border border-ink/70 bg-white text-sm px-3 py-2">
+    {% if override.use == 'answers' %}
+    <p><strong>Your answers pointed to {{ override.pointed }}; we built {{ override.built }}</strong> because of a limit you set. {{ override.because }}</p>
+    {% else %}
+    <p><strong>You chose {{ override.built }}</strong> over our suggestion of {{ override.suggested }}.</p>
+    {% endif %}
+    <form hx-post="/p/{{ cid }}/override" hx-swap="none" class="mt-2">
+      <input type="hidden" name="use" value="{{ override.use }}">
+      <button class="btn-ghost text-sm">{% if override.use == 'answers' %}Use {{ override.pointed }} instead{% else %}Go back to our suggestion ({{ override.suggested }}){% endif %}</button>
+    </form>
+  </div>
+  {% endif %}
 
   {% for w in portfolio.overlap_warnings %}
   <div class="mt-3 rounded-xl border border-ink/70 bg-white text-sm px-3 py-2"><strong>Heads up:</strong> {{ w }}</div>

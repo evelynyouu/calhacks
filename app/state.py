@@ -33,8 +33,9 @@ class Session:
     def done(self) -> bool:
         return self.step >= len(QUESTIONS)
 
-    def say(self, text: str, role: str = "assistant") -> dict:
-        m = {"role": role, "text": text}
+    def say(self, text: str, role: str = "assistant", link: dict | None = None) -> dict:
+        """link: {"href", "label"}, shown under the message (e.g. "How your fund was built")."""
+        m = {"role": role, "text": text, **({"link": link} if link else {})}
         self.transcript.append(m)
         return m
 

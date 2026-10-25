@@ -13,6 +13,7 @@ import os
 from agent.prompts import RUNDOWN_INSTRUCTION, SUGGESTED_PROMPTS, SYSTEM_PROMPT
 from agent.tools import TOOLS, headlines, market_today, news_tickers, run_tool
 from app.state import Session
+from core.explain import fallback_intro, intro_facts
 from core.intake import QUESTIONS
 from core.market import ETFS
 from core.report import build_report
@@ -43,28 +44,51 @@ def question_text(session: Session) -> str:
     return session.question.prompt if session.question else ""
 
 
+def fund_facts(session: Session) -> list[str]:
+    """The fund in Python-computed facts. When a limit or the customer's own choice moved the mix away
+    from what the answers scored, both numbers and the reason are included, so Claude can't misstate why."""
+    a, p = session.fund, session.fund.portfolio
+    core = ", ".join(f"{h.ticker} {h.weight:.0%}" for h in p.holdings if h.role == "core")
+    tilts = ", ".join(f"{h.ticker} {h.weight:.1%}" for h in p.holdings if h.role == "tilt")
+    if p.score is None or p.score == a.risk_score:
+        score = [f"Risk score {a.risk_score} out of 100, so the fund is {p.risk_label} (level {p.risk_level} of 4)."]
+    else:
+        score = [f"The customer's answers give a risk score of {a.risk_score} out of 100.",
+                 f"The fund was built at a risk score of {p.score} out of 100, so it is {p.risk_label} "
+                 f"(level {p.risk_level} of 4), for these reasons:",
+                 *(r.text for r in p.reasons if r.kind in ("contradiction", "horizon", "drop", "override")
+                   and (r.kind in ("contradiction", "override") or r.facts.get("lowered")))]
+    return [*score, f"Core: {core}.",
+            f"Interest slice: {tilts}." if tilts else "No interest slice: the fund stays broad.",
+            f"Yearly fee {p.annual_fee_pct:.2f}%.",
+            f"{a.invest_pct:g}% of each paycheck will be invested as soon as it lands.",
+            *p.overlap_warnings]
+
+
 def fund_ready(session: Session) -> str:
     """The first message after the fund is built: Claude explains it, or a Python summary offline."""
     a, p = session.fund, session.fund.portfolio
     core = ", ".join(f"{h.ticker} {h.weight:.0%}" for h in p.holdings if h.role == "core")
     tilts = ", ".join(f"{h.ticker} {h.weight:.1%}" for h in p.holdings if h.role == "tilt")
-    facts = [
-        f"Risk score {a.risk_score} out of 100, so the fund is {p.risk_label} (level {p.risk_level} of 4).",
-        f"Core: {core}.",
-        f"Interest slice: {tilts}." if tilts else "No interest slice: the fund stays broad.",
-        f"Yearly fee {p.annual_fee_pct:.2f}%.",
-        f"{a.invest_pct:g}% of each paycheck will be invested as soon as it lands.",
-        *p.overlap_warnings,
-    ]
+    facts = fund_facts(session)
     unmatched = a.answers.get("interests", {}).get("unmatched", [])
+    notes = list(p.overlap_warnings)
     if unmatched:
-        facts.append("No fund matches these yet, so they were noted but not added: " + ", ".join(unmatched) + ".")
+        notes.append("No fund matches these yet, so they were noted but not added: " + ", ".join(unmatched) + ".")
+        facts.append(notes[-1])
     offline = (f"Your fund is ready: {p.risk_label.lower()}, with {core}"
                + (f", plus {tilts} for your interests" if tilts else "") + f". The yearly fee is {p.annual_fee_pct:.2f}%. "
-               + " ".join(facts[5:]) + " Press “Paycheck arrives” to watch a paycheck invest itself, or ask me anything.")
+               + " ".join(notes) + " Press “Paycheck arrives” to watch a paycheck invest itself, or ask me anything.")
     return explain(facts, f"The customer's goal: {a.answers.get('goal', '')!r}. In 3 to 4 short sentences, explain "
                           "their new fund: what the core does, what the interest slice adds, and one thing to "
                           "know about their risk level. End by inviting questions.", fallback=offline)
+
+
+def fund_intro(session: Session) -> str:
+    """At most 2-3 sentences on top of "How your fund was built", tied to the goal. Python facts only."""
+    a = session.fund
+    return explain(intro_facts(a), "In 2 to 3 short sentences, tie this fund to the customer's goal. Don't list "
+                   "numbers; the page below shows them.", fallback=fallback_intro(a))
 
 
 # ---------- Chat after the intake ----------

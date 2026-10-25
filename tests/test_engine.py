@@ -36,10 +36,11 @@ def test_shock_moves_stocks_by_beta_and_barely_moves_bonds():
 
 
 @pytest.mark.parametrize("level", [1, 2, 3, 4])
-def test_weights_add_up_and_interests_get_the_cap(level):
+def test_weights_add_up_and_interests_stay_within_the_cap(level):
+    # Each interest now gets up to 8% (less if it swings more), so two interests no longer fill the cap.
     p = build_portfolio(level, ["tech", "healthcare"])
     assert sum(h.weight for h in p.holdings) == pytest.approx(1.0, abs=1e-4)
-    assert p.tilt_share == pytest.approx(TILT_CAP_BY_RISK[level], abs=1e-3)
+    assert 2 * MIN_TILT <= p.tilt_share <= TILT_CAP_BY_RISK[level] + 1e-4
 
 
 def test_too_many_interests_are_trimmed_with_a_note():

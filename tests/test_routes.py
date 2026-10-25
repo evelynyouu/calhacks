@@ -19,7 +19,7 @@ INTAKE = [  # (form data, what the chat shows as the user's message)
     ({"value": "growth"}, "Strong growth, even with bigger dips"),
     ({"value": "medium"}, "Ends between $900 and $1,150"),
     ({"value": "20"}, "20%"),
-    ({"value": "6"}, "6 out of 10"),
+    ({"value": "15plus"}, "In 15 years or more"),
     ({"values": ["tech", "healthcare"], "other": "video games"}, "Technology, Healthcare, Gaming"),
 ]
 
@@ -58,7 +58,7 @@ def test_full_intake_builds_the_fund():
         if i == 1:
             assert 'type="range"' in r.text and "of your $2,050 paycheck" in r.text   # next: the % slider
         if i == 5:
-            assert 'class="scale-btn"' in r.text                                     # next: the 1-10 scale
+            assert 'class="choice-btn"' in r.text and "When will you need" in r.text   # next: the horizon choice
         if i == 6:
             assert 'type="checkbox" name="values"' in r.text and 'name="other"' in r.text   # next: chips + Other
     assert "Your fund is ready" in r.text and 'id="fund-card" hx-swap-oob' in r.text
@@ -134,7 +134,8 @@ def test_queue_then_confirm_rebalance_trades():
     page = client.get("/p/sam").text
     assert "waiting for your OK" in page and "Confirm trades" in page
     r = client.post("/p/sam/trades/confirm")
-    assert "Done: sell SMH" in r.text and not state.get("sam").fund.pending
+    # SMH is smaller now (sized for how much it swings), so it's no longer the first sale
+    assert "Done: sell" in r.text and "sell SMH" in r.text and not state.get("sam").fund.pending
 
 
 def test_recommendation_buttons_change_pct_and_interests():

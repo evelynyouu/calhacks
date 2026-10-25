@@ -18,7 +18,7 @@ from agent import claude_agent
 from agent.tools import INDEXES, news_tickers
 from app.routes.auth import auth_disabled, csrf_token
 from app import state
-from core import feed, fund, intake, market, nessie
+from core import builder, explain, feed, fund, intake, market, nessie
 from core.broker import get_broker, values
 from core.intake import QUESTIONS, AnswerError, parse
 from core.market import ETFS
@@ -47,7 +47,7 @@ EXAMPLE_BUY = 25.0   # "$25 buys 0.07 shares" on a stock's page
 # Personas that start with a fund already running, so the demo can jump straight to the report
 DEMO_PRESETS = {
     "alex": {"answers": {"goal": "Retire early", "starting_amount": 52_000, "paycheck_pct": 20,
-                         "risk_priority": "growth", "risk_range": "wide", "max_drop": 25, "swing_comfort": 7,
+                         "risk_priority": "growth", "risk_range": "wide", "max_drop": 25, "horizon": "15plus",
                          "interests": {"themes": ["healthcare", "tech"], "unmatched": []}},
              "started_days_ago": 365, "auto_trade": True},
 }
@@ -85,7 +85,8 @@ def _ctx(request: Request, cid: str, **extra) -> dict:
         "activity": nessie.recent_activity(cid), "nessie_mode": nessie.mode(), "nessie_offline": nessie.offline_reason(),
         "etfs": ETFS, "theme_labels": THEME_LABELS, "live_market": market.source("SPY") == "live",
         "fast_forwarded": a.today > market.today(), "claude_on": claude_agent._get_client() is not None,
-        "login_on": not auth_disabled(), **extra,
+        "login_on": not auth_disabled(),
+        "override": builder.override_offer(a.portfolio, a.answers) if a.portfolio else None, **extra,
     }
 
 
@@ -134,6 +135,14 @@ def _today(a) -> dict:
     day = sum(r["value"] * r["quote"]["change_pct"] / (100 + r["quote"]["change_pct"]) for r in rows if r["quote"])
     before = sum(vals.values()) - day
     return {"rows": rows, "day_change": day, "day_pct": day / before * 100 if before else 0.0}
+
+
+@router.get("/p/{cid}/how", response_class=HTMLResponse)
+def how_built(request: Request, cid: str, full: bool = False):
+    """How your fund was built: every number and reason comes from core/explain.py. ?full=1 opens the full version."""
+    s = _need_fund(cid)
+    return _render("how_built.html", _ctx(request, cid, tab="portfolio", how=explain.build(s.fund),
+                                          intro=claude_agent.fund_intro(s), full=full))
 
 
 @router.get("/p/{cid}/chat", response_class=HTMLResponse)
@@ -196,7 +205,7 @@ def answer(request: Request, cid: str, value: str = Form(""), values: list[str] 
     oob = {"composer"}
     if s.done:
         fund.start(s.fund)
-        new.append(s.say(claude_agent.fund_ready(s)))
+        new.append(s.say(claude_agent.fund_ready(s), link={"href": f"/p/{cid}/how", "label": "How your fund was built →"}))
         oob |= {"fund", "account", "tier", "nav"}
     else:
         new.append(s.say(claude_agent.question_text(s)))
@@ -439,6 +448,19 @@ async def settings(request: Request, cid: str):
     except ValueError:
         pass
     return RedirectResponse(f"/p/{cid}/account?saved=notifications#notifications", status_code=303)
+
+
+@router.post("/p/{cid}/override", response_class=HTMLResponse)
+def override(request: Request, cid: str, use: str = Form(...)):
+    """The customer picks the mix their answers pointed to, or goes back to our suggestion."""
+    if use not in ("answers", "suggested"):
+        raise HTTPException(400)
+    s = _need_fund(cid)
+    p = fund.set_override(s.fund, use == "answers")
+    say = (f"Done: your fund is now {p.risk_label}, the mix your answers pointed to. New paychecks steer toward it; "
+           f"nothing is sold unless you confirm a rebalance." if use == "answers" else
+           f"Done: back to our suggestion, {p.risk_label}. New paychecks steer toward it.")
+    return _panels(request, cid, say=say)
 
 
 @router.post("/p/{cid}/interests")
