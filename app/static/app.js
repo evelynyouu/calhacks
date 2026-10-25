@@ -110,10 +110,18 @@ function init() {
   updatePreviews();
 }
 
-// After a chat turn (or on page load): scroll to the newest message and focus the next question's input
-function followChat() {
+// The box that scrolls the chat: partials/chat.html wraps #chat-messages in [data-chat-scroll] (column-reverse,
+// so it stays pinned to the newest message by itself); the Portfolio tab's short feed scrolls #chat-messages itself.
+function chatScroller() {
   const chat = document.getElementById('chat-messages');
-  if (chat) chat.scrollTop = chat.scrollHeight;
+  return chat && (chat.closest('[data-chat-scroll]') || chat);
+}
+
+// After a chat turn (or on page load): scroll to the newest message and focus the next question's input.
+// A column-reverse box's bottom is scrollTop 0 and older messages are negative, so scrollHeight clamps to the end.
+function followChat() {
+  const box = chatScroller();
+  if (box) box.scrollTop = box.scrollHeight;
   const first = document.querySelector('#composer [autofocus]');
   if (first) first.focus();
 }
@@ -152,9 +160,9 @@ document.body.addEventListener('htmx:beforeRequest', e => {
   p.className = 'max-w-[85%] rounded-2xl rounded-br-md bg-ink/[.06] px-4 py-2.5 text-[.95rem] leading-relaxed whitespace-pre-line';
   p.textContent = box.value.trim();
   row.appendChild(p);
-  const chat = document.getElementById('chat-messages');
-  chat.appendChild(row);
-  chat.scrollTop = chat.scrollHeight;
+  document.getElementById('chat-messages').appendChild(row);
+  const scroller = chatScroller();
+  scroller.scrollTop = scroller.scrollHeight;
   box.value = '';
   box.style.height = 'auto';
 });

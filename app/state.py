@@ -23,6 +23,7 @@ class Session:
     linked: dict | None = None   # the demo bank link (core.onboarding.link): {"bank", "checking", "investing", "note"}
     followup: object = None                                    # core.followups.FollowUp waiting for an answer
     followups_asked: list[str] = field(default_factory=list)   # follow-up rule keys asked this intake (max 2)
+    pending_ask: str | None = None   # a suggested prompt tapped on another tab, sent once by the Chat tab
 
     def __post_init__(self):
         if self.fund is None:
@@ -52,9 +53,9 @@ _SESSIONS: dict[str, Session] = {}
 
 
 def get(customer_id: str) -> Session:
-    if customer_id not in _SESSIONS:
-        _SESSIONS[customer_id] = Session(customer_id)
-    return _SESSIONS[customer_id]
+    s = _SESSIONS.get(customer_id)
+    # setdefault is atomic: two first requests at once share one Session instead of each making its own
+    return s if s is not None else _SESSIONS.setdefault(customer_id, Session(customer_id))
 
 
 def reset(customer_id: str) -> None:

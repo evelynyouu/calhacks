@@ -4,9 +4,9 @@
 {% block content %}
 <div class="max-w-3xl mx-auto">{% include "partials/chat.html" %}</div>
 {% if ask %}
-{# A suggested prompt tapped on another tab: send it once, then drop ?ask= so a reload doesn't resend. #}
-<div hx-post="/p/{{ cid }}/chat" hx-vals='{{ {"message": ask, "echo": "1"} | tojson }}' hx-trigger="load"
-     hx-target="#chat-messages" hx-swap="beforeend" hx-indicator="#typing"
-     hx-on::before-request="history.replaceState(null, '', location.pathname)"></div>
+{# A suggested prompt tapped on another tab. The server holds it (never the URL) and POST /chat/ask takes it off
+   the session, so a reload or Back/Forward can't send it twice. #}
+<div hx-post="/p/{{ cid }}/chat/ask" hx-trigger="load" hx-target="#chat-messages" hx-swap="beforeend"
+     hx-indicator="#typing"></div>
 {% endif %}
 {% endblock %}

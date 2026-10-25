@@ -90,7 +90,7 @@
   <form hx-post="/p/{{ cid }}/chat" hx-target="#chat-messages" hx-swap="beforeend" hx-indicator="#typing"
         hx-disabled-elt="find button" data-optimistic>
     <div class="composer-box">
-      <textarea name="message" rows="1" required data-autogrow placeholder="Ask about your fund, the market, or what to do next…" aria-label="Message"></textarea>
+      <textarea name="message" rows="1" required data-autogrow class="placeholder:truncate" placeholder="Ask about your fund, the market, or what to do next…" aria-label="Message"></textarea>
       <button class="btn">Send</button>
     </div>
   </form>
