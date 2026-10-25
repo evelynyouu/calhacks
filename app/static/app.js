@@ -218,6 +218,40 @@ document.addEventListener('keydown', e => {
   }
 });
 
+// Interests intake: Enter queues a tag instead of submitting the form
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || !e.target.matches('#composer input[name="other"]')) return;
+  e.preventDefault();
+  var val = e.target.value.trim();
+  if (!val) return;
+  e.target.value = '';
+  var tagsEl = document.getElementById('interest-tags-preview');
+  if (!tagsEl) return;
+  var tag = document.createElement('span');
+  tag.className = 'chip bg-ink text-white border-ink text-xs flex items-center gap-1';
+  tag.dataset.phrase = val;
+  tag.textContent = val;
+  var x = document.createElement('button');
+  x.type = 'button'; x.textContent = '\xd7'; x.className = 'ml-1 font-bold leading-none opacity-70 hover:opacity-100';
+  x.addEventListener('click', function() { tag.remove(); });
+  tag.appendChild(x);
+  tagsEl.appendChild(tag);
+});
+
+// Before HTMX sends the interests form, merge queued tags into the other parameter.
+// Must use htmx:configRequest (fires after HTMX reads the form) rather than submit
+// (which fires too early on document — HTMX has already serialized by then).
+document.addEventListener('htmx:configRequest', e => {
+  var tagsEl = document.getElementById('interest-tags-preview');
+  if (!tagsEl) return;
+  var form = e.detail.elt;
+  if (!form || !form.contains || !form.contains(tagsEl)) return;
+  var phrases = [...tagsEl.querySelectorAll('[data-phrase]')].map(function(el) { return el.dataset.phrase; });
+  if (!phrases.length) return;
+  var typed = (e.detail.parameters['other'] || '').trim();
+  e.detail.parameters['other'] = [...phrases, ...(typed ? [typed] : [])].join(', ');
+});
+
 // Free chat: show the user's message right away, then Claude's reply arrives
 document.body.addEventListener('htmx:beforeRequest', e => {
   const form = e.detail.elt;

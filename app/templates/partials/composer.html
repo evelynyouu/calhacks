@@ -89,18 +89,21 @@
       </label>
       {% endfor %}
     </div>
-    {% if fu %}
-    <div class="flex justify-end"><button class="btn whitespace-nowrap">Add these</button></div>
-    {% else %}
-    <div class="composer-box">
-      <input name="other" placeholder="Other: type anything, like “pet care” or “coffee”" aria-label="Other interests">
+    {% if not fu %}
+    <div id="interest-tags-preview" class="flex flex-wrap gap-1 empty:hidden"></div>
+    <div class="composer-box mt-1">
+      <input name="other" placeholder="Other: type an interest, press Enter to add" aria-label="Other interests">
       <button class="btn whitespace-nowrap">Build my fund</button>
     </div>
     {% endif %}
     {% endif %}
     {% if fu %}
     <div class="flex justify-end">
+      {% if q.kind == 'chips' %}
+      <button class="btn whitespace-nowrap">{{ fu.keep_label }}</button>
+      {% else %}
       <button name="keep" value="1" formnovalidate class="btn-ghost">{{ fu.keep_label }}</button>
+      {% endif %}
     </div>
     {% endif %}
   </form>

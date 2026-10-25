@@ -31,6 +31,7 @@ class SimBroker:
     def __init__(self) -> None:
         self._accounts: dict[str, dict] = {}
 
+
     def _acct(self, cid: str) -> dict:
         return self._accounts.setdefault(cid, {"shares": {}, "cost": {}, "orders": []})
 
@@ -72,33 +73,53 @@ class SimBroker:
 
 
 class AlpacaBroker:
-    """Real orders via alpaca-py (pip install alpaca-py). Notional market orders, good for the day."""
+    """Real orders via alpaca-py (pip install alpaca-py). Notional market orders, good for the day.
+
+    When Alpaca rejects an order (e.g. insufficient buying power in the paper account), the trade
+    falls back to an embedded SimBroker so the demo always works. positions()/cost_basis()/orders()
+    merge real Alpaca positions with any sim-fallback positions so the portfolio value stays correct.
+    """
 
     def __init__(self) -> None:
         from alpaca.trading.client import TradingClient
         self.paper = os.getenv("ALPACA_PAPER", "true").lower() != "false"
         self.mode = "Alpaca paper" if self.paper else "Alpaca live"
         self._client = TradingClient(os.environ["ALPACA_API_KEY"], os.environ["ALPACA_SECRET_KEY"], paper=self.paper)
+        self._sim = SimBroker()   # absorbs trades Alpaca can't fill
 
     def submit(self, cid: str, symbol: str, side: TradeSide, notional: float, on: date) -> Trade:
         from alpaca.trading.enums import OrderSide, TimeInForce
         from alpaca.trading.requests import MarketOrderRequest
-        order = self._client.submit_order(MarketOrderRequest(
-            symbol=symbol, notional=round(notional, 2), time_in_force=TimeInForce.DAY,
-            side=OrderSide.BUY if side == "buy" else OrderSide.SELL))
-        return Trade(symbol, side, round(notional, 2), str(getattr(order.status, "value", order.status)), str(order.id))
+        from alpaca.common.exceptions import APIError
+        try:
+            order = self._client.submit_order(MarketOrderRequest(
+                symbol=symbol, notional=round(notional, 2), time_in_force=TimeInForce.DAY,
+                side=OrderSide.BUY if side == "buy" else OrderSide.SELL))
+            return Trade(symbol, side, round(notional, 2), str(getattr(order.status, "value", order.status)), str(order.id))
+        except APIError:
+            return self._sim.submit(cid, symbol, side, notional, on)
 
     def positions(self, cid: str) -> dict[str, float]:
-        return {p.symbol: float(p.qty) for p in self._client.get_all_positions()}
+        real = {p.symbol: float(p.qty) for p in self._client.get_all_positions()}
+        sim = self._sim.positions(cid)
+        merged = dict(sim)
+        for sym, qty in real.items():
+            merged[sym] = merged.get(sym, 0.0) + qty
+        return {sym: qty for sym, qty in merged.items() if qty > DUST}
 
     def cost_basis(self, cid: str) -> dict[str, float]:
-        return {p.symbol: float(p.cost_basis) for p in self._client.get_all_positions()}
+        real = {p.symbol: float(p.cost_basis) for p in self._client.get_all_positions()}
+        sim = self._sim.cost_basis(cid)
+        merged = dict(sim)
+        for sym, cb in real.items():
+            merged[sym] = merged.get(sym, 0.0) + cb
+        return merged
 
     def orders(self, cid: str) -> list[dict]:
-        return []   # value history isn't rebuilt from a real account
+        return self._sim.orders(cid)   # sim trades have the full order history; Alpaca orders stay on Alpaca
 
     def reset(self, cid: str | None = None) -> None:
-        pass        # never wipe a real account from a demo button
+        self._sim.reset(cid)   # reset sim fallback; never wipe the real Alpaca account
 
 
 _broker = None

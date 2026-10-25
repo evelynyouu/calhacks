@@ -355,42 +355,64 @@ def unmatched_interests(answers, after, profile, asked):
     unmatched = answers["interests"].get("unmatched", [])
     if not unmatched:
         return None
-    picked = set(answers["interests"].get("themes", []))
-    suggestions = suggest_themes(unmatched, exclude=picked)
+    # Niche map takes priority: check it first so "sports teams" gets real stocks, not a broad theme
+    from core.interest_map import lookup as _niche_lookup
+    stock_hits: dict[str, list[dict]] = {}   # phrase -> [{"symbol": ..., "name": ...}, ...]
+    theme_candidates = []
+    for phrase in unmatched:
+        niche = _niche_lookup(phrase)
+        if niche:
+            stock_hits[phrase] = [{"symbol": sym, "name": name} for sym, name in niche]
+        else:
+            theme_candidates.append(phrase)
 
-    # Try symbol search for phrases that have no theme match
-    matched_phrases = set(suggestions.values())
-    still_unmatched = [p for p in unmatched if p not in matched_phrases]
-    stock_hits = {}   # phrase -> {"symbol", "name"}
+    # Theme matching only for phrases the niche map didn't claim
+    picked = set(answers["interests"].get("themes", []))
+    suggestions = suggest_themes(theme_candidates, exclude=picked)
+    matched_by_theme = set(suggestions.values())
+    still_unmatched = [p for p in theme_candidates if p not in matched_by_theme]
+
+    # LLM (with 5s timeout) then Nasdaq word-by-word as a last resort
     truly_unmatched = []
     for phrase in still_unmatched:
-        try:
-            from core.feed import search as _search
-            results = _search(phrase)
-            if results:
-                stock_hits[phrase] = results[0]
+        llm = _llm_stock_lookup(phrase)
+        if llm:
+            stock_hits[phrase] = llm
+        else:
+            hits = _nasdaq_fallback(phrase)
+            if hits:
+                stock_hits[phrase] = hits
             else:
                 truly_unmatched.append(phrase)
-        except Exception:
-            truly_unmatched.append(phrase)
 
     if not suggestions and not stock_hits:
         return None
 
     # Build display text for the confirmation message
     added = [f"{THEME_LABELS[t]} for \"{p}\"" for t, p in suggestions.items()]
-    added += [f"{h['symbol']} ({h['name']}) for \"{p}\"" for p, h in stock_hits.items()]
+    for phrase, hits in stock_hits.items():
+        if len(hits) == 1:
+            added.append(f"{hits[0]['symbol']} ({hits[0]['name']}) for \"{phrase}\"")
+        else:
+            syms = ", ".join(f"{h['symbol']} ({h['name']})" for h in hits[:3])
+            suffix = f" + {len(hits) - 3} more" if len(hits) > 3 else ""
+            added.append(f"{syms}{suffix} for \"{phrase}\"")
     note = "Added " + "; ".join(added) + "."
     if truly_unmatched:
         note += " Couldn't match: " + ", ".join(f'"{p}"' for p in truly_unmatched) + "."
+
+    from core import market as _mkt
+    from core.portfolio import ETFS
+    all_symbols = [h["symbol"] for hits in stock_hits.values() for h in hits
+                   if h["symbol"] not in ETFS and _mkt.known(h["symbol"])]
 
     # Store what to apply in sources/effects so apply() does the mutation, not check()
     return FollowUp("unmatched_interests", after, note, "chips",
                     options=[], keep_label="Got it", facts=[],
                     sources=suggestions,
                     effects={"_auto": {"_themes": list(suggestions.keys()),
-                                       "_stocks": [h["symbol"] for h in stock_hits.values()],
-                                       "_unmatched_clear": list(matched_phrases | set(stock_hits.keys()))}})
+                                       "_stocks": all_symbols,
+                                       "_unmatched_clear": list(matched_by_theme | set(stock_hits.keys()))}})
 
 
 # Order matters within a step: the first rule that fires is asked.
@@ -398,6 +420,52 @@ def unmatched_interests(answers, after, profile, asked):
 # horizon question and the goal's suggested horizon now cover.)
 RULES = [unclear_goal, start_over_balance, nothing_invested, paycheck_over_leftover, contradictory_risk,
          near_term_high_risk, unmatched_interests]
+
+
+def _llm_stock_lookup(phrase: str) -> list[dict]:
+    """Ask Claude for 2-3 publicly traded stocks for a niche interest phrase.
+    Returns [] when no API key is set or on any error. Hard 5s timeout so it never hangs."""
+    import os
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        return []
+    try:
+        import json
+        import anthropic
+        client = anthropic.Anthropic(timeout=5.0)
+        msg = client.messages.create(
+            model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6"),
+            max_tokens=150,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f'Name 2-3 publicly traded US stocks most closely tied to the interest: "{phrase}". '
+                    'Respond ONLY with a JSON array, e.g. [{"symbol":"NKE","name":"Nike"}]. '
+                    'Real tickers only. No commentary.'
+                )
+            }]
+        )
+        return json.loads(msg.content[0].text)
+    except Exception:
+        return []
+
+
+def _nasdaq_fallback(phrase: str) -> list[dict]:
+    """Try Nasdaq autocomplete on the full phrase, then word-by-word as a backup."""
+    try:
+        from core.feed import search as _search
+        results = _search(phrase)
+        if results:
+            return [results[0]]
+        # Try each word separately, take first hit across all words
+        for word in phrase.split():
+            if len(word) < 3:
+                continue
+            r = _search(word)
+            if r:
+                return [r[0]]
+    except Exception:
+        pass
+    return []
 
 
 def suggest_themes(phrases: list[str], exclude=()) -> dict[str, str]:

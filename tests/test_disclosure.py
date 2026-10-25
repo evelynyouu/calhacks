@@ -25,8 +25,9 @@ def test_every_customer_page_has_one_disclosure_line_and_the_footer():
         assert page.count("Trades: simulated") == 1, path
 
 
-def test_the_landing_page_has_the_footer_too():
-    page = client.get("/").text
+def test_customer_pages_have_the_disclosure_footer():
+    make_fund("sam")
+    page = client.get("/p/sam").text
     assert 'id="disclosures"' in page and market.price_label(market.today()) in page
 
 

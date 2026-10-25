@@ -33,7 +33,7 @@
 </head>
 <body class="bg-white text-ink font-sans text-base antialiased min-h-screen">
   {# Ticker strip: portfolio/home page only. Other pages (login etc.) can override to show it if they want. #}
-  {% block tape %}{% if tab is not defined or tab == 'portfolio' %}<div class="tape-dock">{% include "partials/tape_loader.html" %}</div>{% else %}<style>:root{--tape-h:0px}</style>{% endif %}{% endblock %}
+  {% block tape %}{% if tab is defined and tab == 'portfolio' %}<div class="tape-dock">{% include "partials/tape_loader.html" %}</div>{% else %}<style>:root{--tape-h:0px}</style>{% endif %}{% endblock %}
   {# Customer pages (they have a session `s` and a `cid`) get the left sidebar; the landing page and sign-in don't. #}
   {% set with_nav = s is defined and cid is defined %}
   {% if with_nav %}<div class="shell">{% include "partials/nav.html" %}<div class="side-backdrop" data-nav-close aria-hidden="true"></div><div class="shell-main">{% endif %}
@@ -69,9 +69,9 @@
       {% endif %}
     </div>
   </header>
-  {% if disclosure is defined %}{% include "partials/disclosure.html" %}{% endif %}
+  {% if a is defined %}{% include "partials/disclosure.html" %}{% endif %}
   <main class="max-w-6xl mx-auto px-4 sm:px-6 pb-16">{% block content %}{% endblock %}</main>
-  {% if disclosure is defined %}
+  {% if a is defined %}
   {% set dis = disclosure(a.today if a is defined and a else None) %}
   <footer id="disclosures" class="max-w-6xl mx-auto px-4 sm:px-6 pb-12 pt-6 border-t border-line text-xs text-muted space-y-2">
     <p class="text-sm font-semibold text-ink">About the numbers on this page</p>

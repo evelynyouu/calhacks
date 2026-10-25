@@ -166,7 +166,7 @@ def dashboard(request: Request, cid: str):
     if not s.bank_linked:
         return RedirectResponse(f"/p/{cid}/link", status_code=303)
     if not s.done:
-        return _render("dashboard.html", _ctx(request, cid))
+        return _render("dashboard.html", _ctx(request, cid, tab="intake"))
     return _render("portfolio.html", _ctx(request, cid, tab="portfolio", prompts=claude_agent.suggested_prompts(s)[:3],
                                           **_today(s.fund)))
 
@@ -187,7 +187,7 @@ def how_built(request: Request, cid: str, full: bool = False):
     s = _need_fund(cid)
     how = explain.build(s.fund)
     how["slices"] = slices.complete(how.get("slices") or slices.explained(s.fund.portfolio, explain.ADJUST_KINDS))
-    return _render("how_built.html", _ctx(request, cid, tab="portfolio", how=how,
+    return _render("how_built.html", _ctx(request, cid, tab="how", how=how,
                                           intro=claude_agent.fund_intro(s), full=full))
 
 
@@ -645,6 +645,43 @@ def interests(cid: str, values: list[str] = Form(default=[])):
     fund.set_interests(s.fund, [v for v in values if v in THEME_LABELS])
     s.say("Updated your industries. New paychecks steer toward the new targets.")
     return RedirectResponse(f"/p/{cid}/account?saved=investing#investing", status_code=303)
+
+
+@router.post("/p/{cid}/add_interest")
+def add_interest(cid: str, phrases: list[str] = Form(default=[])):
+    """Resolve typed interest phrases to stocks via niche map -> LLM -> Nasdaq, then add them."""
+    from core.interest_map import lookup as _niche_lookup
+    from core.followups import _llm_stock_lookup, _nasdaq_fallback
+    s = _need_fund(cid)
+    phrases = [p.strip()[:100] for p in phrases if p.strip()]
+    if not phrases:
+        return RedirectResponse(f"/p/{cid}/account#investing", status_code=303)
+
+    current = intake.stocks(s.fund.answers)
+    all_new: list[str] = []
+    added_notes: list[str] = []
+    for phrase in phrases:
+        niche = _niche_lookup(phrase)
+        if niche:
+            candidates = [{"symbol": sym, "name": name} for sym, name in niche]
+        else:
+            llm = _llm_stock_lookup(phrase)
+            candidates = llm if llm else _nasdaq_fallback(phrase)
+        new_syms = [h["symbol"] for h in candidates
+                    if h["symbol"] not in current and h["symbol"] not in all_new
+                    and h["symbol"] not in ETFS and market.known(h["symbol"])]
+        if new_syms:
+            all_new.extend(new_syms)
+            names = ", ".join(f"{market.name(sym)} ({sym})" for sym in new_syms[:2])
+            suffix = f" + {len(new_syms) - 2} more" if len(new_syms) > 2 else ""
+            added_notes.append(f'"{phrase}" -> {names}{suffix}')
+
+    if not all_new:
+        return RedirectResponse(f"/p/{cid}/account?saved=interest_none#investing", status_code=303)
+
+    fund.set_stocks(s.fund, current + all_new)
+    s.say("Added to your fund: " + "; ".join(added_notes) + ". New paychecks will buy them.")
+    return RedirectResponse(f"/p/{cid}/account?saved=interest_added#investing", status_code=303)
 
 
 # ---------- Ticker tape ----------

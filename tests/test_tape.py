@@ -42,9 +42,12 @@ def test_unknown_persona_404():
     assert client.get("/p/nobody/tape").status_code == 404
 
 
-def test_pages_render_the_loader_with_the_same_id():
-    r = client.get("/")
-    assert 'id="tape" class="tape tape-loading"' in r.text and 'hx-get="/tape"' in r.text
+def test_tape_only_on_portfolio_screen():
+    # Landing page: no tape
+    assert 'id="tape"' not in client.get("/").text
+    # Portfolio tab after fund is built: tape present
+    make_fund("sam")
+    assert 'id="tape"' in client.get("/p/sam").text
 
 
 def test_every_screen_uses_the_same_price_label():

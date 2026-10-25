@@ -225,7 +225,8 @@ def test_unmatched_interests_offers_close_themes():
 
 
 def test_unmatched_interests_near_miss():
-    assert fired(ans(interests={"themes": [], "unmatched": ["bitcoin"]}), "interests") is None   # nothing close
+    # "xylophone" is genuinely unmatchable — no niche map entry, no theme match
+    assert fired(ans(interests={"themes": [], "unmatched": ["xylophone_zzz"]}), "interests") is None
     assert fired(ans(interests={"themes": ["healthcare"], "unmatched": ["helthcare"]}), "interests") is None
 
 

@@ -66,7 +66,7 @@ def test_no_chips_keeps_it_broad():
 @pytest.mark.parametrize("text,themes", [
     ("AI and video games", ["ai_chips", "gaming"]),
     ("banks; real estate", ["financials", "real_estate"]),
-    ("I love coffee", ["staples"]),
+    ("I love coffee", []),
     ("space", ["space_defense"]),
 ])
 def test_match_interests(text, themes):
