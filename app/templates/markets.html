@@ -2,12 +2,12 @@
 {% block title %}{{ d.symbol }} · Markets · FirstFund{% endblock %}
 {% block header_right %}{% include "partials/tier.html" %}{% endblock %}
 {% block content %}
-<div class="grid lg:grid-cols-12 gap-5">
+<div class="grid lg:grid-cols-12 gap-6">
 
   <aside class="lg:col-span-4 card p-0 overflow-hidden self-start">
-    <div class="p-3 border-b border-ink/10">
+    <div class="p-3 border-b border-line">
       <label class="composer-box py-1" for="mk-search">
-        <svg aria-hidden="true" class="h-4 w-4 text-ink/40 self-center" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="9" r="6"/><path d="m14 14 4 4"/></svg>
+        <svg aria-hidden="true" class="h-4 w-4 text-muted self-center" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="9" r="6"/><path d="m14 14 4 4"/></svg>
         <input id="mk-search" name="q" placeholder="Search a company or ticker" autocomplete="off"
                hx-get="/p/{{ cid }}/search" hx-trigger="input changed delay:300ms, search" hx-target="#search-results">
       </label>
@@ -21,7 +21,7 @@
         <a href="?s={{ t }}&r={{ d.range }}" class="mk-row {% if t == d.symbol %}mk-row-active{% endif %}" {% if t == d.symbol %}aria-current="true"{% endif %}>
           <span class="min-w-0">
             <span class="block font-semibold">{{ i.label if i.role == 'benchmark' else t }}</span>
-            <span class="block truncate text-xs text-ink/55">{{ t if i.role == 'benchmark' else i.name }}</span>
+            <span class="block truncate text-xs text-muted">{{ t if i.role == 'benchmark' else i.name }}</span>
           </span>
           <span class="text-right shrink-0">
             <span class="block tabular-nums text-sm">{{ '%.2f' % q.price }}</span>
@@ -34,21 +34,21 @@
     {% endfor %}
   </aside>
 
-  <section class="lg:col-span-8 space-y-5">
+  <section class="lg:col-span-8 space-y-6">
     {% set q = d.quote %}{% set up = d.range_pct >= 0 %}
     <div class="card">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p class="eyebrow">{{ d.info.kind == 'stock' and 'Single company' or (d.info.role == 'benchmark' and 'Market index' or 'Fund') }} · {{ d.symbol }}</p>
-          <h1 class="font-display text-3xl font-bold mt-1">{{ d.info.name }}</h1>
-          <p class="text-sm text-ink/60">{{ d.info.about }}</p>
+          <h1 class=" text-xl font-semibold mt-1">{{ d.info.name }}</h1>
+          <p class="text-sm text-muted">{{ d.info.about }}</p>
         </div>
         {# Inline only when this price's source differs from the rest (e.g. a ticker Nasdaq doesn't cover); the usual source is in the disclosure line. #}
         {% if price_label(a.today, d.symbol) != price_label(a.today) %}
-        <span class="text-xs text-ink/60">{{ price_label(a.today, d.symbol) }}</span>
+        <span class="text-xs text-muted">{{ price_label(a.today, d.symbol) }}</span>
         {% endif %}
       </div>
-      <p class="mt-4 font-display text-4xl font-bold tabular-nums">{{ q.price | money2 }}</p>
+      <p class="mt-4 text-xl font-semibold tabular-nums">{{ q.price | money2 }}</p>
       <p class="text-sm font-medium {{ 'text-moss-600' if q.change >= 0 else 'text-clay-500' }}">
         {{ '+' if q.change >= 0 else '−' }}{{ '%.2f' % (q.change | abs) }} ({{ q.change_pct | signed(2) }}) today
       </p>
@@ -67,9 +67,9 @@
       </dl>
 
       {% if d.shares %}
-      <div class="mt-4 rounded-xl bg-moss-50 px-4 py-3 text-sm">
+      <div class="mt-4 rounded-lg bg-moss-50 px-4 py-3 text-sm">
         <p class="font-medium">You own {{ '%.4f' % d.shares }} shares, worth {{ d.value | money2 }}</p>
-        <p class="text-ink/65" title="{{ defs.since_bought }}">You paid {{ d.cost | money2 }}; <span class="{{ 'text-moss-600' if d.gain >= 0 else 'text-clay-500' }}">{{ '+' if d.gain >= 0 else '−' }}{{ d.gain | abs | money2 }}{% if d.gain_pct is not none %} ({{ d.gain_pct | signed(2) }}){% endif %}</span> since you bought.</p>
+        <p class="text-muted" title="{{ defs.since_bought }}">You paid {{ d.cost | money2 }}; <span class="{{ 'text-moss-600' if d.gain >= 0 else 'text-clay-500' }}">{{ '+' if d.gain >= 0 else '−' }}{{ d.gain | abs | money2 }}{% if d.gain_pct is not none %} ({{ d.gain_pct | signed(2) }}){% endif %}</span> since you bought.</p>
       </div>
       {% endif %}
 
@@ -85,20 +85,20 @@
         {% endif %}
       </div>
       {% if d.can_add_stock and not d.in_fund %}
-      <p class="mt-2 text-xs text-ink/55">Single companies get up to 5% of your fund each. Your paychecks buy partial shares, so any amount works.</p>
+      <p class="mt-2 text-xs text-muted">Single companies get up to 5% of your fund each. Your paychecks buy partial shares, so any amount works.</p>
       {% endif %}
     </div>
 
     <div class="card">
       <p class="eyebrow">News about {{ d.symbol }}</p>
       {% if d.news %}
-      <ul class="mt-2 divide-y divide-ink/10">
+      <ul class="mt-2 divide-y divide-line">
         {% for n in d.news %}
-        <li class="py-2.5"><a href="{{ n.link }}" target="_blank" rel="noopener noreferrer" class="font-medium hover:underline">{{ n.title }} <span aria-hidden="true">↗</span></a>
-          <p class="text-xs text-ink/50">{{ n.source }} · {{ n.published | ago }}</p></li>
+        <li class="py-3"><a href="{{ n.link }}" target="_blank" rel="noopener noreferrer" class="font-medium hover:underline">{{ n.title }} <span aria-hidden="true">↗</span></a>
+          <p class="text-xs text-muted">{{ n.source }} · {{ n.published | ago }}</p></li>
         {% endfor %}
       </ul>
-      {% else %}<p class="mt-2 text-sm text-ink/60">No headlines right now{% if not live_market %} (news needs a connection){% endif %}.</p>{% endif %}
+      {% else %}<p class="mt-2 text-sm text-muted">No headlines right now{% if not live_market %} (news needs a connection){% endif %}.</p>{% endif %}
     </div>
   </section>
 </div>

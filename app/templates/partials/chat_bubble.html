@@ -1,11 +1,11 @@
 {% if m.role == 'user' %}
 <div class="flex justify-end ff-msg-in">
-  <p class="max-w-[85%] rounded-2xl rounded-br-sm bg-ink/[.07] px-4 py-2.5 text-[.94rem] leading-relaxed whitespace-pre-line">{{ m.text }}</p>
+  <p class="max-w-[85%] rounded-lg rounded-br-sm bg-paper px-4 py-3 text-[.94rem] leading-relaxed whitespace-pre-line">{{ m.text }}</p>
 </div>
 {% else %}
 <div class="flex gap-3 ff-msg-in">
-  <div class="mt-0.5 h-7 w-7 shrink-0 rounded-full bg-gradient-to-br from-moss-600 to-moss-700 text-white grid place-items-center font-display text-sm font-bold shadow-sm" aria-hidden="true">F</div>
-  <div class="max-w-[90%] pt-0.5">
+  <div class="mt-1 h-7 w-7 shrink-0 rounded-full bg-gradient-to-br from-moss-600 to-moss-700 text-white grid place-items-center text-sm font-semibold" aria-hidden="true">F</div>
+  <div class="max-w-[90%] pt-1">
     <div class="text-[.94rem] leading-relaxed ff-prose" data-md="{{ m.text | e }}"></div>
     {% if m.link %}<a href="{{ m.link.href }}" class="mt-2 inline-block text-sm font-medium text-moss-600">{{ m.link.label }}</a>{% endif %}
   </div>

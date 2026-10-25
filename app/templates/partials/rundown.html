@@ -8,9 +8,9 @@
     {% for block in s.rundown.text.split('\n\n') %}
     {% set lines = block.strip().split('\n', 1) %}
     {% if lines | length == 2 and lines[0] | length < 40 %}
-    <div><h3 class="font-semibold">{{ lines[0].strip('#* ') }}</h3><p class="text-ink/80">{{ lines[1] }}</p></div>
-    {% else %}<p class="text-ink/80">{{ block }}</p>{% endif %}
+    <div><h3 class="font-semibold">{{ lines[0].strip('#* ') }}</h3><p class="text-ink-2">{{ lines[1] }}</p></div>
+    {% else %}<p class="text-ink-2">{{ block }}</p>{% endif %}
     {% endfor %}
   </div>
-  <p class="mt-3 text-xs text-ink/45">Written {{ s.rundown.at.strftime('%-I:%M %p') }} from today's prices and headlines. A summary, not advice.</p>
+  <p class="mt-3 text-xs text-muted">Written {{ s.rundown.at.strftime('%-I:%M %p') }} from today's prices and headlines. A summary, not advice.</p>
 </section>

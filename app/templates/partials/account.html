@@ -6,41 +6,41 @@
     <div class="stat"><dt>Fund value</dt><dd>{{ value | money }}</dd></div>
     <div class="stat"><dt>You put in</dt><dd>{{ total.put_in | money }}</dd></div>
     {% set gain = total.total_gain %}
-    <div class="stat" title="{{ defs.total }}"><dt>Total gain</dt><dd class="{% if gain >= 0 %}text-moss-600{% else %}text-clay-500{% endif %}">{{ '+' if gain >= 0 else '−' }}{{ gain | abs | money }}</dd><dd class="text-[.7rem] font-normal text-ink/50">since you started</dd></div>
+    <div class="stat" title="{{ defs.total }}"><dt>Total gain</dt><dd class="{% if gain >= 0 %}text-moss-600{% else %}text-clay-500{% endif %}">{{ '+' if gain >= 0 else '−' }}{{ gain | abs | money }}</dd><dd class="text-xs font-normal text-muted">since you started</dd></div>
   </dl>
 
   <form hx-post="/p/{{ cid }}/pct" hx-trigger="change" hx-swap="none" class="mt-4">
     <label class="text-sm font-medium" for="pct-range">Invest of each paycheck</label>
     <div class="mt-1 flex items-center gap-3" data-slider>
       <input id="pct-range" type="range" min="0" max="100" step="1" value="{{ a.invest_pct | int }}" class="flex-1 accent-moss-600" data-range>
-      <label class="num-box"><input type="number" name="pct" min="0" max="100" step="1" value="{{ a.invest_pct | int }}" data-number aria-label="Percent of each paycheck"><span class="text-ink/50">%</span></label>
+      <label class="num-box"><input type="number" name="pct" min="0" max="100" step="1" value="{{ a.invest_pct | int }}" data-number aria-label="Percent of each paycheck"><span class="text-muted">%</span></label>
     </div>
-    <p class="mt-1 text-sm text-ink/60" data-paycheck="{{ profile.paycheck_amount }}">
+    <p class="mt-1 text-sm text-muted" data-paycheck="{{ profile.paycheck_amount }}">
       <strong data-paycheck-out></strong> of each {{ profile.paycheck_amount | money }} paycheck · next payday in {{ profile.days_to_payday }} day{{ 's' if profile.days_to_payday != 1 }}
     </p>
   </form>
 
-  <div class="mt-4 rounded-xl bg-paper px-3 py-2.5">
-    <p class="text-xs font-semibold uppercase tracking-wide text-ink/40">Simulate an event</p>
+  <div class="mt-4 rounded-lg bg-paper px-3 py-3">
+    <p class="text-xs font-semibold uppercase text-muted">Simulate an event</p>
     <div class="mt-3 space-y-2">
       <div class="flex items-center justify-between gap-3">
         <div>
           <p class="text-sm font-medium">Paycheck arrives</p>
-          <p class="text-xs text-ink/55">Invests the % you chose, right now.</p>
+          <p class="text-xs text-muted">Invests the % you chose, right now.</p>
         </div>
         <button class="btn shrink-0" hx-post="/p/{{ cid }}/paycheck" hx-swap="none" hx-disabled-elt="this">Run</button>
       </div>
       <div class="flex items-center justify-between gap-3">
         <div>
           <p class="text-sm font-medium">Market drops 10%</p>
-          <p class="text-xs text-ink/55">Drops all prices 10% and may trigger a recommendation.</p>
+          <p class="text-xs text-muted">Drops all prices 10% and may trigger a recommendation.</p>
         </div>
         <button class="btn-ghost shrink-0" hx-post="/p/{{ cid }}/market_drop" hx-swap="none" hx-disabled-elt="this">Run</button>
       </div>
       <div class="flex items-center justify-between gap-3">
         <div>
           <p class="text-sm font-medium">Got a raise</p>
-          <p class="text-xs text-ink/55">Bumps your paycheck up $500 and recalculates.</p>
+          <p class="text-xs text-muted">Bumps your paycheck up $500 and recalculates.</p>
         </div>
         <button class="btn-ghost shrink-0" hx-post="/p/{{ cid }}/raise" hx-swap="none" hx-disabled-elt="this">Run</button>
       </div>
@@ -48,10 +48,10 @@
   </div>
 
   {% if a.pending %}
-  <div class="mt-4 rounded-xl border-2 border-ink bg-white p-3">
+  <div class="mt-4 rounded-lg border-2 border-ink bg-white p-3">
     <p class="text-sm font-medium">{{ a.pending | length }} trade{{ 's' if a.pending | length != 1 }} waiting for your OK</p>
-    <p class="text-xs text-ink/60">{{ a.pending[0].why }}</p>
-    <ul class="mt-2 text-sm divide-y divide-ink/10">
+    <p class="text-xs text-muted">{{ a.pending[0].why }}</p>
+    <ul class="mt-2 text-sm divide-y divide-line">
       {% for t in a.pending %}
       <li class="py-1 flex justify-between"><span><span class="uppercase text-xs font-semibold {% if t.side == 'sell' %}text-clay-500{% else %}text-moss-600{% endif %}">{{ t.side }}</span> {{ t.symbol }}</span><span class="tabular-nums">{{ t.notional | money2 }}</span></li>
       {% endfor %}
@@ -63,7 +63,7 @@
   </div>
   {% endif %}
 
-  <div class="mt-4 rounded-xl bg-paper px-3 py-2.5 text-sm">
+  <div class="mt-4 rounded-lg bg-paper px-3 py-3 text-sm">
     {% if tier.auto_trades %}
     <label class="flex items-start gap-2 cursor-pointer">
       <input type="checkbox" class="mt-1 accent-moss-600" {% if a.auto_trade %}checked{% endif %}
@@ -71,21 +71,21 @@
       <span>Prepare rebalancing trades every {{ tier.review_every_days }} days. Nothing trades until you confirm.</span>
     </label>
     {% else %}
-    <p class="text-ink/60">Auto trade prep unlocks at $5,000.</p>
+    <p class="text-muted">Auto trade prep unlocks at $5,000.</p>
     {% endif %}
   </div>
 
   {% if a.log %}
   <p class="mt-4 text-sm font-medium">Recent</p>
-  <ul class="mt-1 text-xs text-ink/65 space-y-0.5">{% for e in a.log[:5] %}<li>{{ e }}</li>{% endfor %}</ul>
+  <ul class="mt-1 text-xs text-muted space-y-1">{% for e in a.log[:5] %}<li>{{ e }}</li>{% endfor %}</ul>
   {% endif %}
   {% if activity %}
   <details class="mt-3 text-xs">
     <summary class="cursor-pointer text-sm font-medium">Bank activity</summary>
-    <ul class="mt-1 space-y-0.5">
+    <ul class="mt-1 space-y-1">
       {% for x in activity[:6] %}
       <li class="flex justify-between gap-2">
-        <span class="text-ink/60">{{ x.on[5:] }} · <code>[{{ x.tag }}]</code> {{ x.text }}{% if x.to %} ({{ x.account }} → {{ x.to }}){% endif %}</span>
+        <span class="text-muted">{{ x.on[5:] }} · <code>[{{ x.tag }}]</code> {{ x.text }}{% if x.to %} ({{ x.account }} → {{ x.to }}){% endif %}</span>
         <span class="tabular-nums">{% if x.flow == 'in' %}+{% elif x.flow == 'out' %}−{% endif %}{{ x.amount | money }}</span>
       </li>
       {% endfor %}

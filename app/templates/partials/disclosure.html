@@ -1,8 +1,8 @@
 {# The slim disclosure line under the page header (state from core/disclosure.py). Panel actions refresh it out of band, so it stays accurate after a paycheck fast-forwards the demo date or Nessie drops out. The full text is the footer in base.html. #}
 {% set dis = disclosure(a.today if a is defined and a else None) %}
-<div id="disclosure" {% if swap_oob %}hx-swap-oob="true"{% endif %} class="disclosure-line max-w-6xl mx-auto px-4 sm:px-6 -mt-3 mb-4 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink/55" role="note" aria-label="About this data">
+<div id="disclosure" {% if swap_oob %}hx-swap-oob="true"{% endif %} class="disclosure-line max-w-6xl mx-auto px-4 sm:px-6 -mt-3 mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted" role="note" aria-label="About this data">
   {% for it in dis["items"] %}
-  <span class="{{ 'text-moss-700' if it.live else '' }}"{% if it.title %} title="{{ it.title }}"{% endif %}>{{ it.label }}</span><span aria-hidden="true" class="text-ink/30">·</span>
+  <span class="{{ 'text-moss-700' if it.live else '' }}"{% if it.title %} title="{{ it.title }}"{% endif %}>{{ it.label }}</span><span aria-hidden="true" class="text-muted">·</span>
   {% endfor %}
   <span>Not financial advice</span>
   <a href="#disclosures" class="font-medium text-moss-600 hover:underline">Details</a>

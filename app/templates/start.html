@@ -2,41 +2,41 @@
 {% block title %}Start as a new customer · FirstFund{% endblock %}
 {% block header_right %}<a href="/" class="btn-ghost">Back</a>{% endblock %}
 {% block content %}
-{% set field = "w-full rounded-xl border border-ink/20 bg-white px-3 py-2.5 text-base focus:border-moss-600 focus:outline-none focus:ring-2 focus:ring-moss-600/20" %}
+{% set field = "w-full rounded-lg border border-line-strong bg-white px-3 py-3 text-base focus:border-moss-600 focus:outline-none focus:ring-2 focus:ring-moss-600/20" %}
 <div class="max-w-lg mx-auto">
   <p class="eyebrow">New customer · demo</p>
-  <h1 class="mt-1 font-display text-3xl font-bold">Start with your own numbers</h1>
-  <p class="mt-2 text-ink/70">Four quick answers make you a <strong>mock bank account</strong> so you can try FirstFund with numbers like yours.</p>
-  <p class="mt-3 rounded-xl bg-moss-50 px-3 py-2 text-sm text-moss-700" role="note">
+  <h1 class="mt-1 text-xl font-semibold">Start with your own numbers</h1>
+  <p class="mt-2 text-ink-2">Four quick answers make you a <strong>mock bank account</strong> so you can try FirstFund with numbers like yours.</p>
+  <p class="mt-3 rounded-lg bg-moss-50 px-3 py-2 text-sm text-moss-700" role="note">
     Demo only: this creates a made-up customer in {{ mock_source }}. Nothing connects to a real bank, so don't enter real account details.
   </p>
 
-  {% if errors.bank %}<p class="mt-4 rounded-xl bg-clay-100 px-3 py-2 text-sm text-clay-500" role="alert">{{ errors.bank }}</p>{% endif %}
+  {% if errors.bank %}<p class="mt-4 rounded-lg bg-clay-100 px-3 py-2 text-sm text-clay-500" role="alert">{{ errors.bank }}</p>{% endif %}
   {% set shown = errors | length - (1 if errors.bank else 0) %}
-  {% if shown %}<p class="mt-4 rounded-xl bg-clay-100 px-3 py-2 text-sm text-clay-500" role="alert">Please fix {{ 'the field' if shown == 1 else 'the ' ~ shown ~ ' fields' }} marked below.</p>{% endif %}
+  {% if shown %}<p class="mt-4 rounded-lg bg-clay-100 px-3 py-2 text-sm text-clay-500" role="alert">Please fix {{ 'the field' if shown == 1 else 'the ' ~ shown ~ ' fields' }} marked below.</p>{% endif %}
 
-  <form method="post" action="/start" class="card mt-5 space-y-5" novalidate>
+  <form method="post" action="/start" class="card mt-6 space-y-6" novalidate>
     <div>
       <label for="name" class="font-medium">First name</label>
       <input id="name" name="name" value="{{ form.name or '' }}" autocomplete="given-name" maxlength="30" required
-             class="{{ field }} mt-1.5" {% if errors.name %}aria-invalid="true" aria-describedby="name-err"{% endif %}>
+             class="{{ field }} mt-2" {% if errors.name %}aria-invalid="true" aria-describedby="name-err"{% endif %}>
       {% if errors.name %}<p id="name-err" class="mt-1 text-sm text-clay-500">{{ errors.name }}</p>{% endif %}
     </div>
 
     <div>
       <label for="paycheck" class="font-medium">Take-home pay per paycheck</label>
-      <p class="text-sm text-ink/60">After taxes: what actually lands in checking.</p>
-      <div class="relative mt-1.5">
-        <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink/50">$</span>
+      <p class="text-sm text-muted">After taxes: what actually lands in checking.</p>
+      <div class="relative mt-2">
+        <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted">$</span>
         <input id="paycheck" name="paycheck" value="{{ form.paycheck or '' }}" inputmode="decimal" placeholder="1,850" required
-               class="{{ field }} pl-7" {% if errors.paycheck %}aria-invalid="true" aria-describedby="paycheck-err"{% endif %}>
+               class="{{ field }} pl-8" {% if errors.paycheck %}aria-invalid="true" aria-describedby="paycheck-err"{% endif %}>
       </div>
       {% if errors.paycheck %}<p id="paycheck-err" class="mt-1 text-sm text-clay-500">{{ errors.paycheck }}</p>{% endif %}
     </div>
 
     <fieldset>
       <legend class="font-medium">How often you're paid</legend>
-      <div class="mt-1.5 grid grid-cols-2 gap-2">
+      <div class="mt-2 grid grid-cols-2 gap-2">
         {% for key, f in frequencies.items() %}
         <label class="block">
           <input type="radio" name="frequency" value="{{ key }}" class="peer sr-only"
@@ -50,30 +50,30 @@
 
     <div>
       <label for="checking" class="font-medium">Roughly what's in checking now</label>
-      <div class="relative mt-1.5">
-        <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink/50">$</span>
+      <div class="relative mt-2">
+        <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted">$</span>
         <input id="checking" name="checking" value="{{ form.checking or '' }}" inputmode="decimal" placeholder="600" required
-               class="{{ field }} pl-7" {% if errors.checking %}aria-invalid="true" aria-describedby="checking-err"{% endif %}>
+               class="{{ field }} pl-8" {% if errors.checking %}aria-invalid="true" aria-describedby="checking-err"{% endif %}>
       </div>
       {% if errors.checking %}<p id="checking-err" class="mt-1 text-sm text-clay-500">{{ errors.checking }}</p>{% endif %}
     </div>
 
-    <details class="rounded-xl border border-ink/10 px-3 py-2" {% if errors.savings or errors.bills or form.savings or form.bills %}open{% endif %}>
+    <details class="rounded-lg border border-line px-3 py-2" {% if errors.savings or errors.bills or form.savings or form.bills %}open{% endif %}>
       <summary class="cursor-pointer text-sm font-medium">Optional: savings and monthly bills</summary>
       <div class="mt-3 grid sm:grid-cols-2 gap-3 pb-1">
         <div>
           <label for="savings" class="text-sm font-medium">Savings balance</label>
           <div class="relative mt-1">
-            <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink/50">$</span>
-            <input id="savings" name="savings" value="{{ form.savings or '' }}" inputmode="decimal" placeholder="0" class="{{ field }} pl-7">
+            <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted">$</span>
+            <input id="savings" name="savings" value="{{ form.savings or '' }}" inputmode="decimal" placeholder="0" class="{{ field }} pl-8">
           </div>
           {% if errors.savings %}<p class="mt-1 text-sm text-clay-500">{{ errors.savings }}</p>{% endif %}
         </div>
         <div>
           <label for="bills" class="text-sm font-medium">Rent and bills per month</label>
           <div class="relative mt-1">
-            <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink/50">$</span>
-            <input id="bills" name="bills" value="{{ form.bills or '' }}" inputmode="decimal" placeholder="0" class="{{ field }} pl-7">
+            <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted">$</span>
+            <input id="bills" name="bills" value="{{ form.bills or '' }}" inputmode="decimal" placeholder="0" class="{{ field }} pl-8">
           </div>
           {% if errors.bills %}<p class="mt-1 text-sm text-clay-500">{{ errors.bills }}</p>{% endif %}
         </div>
@@ -82,7 +82,7 @@
 
     <div>
       <button class="btn w-full py-3 text-base">Create my demo bank account</button>
-      <p class="mt-2 text-xs text-ink/55">You'll get mock Checking, Savings and FirstFund Investing accounts (plus a $0 card), with about two months of made-up paychecks and spending. Spending isn't asked: the history assumes what wasn't paid in bills or saved was spent. Amounts are rounded to whole dollars.</p>
+      <p class="mt-2 text-xs text-muted">You'll get mock Checking, Savings and FirstFund Investing accounts (plus a $0 card), with about two months of made-up paychecks and spending. Spending isn't asked: the history assumes what wasn't paid in bills or saved was spent. Amounts are rounded to whole dollars.</p>
     </div>
   </form>
 </div>

@@ -1,17 +1,17 @@
 {# The input under the chat. During the intake it matches the question: text, dollars, slider, scale,
    multiple choice (cards, plus a typed "Something else" box when the question has one) or chips. A follow-up (core/followups.py) reuses the same inputs plus a "Keep my answer"
    button, and the progress counter stays on the question it follows. After the intake it's a free-text box. #}
-<div id="composer" {% if swap_oob %}hx-swap-oob="true"{% endif %} class="border-t border-ink/10 px-5 pt-3 pb-4">
+<div id="composer" {% if swap_oob %}hx-swap-oob="true"{% endif %} class="border-t border-line px-6 pt-3 pb-4">
   {% set fu = s.followup %}
   {% set q = fu.question if fu else s.question %}
   {% if q %}
   <div class="mb-2 flex items-center justify-between gap-3">
     <div class="flex gap-1" aria-hidden="true">
-      {% for _ in questions %}<span class="h-1 w-5 rounded-full {% if loop.index0 < s.step %}bg-moss-500{% elif loop.index0 == s.step %}bg-moss-500/50{% else %}bg-ink/10{% endif %}"></span>{% endfor %}
+      {% for _ in questions %}<span class="h-1 w-5 rounded-full {% if loop.index0 < s.step %}bg-moss-500{% elif loop.index0 == s.step %}bg-moss-500/50{% else %}bg-paper{% endif %}"></span>{% endfor %}
     </div>
-    <span class="text-xs text-ink/50">Question {{ s.step + 1 }} of {{ questions | length }}{% if fu %} · quick follow-up{% endif %}</span>
+    <span class="text-xs text-muted">Question {{ s.step + 1 }} of {{ questions | length }}{% if fu %} · quick follow-up{% endif %}</span>
   </div>
-  {% if q.help %}<p class="mb-2 text-sm text-ink/60">{{ q.help }}</p>{% endif %}
+  {% if q.help %}<p class="mb-2 text-sm text-muted">{{ q.help }}</p>{% endif %}
   <form hx-post="/p/{{ cid }}/answer" hx-target="#chat-messages" hx-swap="beforeend" hx-indicator="#typing"
         hx-disabled-elt="find button" class="space-y-3">
 
@@ -23,10 +23,10 @@
 
     {% elif q.kind == 'money' %}
     <div class="composer-box">
-      <span class="pl-1 text-lg text-ink/50">$</span>
+      <span class="pl-1 text-lg text-muted">$</span>
       <input name="value" inputmode="decimal" required autofocus placeholder="0" aria-label="{{ q.prompt }} (US dollars)"
 >
-      <span class="text-xs text-ink/40">USD</span>
+      <span class="text-xs text-muted">USD</span>
       <button class="btn">Send</button>
     </div>
 
@@ -36,23 +36,23 @@
              class="flex-1 accent-moss-600" aria-label="{{ q.prompt }}" data-range>
       <label class="num-box">
         <input type="number" name="value" min="{{ q.min }}" max="{{ q.max }}" step="{{ q.step }}" value="{{ q.default }}" required data-number aria-label="Exact value">
-        <span class="text-ink/50">{{ q.unit }}</span>
+        <span class="text-muted">{{ q.unit }}</span>
       </label>
       <button class="btn">Send</button>
     </div>
     {% if q.key == 'paycheck_pct' %}
-    <p class="text-sm text-ink/60" data-paycheck="{{ profile.paycheck_amount }}">
+    <p class="text-sm text-muted" data-paycheck="{{ profile.paycheck_amount }}">
       That's <strong data-paycheck-out></strong> of your {{ profile.paycheck_amount | money }} paycheck, every payday.
     </p>
     {% endif %}
 
     {% elif q.kind == 'scale' %}
-    <div class="grid grid-cols-10 gap-1.5" role="group" aria-label="{{ q.prompt }}">
+    <div class="grid grid-cols-10 gap-2" role="group" aria-label="{{ q.prompt }}">
       {% for n in range(q.min | int, q.max | int + 1) %}
       <button name="value" value="{{ n }}" class="scale-btn">{{ n }}</button>
       {% endfor %}
     </div>
-    <div class="flex justify-between text-xs text-ink/50"><span>{{ q.ends[0] }}</span><span>{{ q.ends[1] }}</span></div>
+    <div class="flex justify-between text-xs text-muted"><span>{{ q.ends[0] }}</span><span>{{ q.ends[1] }}</span></div>
 
     {% elif q.kind == 'choice' %}
     {# The horizon question highlights the card the goal suggests (core/intake.suggested_horizon); any card works. #}
