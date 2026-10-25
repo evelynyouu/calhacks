@@ -166,17 +166,28 @@ document.body.addEventListener('htmx:afterSettle', e => {
 });
 
 // ---------- Left sidebar (partials/nav.html, nav.css) ----------
-// Desktop: the collapse button shrinks it to icons; the choice is remembered in localStorage (if allowed).
+// Desktop: three states, remembered in localStorage (if allowed) and applied before paint by base.html:
+// 'open', 'collapsed' (icons with tooltips) and 'hidden' (the header's Show button brings it back).
 // Mobile: the header's Menu button opens it as a drawer. Escape, the backdrop or a link closes it, and focus
 // goes back to the Menu button. Listeners are delegated, so they keep working after htmx swaps #nav.
 const NAV_KEY = 'ff-nav';
 const mobileNav = () => window.matchMedia('(max-width: 767.98px)').matches;
 
+function setNavState(state) {
+  const html = document.documentElement;
+  html.classList.toggle('nav-collapsed', state === 'collapsed');
+  html.classList.toggle('nav-hidden', state === 'hidden');
+  try { localStorage.setItem(NAV_KEY, state); } catch (err) { /* private mode: not remembered */ }
+  syncNav();
+}
+
 function syncNav() {
   const collapsed = document.documentElement.classList.contains('nav-collapsed');
+  const hidden = document.documentElement.classList.contains('nav-hidden');
+  document.querySelectorAll('[data-nav-show], [data-nav-hide]').forEach(b => b.setAttribute('aria-expanded', String(!hidden)));
   document.querySelectorAll('[data-nav-collapse]').forEach(b => {
     b.setAttribute('aria-expanded', String(!collapsed));
-    b.title = collapsed ? 'Expand the sidebar' : 'Collapse the sidebar';
+    b.title = collapsed ? 'Expand the sidebar' : 'Collapse the sidebar to icons';
     const t = b.querySelector('[data-nav-collapse-text]');
     if (t) t.textContent = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
   });
@@ -205,9 +216,15 @@ document.addEventListener('click', e => {
   } else if (e.target.closest('[data-nav-close]')) {
     closeNav(true);
   } else if (e.target.closest('[data-nav-collapse]')) {
-    const collapsed = document.documentElement.classList.toggle('nav-collapsed');
-    try { localStorage.setItem(NAV_KEY, collapsed ? 'collapsed' : 'open'); } catch (err) { /* private mode: not remembered */ }
-    syncNav();
+    setNavState(document.documentElement.classList.contains('nav-collapsed') ? 'open' : 'collapsed');
+  } else if (e.target.closest('[data-nav-hide]')) {
+    setNavState('hidden');
+    const show = document.querySelector('[data-nav-show]');   // focus would otherwise be lost with the sidebar
+    if (show) show.focus();
+  } else if (e.target.closest('[data-nav-show]')) {
+    setNavState('open');
+    const hide = document.querySelector('[data-nav-hide]');
+    if (hide) hide.focus();
   } else if (e.target.closest('#nav a')) {
     closeNav(false);
   }

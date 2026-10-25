@@ -1,7 +1,8 @@
-{# Left sidebar. Desktop (md+): a sticky column under the ticker, collapsible to icons (app.js remembers it).
+{# Left sidebar. Desktop (md+): a sticky column under the ticker in one of three states that app.js remembers:
+   open, collapsed to icons (with tooltips), or hidden (base.html's header then shows a "Show sidebar" button).
    Mobile: a drawer opened by the menu button in base.html's header. Refreshed out of band as #nav when the
    intake finishes, so the full tab list appears without a reload. During the intake only the chat (and Money,
-   once a bank is linked) make sense, so only those show. #}
+   once a bank is linked) make sense, so only those show. Switch customer is in the header, not here. #}
 {% set linked = s.bank_linked %}
 {% set cur = tab if tab is defined else ('intake' if not s.done else '') %}
 {% if s.done %}
@@ -28,28 +29,34 @@
     <a href="/p/{{ cid }}" class="side-brand font-display" aria-label="FirstFund home">
       <span class="side-mark" aria-hidden="true">F</span><span class="side-label">First<span class="text-moss-500">Fund</span></span>
     </a>
-    <button type="button" class="side-collapse" data-nav-collapse aria-expanded="true" aria-controls="nav-links"
-            title="Collapse the sidebar">
-      <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 5 7 10l5 5"/></svg>
-      <span class="sr-only" data-nav-collapse-text>Collapse sidebar</span>
-    </button>
+    <div class="side-tools">
+      <button type="button" class="side-collapse" data-nav-collapse aria-expanded="true" aria-controls="nav-links"
+              title="Collapse the sidebar to icons">
+        <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 5 7 10l5 5"/></svg>
+        <span class="sr-only" data-nav-collapse-text>Collapse sidebar</span>
+      </button>
+      {# Fully hidden (desktop only); the header's "Show sidebar" button brings it back. #}
+      <button type="button" class="side-hide" data-nav-hide aria-controls="nav" title="Hide the sidebar">
+        <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="1.5"/><path d="M8 4v12"/><path d="m14.5 8-2 2 2 2"/></svg>
+        <span class="sr-only">Hide sidebar</span>
+      </button>
+    </div>
   </div>
   <nav id="nav-links" class="side-links" aria-label="Sections">
     {% for key, label, href in items %}
     <a href="/p/{{ cid }}{{ href }}" class="side-link {% if cur == key %}side-link-active{% endif %}" data-nav-key="{{ key }}"
-       {% if cur == key %}aria-current="page"{% endif %} title="{{ label }}">
+       {% if cur == key %}aria-current="page"{% endif %} aria-label="{{ label }}">
       <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ icons[key] | safe }}</svg>
       <span class="side-label">{{ label }}</span>
+      {# Shown beside the icon when collapsed, on hover and on keyboard focus (nav.css). The aria-label already
+         names the link, so the tooltip is hidden from screen readers to avoid hearing it twice. #}
+      <span class="side-tip" aria-hidden="true">{{ label }}</span>
     </a>
     {% endfor %}
   </nav>
+  {# Who this is, for context only (not a link). #}
   <div class="side-foot">
-    <span class="side-avatar side-foot-full" aria-hidden="true">{{ profile.name[0] }}</span>
-    <span class="side-foot-full min-w-0">
-      <span class="block truncate font-medium text-white">{{ profile.name }}</span>
-      <a href="/" class="side-switch">Switch customer</a>
-    </span>
-    {# Collapsed: just the initial, linking to the customer picker #}
-    <a href="/" class="side-avatar side-foot-mini" title="{{ profile.name }}: switch customer"><span aria-hidden="true">{{ profile.name[0] }}</span><span class="sr-only">{{ profile.name }}: switch customer</span></a>
+    <span class="side-avatar" aria-hidden="true">{{ profile.name[0] }}</span>
+    <span class="side-foot-full min-w-0 block truncate font-medium text-white">{{ profile.name }}</span>
   </div>
 </aside>
