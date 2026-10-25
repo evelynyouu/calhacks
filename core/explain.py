@@ -8,11 +8,14 @@ from __future__ import annotations
 
 from core import intake, market
 from core.fund import FundAccount, value
-from core.models import Portfolio
+from core.market import COMPANIES, ETFS
+from core.models import SLICES, Portfolio
 from core.policy import tier_for
-from core.portfolio import (BOND_MAX, BOND_MIN, BOND_STEP, CONCENTRATION_NOTE, LEVEL_BAND, MIN_TILT,
-                            PER_INTEREST_CAP, RISK_LABELS, STOCK_CAP_BY_RISK, STOCK_EACH, SWING_REF,
+from core.portfolio import (BOND_MAX, BOND_MIN, BOND_STEP, CONCENTRATION_NOTE, CORE_NAME_CAP, INTL_SHARE, LEVEL_BAND,
+                            MIN_PICK, MIN_TILT, PER_INTEREST_CAP, RISK_LABELS, SPEND_CAP_BY_RISK, SPEND_PICKS,
+                            STOCK_CAP_BY_RISK, STOCK_EACH, SWING_REF, THEME_LABELS, THEME_PICKS, THEMES,
                             TILT_CAP_BY_RISK, US_SHARE, lookthrough, swing)
+from core.universe import core_companies
 from core.profile import get_profile
 from core.rebalance import DRIFT_ABS, DRIFT_REL
 from core.report import CONCENTRATION_TRIGGER
@@ -23,6 +26,7 @@ EXAMPLE_BALANCE = 1_000.0   # dollars shown when the fund is still empty
 ADJUST_KINDS = ("contradiction", "horizon", "drop", "override", "swing", "cap", "dropped", "overlap",
                 "concentration", "sector")
 ANSWER_KEYS = ("goal", "risk_priority", "risk_range", "max_drop", "horizon")
+DATA_DATE = "2026-10-24"   # when company sizes were read (docs/data_sources.md)
 
 
 def build(acct: FundAccount) -> dict:
@@ -39,6 +43,7 @@ def build(acct: FundAccount) -> dict:
         "score": {"answers": acct.risk_score, "used": p.score, "label": p.risk_label,
                   "texts": [r.text for r in p.reasons if r.kind in ("score", "contradiction")]},
         "mix": {"bonds": bonds, "stocks": 1 - bonds, "holdings": len(p.holdings)},
+        "slices": _slices(p),
         "holdings": [{"ticker": h.ticker, "name": h.name, "weight": h.weight, "role": h.role,
                       "texts": [r.text for r in p.reasons if r.ticker == h.ticker and r.kind not in ADJUST_KINDS]}
                      for h in p.holdings],
@@ -50,6 +55,16 @@ def build(acct: FundAccount) -> dict:
         "change": _changes(acct),
         "full": _full(acct, p, balance, bonds),
     }
+
+
+def _slices(p: Portfolio) -> list[dict]:
+    """The fund's parts in SLICES order, each with its exact share and its holdings' reasons (for the page)."""
+    weights, groups = p.slice_weights(), p.by_slice()
+    return [{"key": k, "label": label, "weight": weights[k],
+             "holdings": [{"ticker": h.ticker, "name": h.name, "weight": h.weight, "sector": h.sector,
+                           "texts": [r.text for r in p.reasons if r.ticker == h.ticker and r.kind not in ADJUST_KINDS]}
+                          for h in groups[k]]}
+            for k, label in SLICES]
 
 
 def intro_facts(acct: FundAccount) -> list[str]:
@@ -73,9 +88,23 @@ def fallback_intro(acct: FundAccount) -> str:
 def explain_for_chat(p: Portfolio, ticker: str | None = None) -> dict:
     """The get_fund_explanation tool: the same reasons the page shows, optionally for one holding."""
     reasons = [r for r in p.reasons if ticker is None or r.ticker == ticker.upper()]
-    return {"risk_label": p.risk_label, "score_used": p.score,
-            "reasons": [{"kind": r.kind, "ticker": r.ticker, "text": r.text} for r in reasons],
-            "note": "Look-through and the worst-year figures for interest funds are approximate."}
+    held = {h.ticker: h for h in p.holdings}
+    out = {"risk_label": p.risk_label, "score_used": p.score,
+           "reasons": [{"kind": r.kind, "ticker": r.ticker, "text": r.text} for r in reasons],
+            "note": "Look-through and the worst-year figures for single companies and interest funds are approximate."}
+    if ticker and ticker.upper() in held:
+        h = held[ticker.upper()]
+        out.update(slice=h.slice, sector=h.sector, weight=h.weight)
+    elif ticker:
+        out["note"] = f"{ticker.upper()} isn't in the fund. " + out["note"]
+    return out
+
+
+def _theme_share(p: Portfolio, theme: str) -> float:
+    """One interest's exact share of the fund: its part of each company (or its theme fund)."""
+    def theme_of(t):
+        return ETFS[t]["theme"] if t in ETFS else ETFS[COMPANIES[t]["etf"]]["theme"]
+    return sum(w for t, w in p.parts.get("interest", {}).items() if theme_of(t) == theme)
 
 
 def _answers(a: dict) -> list[dict]:
@@ -114,17 +143,32 @@ def _full(acct: FundAccount, p: Portfolio, balance: float, bonds: float) -> list
     score_text = (f"Your two preference answers are scored from 0 (most careful) to 100 (most adventurous): "
                   f"{' and '.join(pref)}. Their average is your risk score, {acct.risk_score}. "
                   if pref else "")
-    tilts = [h for h in p.holdings if h.role == "tilt"]
-    stocks = [h for h in p.holdings if h.role == "stock"]
     return [
-        {"title": "Why index funds", "paras": [
-            "An index fund buys every company in a market (or a slice of it) at once, so one company's bad news "
-            "barely moves it, and the yearly fee stays low because nobody is paid to pick stocks.",
-            f"Your fund is built from {len(p.holdings) - len(stocks)} of them"
-            + (" plus the single companies you added." if stocks else ".")]},
+        {"title": "Why your own index", "paras": [
+            f"Instead of one fund that holds thousands of US companies, your US stocks are {len(core_companies())} "
+            "companies you own directly: the biggest in every sector, weighted by size the way an index fund is, "
+            f"none over {CORE_NAME_CAP:.0%} of that part. You get most of the market's spread, you can see every "
+            "company you own, and the fund can lean toward your life.",
+            "The tradeoff: it skips thousands of smaller companies, so it follows the US market closely but not "
+            "exactly."]},
+        {"title": "Why some parts stay funds", "paras": [
+            "Bonds (BND) stay a fund: thousands of small loans are how a bond fund steadies things, and you can't "
+            "spread money that thin buying bonds one at a time.",
+            f"International stocks (VXUS, {INTL_SHARE:.0%} of your stock part) stay a fund too: only a handful of "
+            "foreign companies trade on US exchanges, so a fund is the only way to own thousands of them.",
+            *(f"{h.name} ({h.ticker}) stays a fund because we don't hold single companies for that interest."
+              for h in p.by_slice()["interest"] if h.ticker in ETFS)]},
+        {"title": "Where you spend", "paras": [
+            f"Up to {SPEND_CAP_BY_RISK[level]:.0%} of a {p.risk_label.lower()} fund goes to companies you spend money "
+            f"with in the last 90 days, by dollars: the top {SPEND_PICKS}, none under {MIN_PICK:.1%}. A local shop or "
+            "a private chain counts toward the biggest public companies in its category. Bills and one-off "
+            "purchases don't count.",
+            *(r.text for r in p.reasons if r.kind == "spend"),
+            "This personalizes your fund; it isn't a prediction that those companies will do well."]},
         {"title": "US and international stocks", "paras": [
-            f"The stock part is split about {US_SHARE:.0%} US (VTI) and {1 - US_SHARE:.0%} international (VXUS), "
-            "roughly how the world's stock markets divide. Owning both means one country's slump isn't all of your fund."]},
+            f"The stock part is split about {US_SHARE:.0%} US (your own index and your picks) and "
+            f"{INTL_SHARE:.0%} international (VXUS), roughly how the world's stock markets divide. Owning both "
+            "means one country's slump isn't all of your fund."]},
         {"title": "What bonds do", "paras": [
             f"{bonds:.0%} of your fund is in bonds (BND): loans to governments and companies that pay interest. "
             "They usually hold steady when stocks fall, so they soften drops; the cost is slower growth.",
@@ -138,12 +182,15 @@ def _full(acct: FundAccount, p: Portfolio, balance: float, bonds: float) -> list
             f"Each interest gets up to {PER_INTEREST_CAP:.0%} of the fund, less if its fund swings more than "
             f"{SWING_REF:.0%} a year, and never under {MIN_TILT:.0%}. A {p.risk_label.lower()} fund keeps all "
             f"interests together to {TILT_CAP_BY_RISK[level]:.0%}.",
-            *(f"{h.ticker} moves about {swing(h.ticker):.0%} in a typical year; it's {h.weight:.1%} of your fund."
-              for h in tilts),
+            f"Each interest becomes its {THEME_PICKS} biggest companies we hold, by size, or its theme fund if we "
+            "hold none. How much it gets follows how much that theme's fund swings:",
+            *(f"{THEME_LABELS[th]}: its fund ({THEMES[th]}) moves about {swing(THEMES[th]):.0%} in a typical year; "
+              f"the interest is {_theme_share(p, th):.1%} of your fund."
+              for th in intake.interests(a) if th in THEMES and _theme_share(p, th) > 0),
             f"Single companies get {STOCK_EACH:.0%} each, {STOCK_CAP_BY_RISK[level]:.0%} in total at this level: "
             "one company can sink on its own news, so each stays small."]},
         {"title": "What you really own (look-through)", "paras": [
-            "Your funds hold many of the same companies. Counting through each fund, the biggest are:",
+            "Counting the companies you own directly and what's inside your funds, the biggest are:",
             *(f"{market.name(c)} ({c}): about {w:.1%} of your fund" for c, w in top),
             f"We flag any company over {CONCENTRATION_NOTE:.0%}. This is approximate: we only see each fund's "
             "biggest holdings."]},
@@ -161,9 +208,10 @@ def _full(acct: FundAccount, p: Portfolio, balance: float, bonds: float) -> list
             + f", or one company passes {CONCENTRATION_TRIGGER:.0%} "
             "of the fund, it suggests trades. Nothing happens until you confirm."]},
         {"title": "What's simulated or approximate", "paras": [
-            "Worst years for VTI, VXUS and BND are their real 2008 and 2022 returns (VXUS's 2008 is its index "
-            "twin, VGTSX). For interest funds and single companies we estimate them from how much each moves "
-            "with the market.",
+            "Worst years for VXUS and BND are their real 2008 and 2022 returns (VXUS's 2008 is its index twin, "
+            "VGTSX). For single companies and interest funds we estimate them from how much each moves with the "
+            "market (its beta) times the US market's real return.",
+            f"Company sizes (market caps) are approximate, from one day ({DATA_DATE}); see docs/data_sources.md.",
             "The typical one-year range comes from FirstFund's simulator, which uses assumed returns, not real "
             "price history.",
             "Look-through counts only each fund's biggest holdings, and prices after the last real close are "

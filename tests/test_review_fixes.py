@@ -58,8 +58,9 @@ def test_horizon_sentence_reads_right_for_every_option():
 def test_full_version_counts_funds_not_companies_and_retaking_is_described_right():
     s = make_fund("sam", stocks=["NVDA", "AAPL"])
     how = explain.build(s.fund)
-    funds = sum(1 for h in s.fund.portfolio.holdings if h.role != "stock")
-    assert f"built from {funds} of them" in " ".join(how["full"][0]["paras"])
+    # the first section now counts the companies in the US index (the companies you added aren't in that count)
+    from core.universe import core_companies
+    assert f"your US stocks are {len(core_companies())} companies" in " ".join(how["full"][0]["paras"])
     assert "clears your simulated fund" in " ".join(how["change"])
 
 
