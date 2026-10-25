@@ -108,7 +108,7 @@ def _ctx(request: Request, cid: str, **extra) -> dict:
         "override": builder.override_offer(a.portfolio, a.answers) if a.portfolio else None,
         "spend_details": _spend_details(cid, a),
         "risk_adj": _risk_adj(cid, a),
-        "robinhood_connected": s.robinhood_connected,
+        "alpaca_connected": s.alpaca_connected,
         **extra,
     }
 
@@ -364,10 +364,10 @@ def paycheck(request: Request, cid: str):
     say = (f"Paycheck landed: ${d['paycheck']:,.0f}. Invested ${d['invested']:,.0f} ({d['pct']:g}%) right away"
            + (f": {buys}." if buys else "."))
     new_pending = len(s.fund.pending) and len(s.fund.pending) != pending_before
-    if s.robinhood_connected and new_pending:
+    if s.alpaca_connected and new_pending:
         executed = fund.confirm_pending(s.fund)
         say += (f" Claude reviewed your portfolio and placed {len(executed)} rebalancing "
-                f"trade{'s' if len(executed) != 1 else ''} automatically via Robinhood.")
+                f"trade{'s' if len(executed) != 1 else ''} automatically via Alpaca.")
     elif new_pending:
         say += f" Your scheduled review also lined up {len(s.fund.pending)} trades; they're waiting for your OK."
     say += f" (Payday {d['on'].strftime('%b %-d')}.)"   # two paydays would read the same otherwise
@@ -565,23 +565,21 @@ def account(request: Request, cid: str, saved: str = ""):
                                         picked=set(intake.interests(s.fund.answers))))
 
 
-@router.post("/p/{cid}/robinhood/connect")
-def robinhood_connect(request: Request, cid: str):
-    s = _session(cid)
-    s.robinhood_connected = True
-    # Switch broker singleton to Robinhood if credentials are present
+@router.post("/p/{cid}/alpaca/connect")
+def alpaca_connect(request: Request, cid: str):
     from core import broker as _broker_mod
-    if os.getenv("ROBINHOOD_CRYPTO_API_KEY") and os.getenv("ROBINHOOD_CRYPTO_PRIVATE_KEY"):
-        os.environ["BROKER"] = "robinhood"
-        _broker_mod._broker = None  # force re-init on next get_broker() call
+    s = _session(cid)
+    s.alpaca_connected = True
+    os.environ["BROKER"] = "alpaca"
+    _broker_mod._broker = None  # force re-init on next get_broker() call
     return RedirectResponse(f"/p/{cid}/account#linked", status_code=303)
 
 
-@router.post("/p/{cid}/robinhood/disconnect")
-def robinhood_disconnect(request: Request, cid: str):
+@router.post("/p/{cid}/alpaca/disconnect")
+def alpaca_disconnect(request: Request, cid: str):
     from core import broker as _broker_mod
     s = _session(cid)
-    s.robinhood_connected = False
+    s.alpaca_connected = False
     os.environ["BROKER"] = "sim"
     _broker_mod._broker = None
     return RedirectResponse(f"/p/{cid}/account#linked", status_code=303)
