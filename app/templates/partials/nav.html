@@ -1,8 +1,53 @@
-<nav id="nav" {% if swap_oob %}hx-swap-oob="true"{% endif %} class="mb-5 -mx-1 flex gap-1 overflow-x-auto border-b border-ink/10" aria-label="Sections">
-  {% if s.done %}
-  {% for key, label, href in [('portfolio', 'Portfolio', ''), ('markets', 'Markets', '/markets'), ('news', 'News', '/news'),
-                               ('chat', 'Chat', '/chat'), ('report', 'Report', '/report'), ('account', 'Account', '/account')] %}
-  <a href="/p/{{ cid }}{{ href }}" class="tab {% if tab == key %}tab-active{% endif %}" {% if tab == key %}aria-current="page"{% endif %}>{{ label }}</a>
-  {% endfor %}
-  {% endif %}
-</nav>
+{# Left sidebar. Desktop (md+): a sticky column under the ticker, collapsible to icons (app.js remembers it).
+   Mobile: a drawer opened by the menu button in base.html's header. Refreshed out of band as #nav when the
+   intake finishes, so the full tab list appears without a reload. During the intake only the chat (and Money,
+   once a bank is linked) make sense, so only those show. #}
+{% set linked = s.linked if s.linked is defined else True %}
+{% set cur = tab if tab is defined else ('intake' if not s.done else '') %}
+{% if s.done %}
+{% set items = [('portfolio', 'Portfolio', '')] + ([('money', 'Money', '/money')] if linked else []) +
+               [('markets', 'Markets', '/markets'), ('news', 'News', '/news'), ('chat', 'Chat', '/chat'),
+                ('report', 'Report', '/report'), ('account', 'Account', '/account')] %}
+{% else %}
+{% set items = [('intake', 'Build my fund', '')] + ([('money', 'Money', '/money')] if linked else []) %}
+{% endif %}
+{% set icons = {
+  'portfolio': '<path d="M10 3a7 7 0 1 0 7 7h-7z"/><path d="M13 2.5A7 7 0 0 1 17.5 7H13z"/>',
+  'intake': '<path d="M4 4h12v9H8l-4 3z"/><path d="M7.5 8.5h5"/>',
+  'money': '<path d="M3 8 10 4l7 4"/><path d="M4.5 8.5v6m4-6v6m3-6v6m4-6v6"/><path d="M3 16.5h14"/>',
+  'markets': '<path d="M3 15 8 10l3 3 6-7"/><path d="M13 6h4v4"/>',
+  'news': '<rect x="3" y="4" width="14" height="12" rx="1.5"/><path d="M6 8h8M6 11h8M6 14h5"/>',
+  'chat': '<path d="M4 4h12v9H8l-4 3z"/>',
+  'report': '<path d="M5 3h7l3 3v11H5z"/><path d="M8 13v-2m3 2V9m3 4v-3"/>',
+  'account': '<circle cx="10" cy="7" r="3.2"/><path d="M4 17c.8-3 3.2-4.5 6-4.5s5.2 1.5 6 4.5"/>',
+} %}
+<aside id="nav" {% if swap_oob %}hx-swap-oob="true"{% endif %} class="side" aria-label="Main navigation">
+  <div class="side-head">
+    <a href="/p/{{ cid }}" class="side-brand font-display" aria-label="FirstFund home">
+      <span class="side-mark" aria-hidden="true">F</span><span class="side-label">First<span class="text-moss-500">Fund</span></span>
+    </a>
+    <button type="button" class="side-collapse" data-nav-collapse aria-expanded="true" aria-controls="nav-links"
+            title="Collapse the sidebar">
+      <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 5 7 10l5 5"/></svg>
+      <span class="sr-only" data-nav-collapse-text>Collapse sidebar</span>
+    </button>
+  </div>
+  <nav id="nav-links" class="side-links" aria-label="Sections">
+    {% for key, label, href in items %}
+    <a href="/p/{{ cid }}{{ href }}" class="side-link {% if cur == key %}side-link-active{% endif %}" data-nav-key="{{ key }}"
+       {% if cur == key %}aria-current="page"{% endif %} title="{{ label }}">
+      <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ icons[key] | safe }}</svg>
+      <span class="side-label">{{ label }}</span>
+    </a>
+    {% endfor %}
+  </nav>
+  <div class="side-foot">
+    <span class="side-avatar side-foot-full" aria-hidden="true">{{ profile.name[0] }}</span>
+    <span class="side-foot-full min-w-0">
+      <span class="block truncate font-medium text-white">{{ profile.name }}</span>
+      <a href="/" class="side-switch">Switch customer</a>
+    </span>
+    {# Collapsed: just the initial, linking to the customer picker #}
+    <a href="/" class="side-avatar side-foot-mini" title="{{ profile.name }}: switch customer"><span aria-hidden="true">{{ profile.name[0] }}</span><span class="sr-only">{{ profile.name }}: switch customer</span></a>
+  </div>
+</aside>

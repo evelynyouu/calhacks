@@ -136,3 +136,74 @@ document.body.addEventListener('htmx:afterSettle', e => {
   setTimeout(init, 0);
   if (e.detail.target.id !== 'tape') setTimeout(followChat, 0);   // the tape refreshes every minute; don't steal focus
 });
+
+// ---------- Left sidebar (partials/nav.html, nav.css) ----------
+// Desktop: the collapse button shrinks it to icons; the choice is remembered in localStorage (if allowed).
+// Mobile: the header's Menu button opens it as a drawer. Escape, the backdrop or a link closes it, and focus
+// goes back to the Menu button. Listeners are delegated, so they keep working after htmx swaps #nav.
+const NAV_KEY = 'ff-nav';
+const mobileNav = () => window.matchMedia('(max-width: 767.98px)').matches;
+
+function syncNav() {
+  const collapsed = document.documentElement.classList.contains('nav-collapsed');
+  document.querySelectorAll('[data-nav-collapse]').forEach(b => {
+    b.setAttribute('aria-expanded', String(!collapsed));
+    b.title = collapsed ? 'Expand the sidebar' : 'Collapse the sidebar';
+    const t = b.querySelector('[data-nav-collapse-text]');
+    if (t) t.textContent = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  });
+  const open = document.documentElement.classList.contains('nav-open');
+  document.querySelectorAll('[data-nav-toggle]').forEach(b => b.setAttribute('aria-expanded', String(open)));
+}
+
+function openNav() {
+  document.documentElement.classList.add('nav-open');
+  syncNav();
+  const first = document.querySelector('#nav [aria-current="page"]') || document.querySelector('#nav a');
+  if (first) setTimeout(() => first.focus(), 0);
+}
+
+function closeNav(restoreFocus) {
+  if (!document.documentElement.classList.contains('nav-open')) return;
+  document.documentElement.classList.remove('nav-open');
+  syncNav();
+  const btn = document.querySelector('[data-nav-toggle]');
+  if (restoreFocus && btn) btn.focus();
+}
+
+document.addEventListener('click', e => {
+  if (e.target.closest('[data-nav-toggle]')) {
+    document.documentElement.classList.contains('nav-open') ? closeNav(true) : openNav();
+  } else if (e.target.closest('[data-nav-close]')) {
+    closeNav(true);
+  } else if (e.target.closest('[data-nav-collapse]')) {
+    const collapsed = document.documentElement.classList.toggle('nav-collapsed');
+    try { localStorage.setItem(NAV_KEY, collapsed ? 'collapsed' : 'open'); } catch (err) { /* private mode: not remembered */ }
+    syncNav();
+  } else if (e.target.closest('#nav a')) {
+    closeNav(false);
+  }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || !document.documentElement.classList.contains('nav-open')) return;
+  e.preventDefault();
+  closeNav(true);
+});
+
+// Keep Tab inside the open drawer: from the last link forward goes back to the Menu button, and vice versa.
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Tab' || !mobileNav() || !document.documentElement.classList.contains('nav-open')) return;
+  const btn = document.querySelector('[data-nav-toggle]');
+  const links = [...document.querySelectorAll('#nav a')];
+  if (!btn || !links.length) return;
+  const first = links[0], last = links[links.length - 1];
+  if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); btn.focus(); }
+  else if (e.shiftKey && document.activeElement === btn) { e.preventDefault(); last.focus(); }
+  else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); btn.focus(); }
+  else if (!e.shiftKey && document.activeElement === btn) { e.preventDefault(); first.focus(); }
+});
+
+window.addEventListener('resize', () => { if (!mobileNav()) closeNav(false); });
+document.addEventListener('DOMContentLoaded', syncNav);
+document.body.addEventListener('htmx:afterSettle', syncNav);
