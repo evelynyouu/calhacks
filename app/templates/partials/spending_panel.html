@@ -5,48 +5,45 @@
 <section class="card">
   <div class="flex items-start justify-between gap-2">
     <div>
-      <p class="eyebrow">Spending → Stocks</p>
-      <h3 class="font-semibold text-base mt-1">Your purchases shape your fund</h3>
+      <h2 class="eyebrow">Where you spend</h2>
+      <p class="mt-1 text-sm text-muted">Companies you pay, matched from your bank activity.</p>
     </div>
-    <span class="text-xs font-semibold uppercase px-2 py-1 rounded-full bg-moss-100 text-moss-700 shrink-0 mt-1">Nessie</span>
+    <span class="badge shrink-0">Nessie</span>
   </div>
 
   {% if risk_adj %}
-  <div class="mt-3 rounded-lg px-3 py-3 text-sm
-              {% if risk_adj.delta < 0 %}bg-clay-100 border border-clay-500/20{% else %}bg-moss-50 border border-moss-500/20{% endif %}">
-    <strong class="{% if risk_adj.delta < 0 %}text-clay-500{% else %}text-moss-700{% endif %}">
+  <div class="mt-4 notice">
+    <p class="font-medium">
       {% if risk_adj.delta < 0 %}Your banking data suggests a lower risk level.{% else %}Your finances support moving up a risk level.{% endif %}
-    </strong>
+    </p>
     <p class="mt-1 text-ink-2">{{ risk_adj.reasons[0] }}</p>
   </div>
   {% endif %}
 
-  <ul class="mt-3 space-y-2">
+  <div class="mt-4 flex justify-between text-xs text-muted border-b border-line pb-2"><span>Company</span><span>Spent, all bank history</span></div>
+  <ul class="divide-y divide-line">
     {% for ticker, info in spend_details.items() %}
     {% if loop.index <= 6 %}
-    <li class="flex items-start gap-3 text-sm">
-      <div class="mt-1 h-5 w-5 shrink-0 rounded bg-paper grid place-items-center text-xs font-semibold font-mono text-muted">{{ ticker[:3] }}</div>
-      <div class="flex-1 min-w-0">
-        <div class="flex items-center justify-between gap-2">
-          <span class="font-semibold">{{ ticker }}</span>
-          <span class="text-xs text-muted tabular-nums shrink-0">${{ '{:,.0f}'.format(info.amount) }}</span>
-        </div>
-        <p class="text-xs text-muted truncate">
-          {% if info.source == 'bill' %}You pay {{ info.label }} — owning the stock puts you on the other side
-          {% else %}You spend at {{ info.label }}{% endif %}
-        </p>
+    <li class="py-2 text-sm">
+      <div class="flex items-center justify-between gap-3">
+        <span class="font-semibold">{{ ticker }}</span>
+        <span class="num">${{ '{:,.2f}'.format(info.amount) }}</span>
       </div>
+      <p class="text-xs text-muted truncate">
+        {% if info.source == 'bill' %}You pay {{ info.label }} — owning the stock puts you on the other side
+        {% else %}You spend at {{ info.label }}{% endif %}
+      </p>
     </li>
     {% endif %}
     {% endfor %}
   </ul>
 
   {% if spend_details | length > 6 %}
-  <p class="mt-2 text-xs text-muted">+{{ spend_details | length - 6 }} more companies from your spending history</p>
+  <p class="mt-2 text-xs text-muted">{{ spend_details | length - 6 }} more {{ 'company' if spend_details | length == 7 else 'companies' }} from your spending history</p>
   {% endif %}
 
-  <p class="mt-3 text-xs text-muted border-t border-line pt-2">
-    Powered by Capital One Nessie · {{ spend_details | length }} companies matched from your transaction history
+  <p class="mt-4 text-xs text-muted border-t border-line pt-3">
+    Source: Capital One Nessie (demo bank) · {{ spend_details | length }} companies matched from your transaction history
   </p>
 </section>
 {% endif %}
