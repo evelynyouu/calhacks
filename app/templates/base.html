@@ -15,17 +15,31 @@
       // White, black and green; clay = red for losses; sun = neutral gray for notices; paper = light gray panels.
       colors: { ink: '#0b0f0d', paper: '#f3f4f3', moss: { 50: '#e8f6ee', 100: '#c9ecd7', 500: '#0e9f4f', 600: '#0b7a3e', 700: '#075c2e' },
                 clay: { 100: '#fde8e6', 500: '#d93025' }, sun: { 100: '#f3f4f3', 500: '#0b0f0d' } } } } }
+    // The sidebar's collapsed choice, applied before paint so it doesn't flash open (app.js owns the toggle).
+    try { if (localStorage.getItem('ff-nav') === 'collapsed') document.documentElement.classList.add('nav-collapsed'); } catch (e) {}
   </script>
   <script src="/static/vendor/htmx-2.0.4.min.js"></script>
   <script src="/static/vendor/chart-4.4.4.umd.js"></script>
   <link rel="stylesheet" href="/static/app.css">
   <link rel="stylesheet" href="/static/tape.css">
+  <link rel="stylesheet" href="/static/nav.css">
 </head>
 <body class="bg-white text-ink font-sans antialiased min-h-screen">
-  {# Ticker strip: pinned to the top of every page. Pages without it (login) override this block with nothing. #}
+  {# Ticker strip: pinned to the top of every page, full width, above the sidebar. Pages without it (login) override this block with nothing. #}
   {% block tape %}<div class="tape-dock">{% include "partials/tape_loader.html" %}</div>{% endblock %}
-  <header class="max-w-6xl mx-auto px-4 sm:px-6 py-5 flex items-center justify-between">
-    <a href="/" class="font-display text-2xl font-bold tracking-tight">First<span class="text-moss-500">Fund</span></a>
+  {# Customer pages (they have a session `s` and a `cid`) get the left sidebar; the landing page and sign-in don't. #}
+  {% set with_nav = s is defined and cid is defined %}
+  {% if with_nav %}<div class="shell">{% include "partials/nav.html" %}<div class="side-backdrop" data-nav-close aria-hidden="true"></div><div class="shell-main">{% endif %}
+  <header class="{{ 'shell-header' if with_nav else '' }} max-w-6xl mx-auto px-4 sm:px-6 py-5 flex items-center justify-between gap-3">
+    <div class="flex items-center gap-2 min-w-0">
+      {% if with_nav %}
+      <button type="button" class="menu-btn" data-nav-toggle aria-controls="nav" aria-expanded="false" aria-label="Menu">
+        <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg>
+        <span class="hidden min-[400px]:inline text-sm font-medium" aria-hidden="true">Menu</span>
+      </button>
+      {% endif %}
+      <a href="/" class="font-display text-2xl font-bold tracking-tight {{ 'md:hidden' if with_nav else '' }}">First<span class="text-moss-500">Fund</span></a>
+    </div>
     <div class="flex items-center gap-3">
       {% block header_right %}{% endblock %}
       {% set user = request.state.user if request is defined else None %}{# set by the sign-in gate #}
@@ -37,6 +51,7 @@
     </div>
   </header>
   <main class="max-w-6xl mx-auto px-4 sm:px-6 pb-16">{% block content %}{% endblock %}</main>
+  {% if with_nav %}</div></div>{% endif %}
   <script src="/static/app.js"></script>
 </body>
 </html>

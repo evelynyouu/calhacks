@@ -189,7 +189,7 @@ def test_portfolio_tab_shows_each_holding_today():
     page = client.get("/p/sam").text
     assert 'id="today"' in page and "today" in page and 'class="pill pill-' in page
     for tab in ("Portfolio", "Markets", "News", "Chat", "Report", "Account"):
-        assert f">{tab}</a>" in page, tab
+        assert f'<span class="side-label">{tab}</span>' in page, tab
     assert "From FirstFund" in page
 
 
