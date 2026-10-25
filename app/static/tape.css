@@ -29,5 +29,5 @@ a.tape-item:focus-visible { outline:2px solid var(--tape-up); outline-offset:-2p
 @media (prefers-reduced-motion: reduce) {
   .tape { overflow-x:auto; scrollbar-width:thin; }
   .tape-track { animation:none; }
-  .tape-group[aria-hidden="true"] { display:none; }
+  .tape-group[aria-hidden="true"], .tape-dup { display:none; }
 }

@@ -521,32 +521,51 @@ def interests(cid: str, values: list[str] = Form(default=[])):
 
 # ---------- Ticker tape ----------
 
-TAPE_EXTRAS = ["BND", "GLD"]
 # The Nasdaq Composite itself, in place of QQQ. Nasdaq's API serves its own indexes but not the S&P 500 or
 # the Dow, so those stay as their ETFs. Offline (no real closes) COMP can't be priced and QQQ stays.
 TAPE_NASDAQ = "COMP"
-TAPE_DEFAULT = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA"]   # before a persona is picked
+# Each scrolling copy repeats its cards until it has at least this many, so a 3-holding fund still fills a
+# wide screen and the loop has no gap (a card is ~180px; 14 cover a 2560px window).
+TAPE_MIN_CARDS = 14
+TAPE_SECONDS_PER_CARD = 5.5   # scroll speed stays the same however many cards there are
+
+
+def _tape_holdings(cid: str, a) -> list[str]:
+    """What the customer holds: the fund's holdings by weight (biggest first), then anything else the
+    broker says they own (largest dollar value first). Empty before a fund is built."""
+    if not a or not a.portfolio:
+        return []
+    held = [h.ticker for h in sorted(a.portfolio.holdings, key=lambda h: -h.weight)]
+    try:
+        owned = {t: v for t, v in values(cid, a.today).items() if v > 0.005}
+    except Exception:   # a real broker that can't be reached shouldn't break the strip
+        owned = {}
+    return list(dict.fromkeys(held + sorted(owned, key=lambda t: -owned[t])))
 
 
 @router.get("/tape", response_class=HTMLResponse)
 def tape_any(request: Request, cid: str = "", part: str = ""):
-    """The strip pinned to the top of every page. part=groups returns only the scrolling cards, so the
+    """The strip pinned to the top of every page. With a fund it shows only what the customer holds; before
+    that (and on the landing page) the major indexes. part=groups returns only the scrolling cards, so the
     60s refresh swaps values inside the running animation instead of restarting it."""
     s = state.get(cid) if cid and cid in {c["id"] for c in nessie.list_customers()} else None
     a = s.fund if s else None
     on = a.today if a else market.today()
-    held = [h.ticker for h in a.portfolio.holdings] if a and a.portfolio else []
-    mine = held + (s.watchlist if s else TAPE_DEFAULT)
-    indexes = [x for t in INDEXES for x in ([TAPE_NASDAQ, t] if t == "QQQ" else [t])]
-    symbols = list(dict.fromkeys(indexes + mine + TAPE_EXTRAS))
-    q = market.quotes(symbols, on)
-    if TAPE_NASDAQ in q and "QQQ" not in mine:
-        symbols.remove("QQQ")
-    # An index can't be bought, so the Nasdaq card opens QQQ (the fund that tracks Nasdaq's biggest companies)
-    items = [{**q[t], "label": _tape_label(t), "spark": _spark(t, on, q[t]), "link": "QQQ" if t == TAPE_NASDAQ else t}
-             for t in symbols if t in q]
-    ctx = {"request": request, "cid": cid if s else "", "tape": items, "part": part,
-           "on": on}
+    held = _tape_holdings(cid, a) if s else []
+    q = market.quotes(held, on) if held else {}
+    items = [{**q[t], "label": t, "spark": _spark(t, on, q[t]), "link": t} for t in held if t in q]
+    mine = bool(items)
+    if not mine:
+        symbols =[x for t in INDEXES for x in ([TAPE_NASDAQ, t] if t == "QQQ" else [t])]
+        q = market.quotes(symbols, on)
+        if TAPE_NASDAQ in q:
+            symbols.remove("QQQ")
+        # An index can't be bought, so the Nasdaq card opens QQQ (the fund that tracks Nasdaq's biggest companies)
+        items = [{**q[t], "label": _tape_label(t), "spark": _spark(t, on, q[t]),
+                  "link": "QQQ" if t == TAPE_NASDAQ else t} for t in symbols if t in q]
+    reps = -(-TAPE_MIN_CARDS // len(items)) if items else 1
+    ctx = {"request": request, "cid": cid if s else "", "tape": items, "part": part, "on": on, "reps": reps, "mine": mine,
+           "seconds": round(len(items) * reps * TAPE_SECONDS_PER_CARD)}
     return templates.TemplateResponse(request, "partials/tape.html", ctx)
 
 

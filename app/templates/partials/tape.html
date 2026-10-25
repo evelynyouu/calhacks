@@ -1,13 +1,19 @@
 {# Market strip pinned to the top of every page, in the style of Yahoo Finance's: name, price, day change
-   and a month's sparkline, colored green up / red down. Two copies of the cards scroll left so the loop has
-   no gap. The 60s refresh (part=groups) swaps only the cards inside #tape, so the scrolling never restarts. #}
+   and a month's sparkline, colored green up / red down. With a fund it shows only what the customer holds
+   (fund-weight order); before that, the major indexes. Two copies of the cards scroll left so the loop has
+   no gap; each copy repeats its cards `reps` times so a short list still fills a wide screen. Repeats are
+   hidden from screen readers and skipped by Tab. The 60s refresh (part=groups) swaps only the cards inside
+   #tape, so the scrolling never restarts. #}
+{% set reps = reps | default(1) %}
 {% macro cards(copy) %}
 <div class="tape-group" {% if copy %}aria-hidden="true"{% endif %}>
+  {% for rep in range(reps) %}
   {% for q in tape %}
   {% set up = q.change >= 0 %}
   {% set tag = 'a' if cid else 'span' %}
-  <{{ tag }} class="tape-item" {% if cid %}href="/p/{{ cid }}/markets?s={{ q.link }}"{% endif %} {% if copy and cid %}tabindex="-1"{% endif %}
-     title="{{ q.name }}">
+  {% set dup = copy or rep > 0 %}
+  <{{ tag }} class="tape-item{% if rep > 0 %} tape-dup{% endif %}" {% if cid %}href="/p/{{ cid }}/markets?s={{ q.link }}"{% endif %}
+     {% if dup and cid %}tabindex="-1"{% endif %} {% if rep > 0 and not copy %}aria-hidden="true"{% endif %} title="{{ q.name }}">
     <span class="tape-text">
       <span class="tape-name">{{ q.label }}</span>
       <span class="tape-nums">
@@ -24,11 +30,13 @@
     {% endif %}
   </{{ tag }}>
   {% endfor %}
+  {% endfor %}
   <span class="tape-item tape-note">{{ price_label(on) }}</span>
 </div>
 {% endmacro %}
 {% if part == 'groups' %}{{ cards(0) }}{{ cards(1) }}{% else %}
-<div id="tape-strip" class="tape" role="region" aria-label="Market prices">
-  <div id="tape" class="tape-track" hx-get="/tape?cid={{ cid }}&part=groups" hx-trigger="every 60s" hx-swap="innerHTML">{{ cards(0) }}{{ cards(1) }}</div>
+<div id="tape-strip" class="tape" role="region" aria-label="{{ 'Your holdings' if mine else 'Market prices' }}">
+  <div id="tape" class="tape-track" hx-get="/tape?cid={{ cid }}&part=groups" hx-trigger="every 60s" hx-swap="innerHTML"
+       {% if seconds %}style="animation-duration:{{ seconds }}s"{% endif %}>{{ cards(0) }}{{ cards(1) }}</div>
 </div>
 {% endif %}
