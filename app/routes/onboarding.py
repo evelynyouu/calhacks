@@ -60,7 +60,7 @@ def start(request: Request, name: str = Form(""), paycheck: str = Form(""), freq
 @router.get("/p/{cid}/link", response_class=HTMLResponse)
 def link_page(request: Request, cid: str, step: str = "bank"):
     s = _session(cid)   # 404 for an unknown customer
-    if s.linked or s.done:   # already linked, or a fund already running (Alex): nothing to link
+    if s.bank_linked:   # already linked, or a fund already running (Alex): nothing to link
         return RedirectResponse(f"/p/{cid}", status_code=303)
     step = step if step in STEPS else "bank"
     profile = get_profile(cid)

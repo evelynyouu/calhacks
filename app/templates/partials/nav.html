@@ -2,7 +2,7 @@
    Mobile: a drawer opened by the menu button in base.html's header. Refreshed out of band as #nav when the
    intake finishes, so the full tab list appears without a reload. During the intake only the chat (and Money,
    once a bank is linked) make sense, so only those show. #}
-{% set linked = s.linked if s.linked is defined else True %}
+{% set linked = s.bank_linked %}
 {% set cur = tab if tab is defined else ('intake' if not s.done else '') %}
 {% if s.done %}
 {% set items = [('portfolio', 'Portfolio', '')] + ([('money', 'Money', '/money')] if linked else []) +

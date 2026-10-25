@@ -36,6 +36,11 @@ class Session:
     def done(self) -> bool:
         return self.step >= len(QUESTIONS)
 
+    @property
+    def bank_linked(self) -> bool:
+        """Went through the bank link step, or has a fund already running (Alex): either way the bank is in use."""
+        return bool(self.linked) or self.done
+
     def say(self, text: str, role: str = "assistant") -> dict:
         m = {"role": role, "text": text}
         self.transcript.append(m)

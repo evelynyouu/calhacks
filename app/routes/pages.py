@@ -122,7 +122,7 @@ def index(request: Request):
 def dashboard(request: Request, cid: str):
     """The intake chat until the fund is built, then the Portfolio tab."""
     s = _session(cid)
-    if not s.done and not s.linked:
+    if not s.bank_linked:
         return RedirectResponse(f"/p/{cid}/link", status_code=303)
     if not s.done:
         return _render("dashboard.html", _ctx(request, cid))

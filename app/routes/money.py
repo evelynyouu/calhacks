@@ -114,7 +114,7 @@ def price_note(ctx: dict) -> str:
 @router.get("/p/{cid}/money", response_class=HTMLResponse)
 def money(request: Request, cid: str):
     s = _session(cid)
-    if not getattr(s, "linked", True):   # the bank-link step (onboarding) hasn't happened yet
+    if not s.bank_linked:   # the bank-link step (onboarding) hasn't happened yet
         return RedirectResponse(f"/p/{cid}", status_code=303)
     ctx = _ctx(request, cid, tab="money")
     activity_all = nessie.recent_activity(cid, limit=None)
