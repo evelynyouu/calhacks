@@ -1,10 +1,10 @@
 """Give a demo persona a built fund without clicking through the chat."""
 from app import state
 from core.models import Portfolio
-from core import fund
+from core import fund, onboarding
 from core.intake import QUESTIONS
 
-ANSWERS = {"goal": "A house", "starting_amount": 3000, "paycheck_pct": 10, "risk_priority": "steady",
+ANSWERS = {"goal": "home", "starting_amount": 3000, "paycheck_pct": 10, "risk_priority": "steady",
            "risk_range": "medium", "max_drop": 15, "horizon": "7to15",
            "interests": {"themes": ["tech"], "unmatched": []}}
 
@@ -12,13 +12,13 @@ ANSWERS = {"goal": "A house", "starting_amount": 3000, "paycheck_pct": 10, "risk
 # One answer set per demo persona, for golden tests and the explanation page. Alex's is the app's preset
 # (app/routes/pages.DEMO_PRESETS); Maria, Jordan and Sam start at the intake in the demo.
 PERSONA_ANSWERS = {
-    "maria": {"goal": "An emergency fund, then a car", "starting_amount": 500, "paycheck_pct": 5,
+    "maria": {"goal": "safety", "goal_text": "An emergency fund, then a car", "starting_amount": 500, "paycheck_pct": 5,
               "risk_priority": "protect", "risk_range": "narrow", "max_drop": 10, "horizon": "3to7",
               "interests": {"themes": ["staples"], "unmatched": []}},
-    "jordan": {"goal": "Our wedding in a few years", "starting_amount": 1000, "paycheck_pct": 8,
+    "jordan": {"goal": "other", "goal_text": "Our wedding in a few years", "starting_amount": 1000, "paycheck_pct": 8,
                "risk_priority": "steady", "risk_range": "medium", "max_drop": 20, "horizon": "3to7",
                "interests": {"themes": ["gaming", "communications"], "unmatched": []}},
-    "sam": {"goal": "Buy a house someday", "starting_amount": 3000, "paycheck_pct": 10,
+    "sam": {"goal": "home", "goal_text": "Buy a house someday", "starting_amount": 3000, "paycheck_pct": 10,
             "risk_priority": "growth", "risk_range": "medium", "max_drop": 25, "horizon": "7to15",
             "interests": {"themes": ["tech", "healthcare"], "unmatched": []}},
 }
@@ -26,6 +26,7 @@ PERSONA_ANSWERS = {
 
 def make_fund(cid: str = "sam", **answers) -> state.Session:
     s = state.get(cid)
+    s.linked = s.linked or onboarding.link(cid)   # every customer links a bank before the intake
     s.fund.answers = {**ANSWERS, **answers}
     fund.start(s.fund)
     s.step = len(QUESTIONS)

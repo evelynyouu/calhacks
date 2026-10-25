@@ -5,4 +5,7 @@
   {% if 'account' in (oob or []) %}{% include "partials/account.html" %}{% endif %}
   {% if 'tier' in (oob or []) %}{% include "partials/tier.html" %}{% endif %}
   {% if 'nav' in (oob or []) %}{% include "partials/nav.html" %}{% endif %}
+  {# The fund was just built: reload the whole strip so it switches from the indexes to the holdings now,
+     with its scroll speed set for the new card count (the 60s refresh only swaps cards). #}
+  {% if 'tape' in (oob or []) %}<div hx-swap-oob="innerHTML:.tape-dock">{% include "partials/tape_loader.html" %}</div>{% endif %}
 {% endwith %}

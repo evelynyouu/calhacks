@@ -13,7 +13,7 @@ from tests.fund_helpers import make_fund
 client = TestClient(app)
 
 INTAKE = [  # (form data, what the chat shows as the user's message)
-    ({"value": "Buy a house someday"}, "Buy a house someday"),
+    ({"value": "home"}, "Buying a home"),
     ({"value": "$2,500"}, "$2,500"),
     ({"value": "12"}, "12%"),
     ({"value": "growth"}, "Strong growth, even with bigger dips"),
@@ -22,6 +22,12 @@ INTAKE = [  # (form data, what the chat shows as the user's message)
     ({"value": "15plus"}, "In 15 years or more"),
     ({"values": ["tech", "healthcare"], "other": "video games"}, "Technology, Healthcare, Gaming"),
 ]
+
+
+def link(cid: str) -> str:
+    """Go through the demo bank link (every customer does, before the intake) and return the chat page."""
+    client.post(f"/p/{cid}/link", data={"checking": "checking", "investing": "investing"})
+    return client.get(f"/p/{cid}").text
 
 
 @pytest.fixture(autouse=True)
@@ -44,14 +50,15 @@ def test_unknown_persona_404():
     assert client.get("/p/unknown").status_code == 404
 
 
-def test_first_visit_greets_and_asks_the_first_question_with_a_text_box():
-    page = client.get("/p/sam").text
-    assert "Hi Sam!" in page and "What are you investing for?" in page
-    assert '<textarea name="value"' in page and "Question 1 of 8" in page
+def test_first_visit_greets_and_asks_the_goal_as_cards():
+    page = link("sam")
+    assert "Hi Sam!" in page and "What are you investing for?" in page and "Question 1 of 8" in page
+    assert 'value="home" class="choice-btn">Buying a home' in page and 'name="other"' in page
+    assert "Something else" in page and "<textarea" not in page and "A)" not in page
 
 
 def test_full_intake_builds_the_fund():
-    client.get("/p/sam")
+    link("sam")
     for i, (form, shown) in enumerate(INTAKE):
         r = client.post("/p/sam/answer", data=form)
         assert r.status_code == 200 and shown in r.text, i
@@ -72,8 +79,8 @@ def test_full_intake_builds_the_fund():
 
 
 def test_bad_answer_explains_and_stays_on_the_question():
-    client.get("/p/sam")
-    client.post("/p/sam/answer", data={"value": "house"})
+    link("sam")
+    client.post("/p/sam/answer", data={"value": "home"})
     r = client.post("/p/sam/answer", data={"value": "lots"})
     assert "Type a dollar amount" in r.text and state.get("sam").step == 1
 
@@ -177,14 +184,15 @@ def test_start_over_resets_everything():
     client.post("/p/sam/paycheck")
     r = client.post("/p/sam/reset", follow_redirects=False)
     assert r.status_code == 303
-    page = client.get("/p/sam").text
+    assert client.get("/p/sam", follow_redirects=False).headers["location"] == "/p/sam/link"   # reset un-links
+    page = link("sam")
     assert "Question 1 of 8" in page and state.get("sam").fund.contributed == 0
 
 
 # ---------- Tabs after the intake ----------
 
 def test_finishing_the_intake_shows_the_tabs():
-    client.get("/p/sam")
+    link("sam")
     for form, _ in INTAKE:
         r = client.post("/p/sam/answer", data=form)
     assert 'id="nav" hx-swap-oob' in r.text and "/p/sam/markets" in r.text
@@ -195,7 +203,7 @@ def test_portfolio_tab_shows_each_holding_today():
     page = client.get("/p/sam").text
     assert 'id="today"' in page and "today" in page and 'class="pill pill-' in page
     for tab in ("Portfolio", "Markets", "News", "Chat", "Report", "Account"):
-        assert f">{tab}</a>" in page, tab
+        assert f'<span class="side-label">{tab}</span>' in page, tab
     assert "From FirstFund" in page
 
 
@@ -271,7 +279,16 @@ def test_account_page_sections_and_settings():
     assert list(state.get("sam").fund.portfolio.parts["interest"]) == ["NEE", "SO"]   # utilities' biggest companies
 
 
-def test_ticker_tape_has_indexes_and_holdings():
+def test_ticker_tape_has_holdings():
     make_fund("sam")
     r = client.get("/p/sam/tape")
-    assert "S&amp;P 500" in r.text and "VXUS" in r.text and "Simulated prices" in r.text   # biggest holdings
+    assert "S&amp;P 500" not in r.text and "VXUS" in r.text and "Simulated prices" in r.text   # biggest holdings only
+
+
+def test_finishing_the_intake_reloads_the_ticker_with_the_holdings():
+    link("sam")
+    for form, _ in INTAKE:
+        r = client.post("/p/sam/answer", data=form)
+    assert 'hx-swap-oob="innerHTML:.tape-dock"' in r.text and 'hx-get="/tape?cid=sam"' in r.text
+    tape = client.get("/tape?cid=sam").text
+    assert 'aria-label="Your holdings"' in tape

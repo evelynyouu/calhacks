@@ -85,6 +85,8 @@
   </section>
   {% endif %}
 
+  {% include "partials/target_history.html" %}
+
   <section class="card">
     <p class="eyebrow">{% if how.adjusted %}6{% else %}5{% endif %} · What you can change</p>
     <ul class="mt-3 space-y-1.5 text-sm list-disc pl-5">{% for t in how.change %}<li>{{ t }}</li>{% endfor %}</ul>

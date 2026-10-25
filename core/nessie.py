@@ -671,7 +671,52 @@ _STATE: dict = copy.deepcopy(_SEED)
 
 def persona_seed(customer_id: str) -> dict:
     """The persona's starting numbers (personas.json + Other bills). Seeding and live mode read this."""
+    if customer_id not in _SEED:
+        _restore_new_customer(customer_id)
     return copy.deepcopy(_SEED[customer_id])
+
+
+# ---------- customers who signed up in the app (core/onboarding.py) ----------
+# A new customer is registered next to the personas, with the same starting-number fields, so every
+# function above (fixture stub, seeding, the live profile) treats them exactly like a persona. Their
+# ids start with NEW_PREFIX, which no personas.json key has. In live mode their starting numbers are
+# also stored in the ids file (ids[cid]["persona"]), so a restarted server can register them again.
+
+NEW_PREFIX = "new-"
+
+
+def is_new_customer(customer_id: str) -> bool:
+    return customer_id.startswith(NEW_PREFIX)
+
+
+def register_customer(customer_id: str, starting: dict) -> None:
+    """Add a new customer's starting numbers (persona-shaped dict) to the in-memory stores."""
+    if not is_new_customer(customer_id):
+        raise ValueError(f"new customer ids start with {NEW_PREFIX!r}")
+    _SEED[customer_id] = _with_other_bills(copy.deepcopy(starting))
+    _STATE[customer_id] = copy.deepcopy(_SEED[customer_id])
+    if _offline:
+        _SHADOW[customer_id] = copy.deepcopy(_SEED[customer_id])
+
+
+def forget_customer(customer_id: str) -> None:
+    """Drop a new customer from memory (a failed sign-up, and tests). Personas can't be dropped."""
+    if is_new_customer(customer_id):
+        for store in (_SEED, _STATE, _SHADOW):
+            store.pop(customer_id, None)
+
+
+def forget_new_customers() -> None:
+    for cid in [c for c in _SEED if is_new_customer(c)]:
+        forget_customer(cid)
+
+
+def _restore_new_customer(customer_id: str) -> None:
+    """Live mode after a restart: the new customer's starting numbers are in the ids file."""
+    if is_new_customer(customer_id) and mode() == LIVE:
+        starting = load_ids().get(customer_id, {}).get("persona")
+        if starting:
+            register_customer(customer_id, starting)
 
 
 def _live():
@@ -680,10 +725,12 @@ def _live():
 
 
 def list_customers() -> list[dict]:
-    return [{"id": cid, "name": p["name"], "blurb": p["blurb"]} for cid, p in _STATE.items()]
+    return [{"id": cid, "name": p["name"], "blurb": p["blurb"], "new": is_new_customer(cid)} for cid, p in _STATE.items()]
 
 
 def get_customer_raw(customer_id: str) -> dict:
+    if customer_id not in _SEED:
+        _restore_new_customer(customer_id)
     store = _store()
     if customer_id not in store:
         raise KeyError(customer_id)
@@ -723,7 +770,7 @@ def deposit_paycheck(customer_id: str) -> float:
 def _fx_deposit_paycheck(store: dict, customer_id: str) -> float:
     c = store[customer_id]
     c["checking_balance"] = round(c["checking_balance"] + c["paycheck_amount"], 2)
-    c["days_to_payday"] = 14
+    c["days_to_payday"] = c.get("pay_period_days", 14)   # personas: every 2 weeks
     _log(store, customer_id, "[payroll] paycheck", c["paycheck_amount"], "in", "checking")
     return c["paycheck_amount"]
 
@@ -780,7 +827,7 @@ def raise_paycheck(customer_id: str, amount: float) -> None:
 def _fx_raise_paycheck(store: dict, customer_id: str, amount: float) -> None:
     c = store[customer_id]
     c["paycheck_amount"] = round(c["paycheck_amount"] + amount, 2)
-    c["monthly_income"] = round(c["monthly_income"] + 2 * amount, 2)   # two paychecks a month
+    c["monthly_income"] = round(c["monthly_income"] + c.get("paychecks_per_month", 2) * amount, 2)   # personas: two a month
     c["checking_balance"] = round(c["checking_balance"] + amount, 2)
     _log(store, customer_id, f"[payroll-adj] raise to {c['paycheck_amount']:g}", amount, "in", "checking")   # as live writes
 

@@ -346,9 +346,9 @@ def test_the_offline_chat_explains_a_holding_from_its_reasons_and_never_lists_si
     from agent import claude_agent
     monkeypatch.setattr(claude_agent, "_get_client", lambda: None)
     s = make_custom_fund("sam")
-    one = claude_agent._offline_turn(s, "why do I own TGT?")
+    one = claude_agent.offline_turn(s, "why do I own TGT?")[0]
     assert one.startswith("TGT is in the “Where you spend” part") and "personalizes your fund" in one
-    general = claude_agent._offline_turn(s, "why is my fund built this way?")
+    general = claude_agent.offline_turn(s, "why is my fund built this way?")[0]
     assert "Your US index 36% (50 companies)" in general and "AAPL" not in general and general.count("(") <= 6
     facts = " ".join(claude_agent.fund_facts(s))
     assert "50 companies" in facts and "isn't a prediction" in facts and facts.count("(") < 25      # not one entry per company

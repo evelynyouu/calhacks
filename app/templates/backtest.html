@@ -4,7 +4,6 @@
 {% macro pv(x) %}{% if x is none %}—{% elif x >= 0 %}+{{ "%.2f"|format(x) }}%{% else %}{{ "%.2f"|format(x) }}%{% endif %}{% endmacro %}
 {% macro tone(x) %}{{ 'text-moss-600' if x >= 0 else 'text-clay-500' }}{% endmacro %}
 {% block content %}
-{% include "partials/nav.html" %}
 
 <div class="max-w-4xl mx-auto space-y-5">
 

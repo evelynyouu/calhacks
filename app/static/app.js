@@ -174,10 +174,18 @@ function init() {
   animateNewMessages();
 }
 
-// After a chat turn (or on page load): scroll to the newest message and focus the next question's input
-function followChat() {
+// The box that scrolls the chat: partials/chat.html wraps #chat-messages in [data-chat-scroll] (column-reverse,
+// so it stays pinned to the newest message by itself); the Portfolio tab's short feed scrolls #chat-messages itself.
+function chatScroller() {
   const chat = document.getElementById('chat-messages');
-  if (chat) chat.scrollTop = chat.scrollHeight;
+  return chat && (chat.closest('[data-chat-scroll]') || chat);
+}
+
+// After a chat turn (or on page load): scroll to the newest message and focus the next question's input.
+// A column-reverse box's bottom is scrollTop 0 and older messages are negative, so scrollHeight clamps to the end.
+function followChat() {
+  const box = chatScroller();
+  if (box) box.scrollTop = box.scrollHeight;
   const first = document.querySelector('#composer [autofocus]');
   if (first) first.focus();
 }
@@ -216,9 +224,9 @@ document.body.addEventListener('htmx:beforeRequest', e => {
   p.className = 'max-w-[85%] rounded-2xl rounded-br-md bg-ink/[.06] px-4 py-2.5 text-[.95rem] leading-relaxed whitespace-pre-line';
   p.textContent = box.value.trim();
   row.appendChild(p);
-  const chat = document.getElementById('chat-messages');
-  chat.appendChild(row);
-  chat.scrollTop = chat.scrollHeight;
+  document.getElementById('chat-messages').appendChild(row);
+  const scroller = chatScroller();
+  scroller.scrollTop = scroller.scrollHeight;
   box.value = '';
   box.style.height = 'auto';
 });
@@ -228,3 +236,91 @@ document.body.addEventListener('htmx:afterSettle', e => {
   setTimeout(init, 0);
   if (e.detail.target.id !== 'tape') setTimeout(followChat, 0);   // the tape refreshes every minute; don't steal focus
 });
+
+// ---------- Left sidebar (partials/nav.html, nav.css) ----------
+// Desktop: three states, remembered in localStorage (if allowed) and applied before paint by base.html:
+// 'open', 'collapsed' (icons with tooltips) and 'hidden' (the header's Show button brings it back).
+// Mobile: the header's Menu button opens it as a drawer. Escape, the backdrop or a link closes it, and focus
+// goes back to the Menu button. Listeners are delegated, so they keep working after htmx swaps #nav.
+const NAV_KEY = 'ff-nav';
+const mobileNav = () => window.matchMedia('(max-width: 767.98px)').matches;
+
+function setNavState(state) {
+  const html = document.documentElement;
+  html.classList.toggle('nav-collapsed', state === 'collapsed');
+  html.classList.toggle('nav-hidden', state === 'hidden');
+  try { localStorage.setItem(NAV_KEY, state); } catch (err) { /* private mode: not remembered */ }
+  syncNav();
+}
+
+function syncNav() {
+  const collapsed = document.documentElement.classList.contains('nav-collapsed');
+  const hidden = document.documentElement.classList.contains('nav-hidden');
+  document.querySelectorAll('[data-nav-show], [data-nav-hide]').forEach(b => b.setAttribute('aria-expanded', String(!hidden)));
+  document.querySelectorAll('[data-nav-collapse]').forEach(b => {
+    b.setAttribute('aria-expanded', String(!collapsed));
+    b.title = collapsed ? 'Expand the sidebar' : 'Collapse the sidebar to icons';
+    const t = b.querySelector('[data-nav-collapse-text]');
+    if (t) t.textContent = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  });
+  const open = document.documentElement.classList.contains('nav-open');
+  document.querySelectorAll('[data-nav-toggle]').forEach(b => b.setAttribute('aria-expanded', String(open)));
+}
+
+function openNav() {
+  document.documentElement.classList.add('nav-open');
+  syncNav();
+  const first = document.querySelector('#nav [aria-current="page"]') || document.querySelector('#nav a');
+  if (first) setTimeout(() => first.focus(), 0);
+}
+
+function closeNav(restoreFocus) {
+  if (!document.documentElement.classList.contains('nav-open')) return;
+  document.documentElement.classList.remove('nav-open');
+  syncNav();
+  const btn = document.querySelector('[data-nav-toggle]');
+  if (restoreFocus && btn) btn.focus();
+}
+
+document.addEventListener('click', e => {
+  if (e.target.closest('[data-nav-toggle]')) {
+    document.documentElement.classList.contains('nav-open') ? closeNav(true) : openNav();
+  } else if (e.target.closest('[data-nav-close]')) {
+    closeNav(true);
+  } else if (e.target.closest('[data-nav-collapse]')) {
+    setNavState(document.documentElement.classList.contains('nav-collapsed') ? 'open' : 'collapsed');
+  } else if (e.target.closest('[data-nav-hide]')) {
+    setNavState('hidden');
+    const show = document.querySelector('[data-nav-show]');   // focus would otherwise be lost with the sidebar
+    if (show) show.focus();
+  } else if (e.target.closest('[data-nav-show]')) {
+    setNavState('open');
+    const hide = document.querySelector('[data-nav-hide]');
+    if (hide) hide.focus();
+  } else if (e.target.closest('#nav a')) {
+    closeNav(false);
+  }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || !document.documentElement.classList.contains('nav-open')) return;
+  e.preventDefault();
+  closeNav(true);
+});
+
+// Keep Tab inside the open drawer: from the last link forward goes back to the Menu button, and vice versa.
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Tab' || !mobileNav() || !document.documentElement.classList.contains('nav-open')) return;
+  const btn = document.querySelector('[data-nav-toggle]');
+  const links = [...document.querySelectorAll('#nav a')];
+  if (!btn || !links.length) return;
+  const first = links[0], last = links[links.length - 1];
+  if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); btn.focus(); }
+  else if (e.shiftKey && document.activeElement === btn) { e.preventDefault(); last.focus(); }
+  else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); btn.focus(); }
+  else if (!e.shiftKey && document.activeElement === btn) { e.preventDefault(); first.focus(); }
+});
+
+window.addEventListener('resize', () => { if (!mobileNav()) closeNav(false); });
+document.addEventListener('DOMContentLoaded', syncNav);
+document.body.addEventListener('htmx:afterSettle', syncNav);

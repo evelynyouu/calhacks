@@ -159,7 +159,8 @@ def derive_live(customer_id: str, ids: dict) -> FinancialProfile:
     return FinancialProfile(
         customer_id=customer_id,
         name=persona["name"],
-        monthly_income=round(paycheck * 2, 2),   # team convention: two paychecks a month
+        # team convention: two paychecks a month (customers made in the app say how often they're paid)
+        monthly_income=round(paycheck * persona.get("paychecks_per_month", 2), 2),
         monthly_bills=round(sum(b.amount for b in bills), 2),
         monthly_spending=round(spent / (SPENDING_WINDOW_DAYS / 30), 2),
         checking_balance=nessie.account_balance(acct["checking"], seed["checking"]),
@@ -168,7 +169,8 @@ def derive_live(customer_id: str, ids: dict) -> FinancialProfile:
         card_apr=persona["card_apr"],   # Nessie has no APR
         invested_balance=nessie.account_balance(acct["investing"], seed["investing"]),
         paycheck_amount=paycheck,
-        days_to_payday=max(0, (last_payday + timedelta(days=PAY_PERIOD_DAYS) - as_of).days),
+        days_to_payday=max(0, (last_payday + timedelta(days=persona.get("pay_period_days", PAY_PERIOD_DAYS))
+                                - as_of).days),
         upcoming_bills=_by_due_date(bills),
     )
 

@@ -58,6 +58,12 @@
 .prompt-chip { border:1px solid rgba(11,15,13,.18); border-radius:999px; padding:.3rem .75rem; font-size:.8rem; background:#fff; transition:border-color .15s, background .15s; }
 .prompt-chip:hover { border-color:#0b7a3e; background:#e8f6ee; }
 
+/* Money tab: money-flow bars (labels carry the meaning; color only groups them) */
+.flow-key { display:inline-block; width:.7rem; height:.7rem; border-radius:.2rem; }
+.flow-paychecks { background:#0b7a3e; }
+.flow-invested { background:#0b0f0d; }
+.flow-spending { background:#8a8f8c; }
+.flow-bills { background:#c4c8c6; }
 /* A chevron on every <summary> that opens a slice, a sector or "Show all", so it reads as clickable. It is
    positioned in the summary's left padding so it doesn't become a flex item and push the label around. */
 summary.chev { list-style: none; cursor: pointer; position: relative; padding-left: 1.1em; }

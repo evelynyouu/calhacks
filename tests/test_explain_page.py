@@ -50,8 +50,8 @@ def test_templates_hard_code_no_numbers():
 
 
 def test_linked_from_the_end_of_the_intake_and_the_portfolio_tab():
-    from tests.test_routes import INTAKE
-    client.get("/p/sam")
+    from tests.test_routes import INTAKE, link
+    link("sam")
     for form, _ in INTAKE:
         r = client.post("/p/sam/answer", data=form)
     assert 'href="/p/sam/how"' in r.text                          # the last chat message links to it

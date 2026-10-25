@@ -7,6 +7,7 @@ HTMX endpoints return partials; extra panels refresh with hx-swap-oob, and app e
 """
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -18,9 +19,9 @@ from agent import claude_agent
 from agent.tools import INDEXES, news_tickers
 from app.routes.auth import auth_disabled, csrf_token
 from app import state
-from core import backtest, builder, explain, feed, fund, intake, market, nessie, slices
+from core import backtest, builder, disclosure, explain, feed, figures, followups, fund, intake, market, nessie, slices, targets
 from core.broker import get_broker, values
-from core.intake import QUESTIONS, AnswerError, parse
+from core.intake import QUESTIONS, AnswerError
 from core.market import ETFS
 from core.models import to_dict
 from core.policy import tier_for
@@ -37,7 +38,12 @@ templates.env.filters["signed"] = lambda v, d=1: f"{round(v, d) + 0.0:+.{d}f}%"
 templates.env.filters["day"] = lambda d: d.strftime("%b %-d, %Y")
 templates.env.filters["ago"] = lambda d: _ago(d)
 templates.env.globals["info"] = market.info
+templates.env.globals["price_label"] = market.price_label
 templates.env.globals["csrf_token"] = csrf_token
+templates.env.globals["defs"] = figures.DEFINITIONS   # one definition per return figure
+templates.env.globals["disclosure"] = disclosure.disclosure   # header line + footer in base.html
+templates.env.globals["goal_label"] = intake.goal_label
+templates.env.globals["suggested_horizon"] = intake.suggested_horizon
 
 MARKET_DROP_PCT = -10.0
 RAISE_PCT = 10.0
@@ -46,7 +52,7 @@ EXAMPLE_BUY = 25.0   # "$25 buys 0.07 shares" on a stock's page
 
 # Personas that start with a fund already running, so the demo can jump straight to the report
 DEMO_PRESETS = {
-    "alex": {"answers": {"goal": "Retire early", "starting_amount": 52_000, "paycheck_pct": 20,
+    "alex": {"answers": {"goal": "retirement", "goal_text": "Retire early", "starting_amount": 52_000, "paycheck_pct": 20,
                          "risk_priority": "growth", "risk_range": "wide", "max_drop": 25, "horizon": "15plus",
                          "interests": {"themes": ["healthcare", "tech"], "unmatched": []}},
              "started_days_ago": 365, "auto_trade": True},
@@ -60,6 +66,18 @@ def _session(cid: str) -> state.Session:
         raise HTTPException(404, "Unknown persona")
     s = state.get(cid)
     if not s.transcript:
+        with _SEED_LOCK:   # two first requests at once (a double click) must not seed twice
+            _seed(s, cid, profile)
+    return s
+
+
+# Sync routes run in a thread pool, so two requests for a fresh session can both see an empty transcript.
+_SEED_LOCK = threading.Lock()
+
+
+def _seed(s: state.Session, cid: str, profile) -> None:
+    """A new session's opening messages (and Alex's year-old fund). Runs once per session, under _SEED_LOCK."""
+    if not s.transcript:
         preset = DEMO_PRESETS.get(cid)
         if preset:
             s.fund.answers = dict(preset["answers"])
@@ -68,10 +86,11 @@ def _session(cid: str) -> state.Session:
             s.step = len(QUESTIONS)
             s.say(f"Welcome back, {profile.name}. Your fund has been running for a year. Open the report to see "
                   f"how it's doing, or press “Paycheck arrives” to watch the next paycheck invest itself.")
-        else:
+        elif s.linked:   # the bank link step (app/routes/onboarding.py) comes before the intake
+            if s.linked.get("note"):
+                s.say(s.linked["note"])
             s.say(claude_agent.greeting(profile.name))
             s.say(claude_agent.question_text(s))
-    return s
 
 
 def _ctx(request: Request, cid: str, **extra) -> dict:
@@ -80,7 +99,7 @@ def _ctx(request: Request, cid: str, **extra) -> dict:
     value = fund.value(a) if a.portfolio else 0.0
     return {
         "request": request, "cid": cid, "profile": get_profile(cid), "s": s, "a": a, "portfolio": a.portfolio,
-        "value": value, "tier": tier_for(value), "questions": QUESTIONS,
+        "value": value, "total": figures.total(value, a.contributed), "tier": tier_for(value), "questions": QUESTIONS,
         "pie_data": _pie(a.portfolio), "slices": slices.view(a.portfolio) if a.portfolio else [], "broker_mode": get_broker().mode,
         "activity": nessie.recent_activity(cid), "nessie_mode": nessie.mode(), "nessie_offline": nessie.offline_reason(),
         "etfs": ETFS, "theme_labels": THEME_LABELS, "live_market": market.source("SPY") == "live",
@@ -142,6 +161,8 @@ def index(request: Request):
 def dashboard(request: Request, cid: str):
     """The intake chat until the fund is built, then the Portfolio tab."""
     s = _session(cid)
+    if not s.bank_linked:
+        return RedirectResponse(f"/p/{cid}/link", status_code=303)
     if not s.done:
         return _render("dashboard.html", _ctx(request, cid))
     return _render("portfolio.html", _ctx(request, cid, tab="portfolio", prompts=claude_agent.suggested_prompts(s)[:3],
@@ -149,17 +170,13 @@ def dashboard(request: Request, cid: str):
 
 
 def _today(a) -> dict:
-    """Each holding's value and move today, and the fund's dollar move (from each price's day change).
-    The list opens with the TOP_POSITIONS biggest; `rest` is behind "Show all". The dollar move sums every holding."""
-    vals = values(a.customer_id, a.today)
-    q = market.quotes(list(vals), a.today)
+    """The fund's figures (core/figures.py): total since you started, today's move, and each holding's row, labeled
+    with its slice. The list opens with the TOP_POSITIONS biggest; `rest` is behind "Show all"."""
+    f = figures.fund_figures(a)
     where = {h.ticker: dict(slices.SLICE_LABELS)[a.portfolio.slice_of(h)] for h in a.portfolio.holdings} if a.portfolio else {}
-    rows = [{"ticker": t, "info": market.info(t), "value": v, "quote": q.get(t), "slice": where.get(t, "")}
-            for t, v in sorted(vals.items(), key=lambda kv: -kv[1])]
-    day = sum(r["value"] * r["quote"]["change_pct"] / (100 + r["quote"]["change_pct"]) for r in rows if r["quote"])
-    before = sum(vals.values()) - day
+    rows = sorted(({**r, "slice": where.get(r["ticker"], "")} for r in f["rows"]), key=lambda r: -r["value"])
     top, rest = slices.top_positions(rows)
-    return {"rows": top, "rest": rest, "day_change": day, "day_pct": day / before * 100 if before else 0.0}
+    return {"fig": f, "rows": top, "rest": rest, "day_change": f["day_change"], "day_pct": f["day_pct"]}
 
 
 @router.get("/p/{cid}/how", response_class=HTMLResponse)
@@ -174,11 +191,16 @@ def how_built(request: Request, cid: str, full: bool = False):
 
 @router.get("/p/{cid}/chat", response_class=HTMLResponse)
 def chat_page(request: Request, cid: str, ask: str = ""):
+    """?ask= (a suggested prompt tapped on another tab) is stored and redirected away, so the address bar,
+    a reload and Back/Forward never hold it; the page then sends it once (POST /chat/ask pops it)."""
     s = _session(cid)
     if not s.done:
         return RedirectResponse(f"/p/{cid}", status_code=303)
+    if ask.strip():
+        s.pending_ask = ask.strip()[:300]
+        return RedirectResponse(f"/p/{cid}/chat", status_code=303)
     return _render("chat_page.html", _ctx(request, cid, tab="chat", prompts=claude_agent.suggested_prompts(s),
-                                          ask=ask.strip()[:300]))
+                                          ask=s.pending_ask))
 
 
 @router.get("/p/{cid}/report", response_class=HTMLResponse)
@@ -200,6 +222,7 @@ def report(request: Request, cid: str):
     ctx["history"] = rep["history"]
     ctx["fan_data"] = to_dict(rep["projection"])
     ctx["gain_up"] = s["gain"] >= 0
+    ctx["fig"] = figures.fund_figures(ctx["a"])
     ctx["tab"] = "report"
     return _render("report.html", ctx)
 
@@ -239,27 +262,47 @@ def reset(cid: str):
 
 @router.post("/p/{cid}/answer", response_class=HTMLResponse)
 def answer(request: Request, cid: str, value: str = Form(""), values: list[str] = Form(default=[]),
-           other: str = Form("")):
+           other: str = Form(""), keep: str = Form("")):
     s = _session(cid)
     q = s.question
     if q is None:
         raise HTTPException(400, "The intake is already done")
+    if not s.linked:
+        raise HTTPException(400, "Link a bank account first")
     try:
-        stored, shown = parse(q, value, values, other)
+        if s.followup:   # this submit answers a follow-up; the step (and the progress counter) stay put
+            shown = followups.apply(s.followup, s.fund.answers, value, values, keep=bool(keep))
+            s.followup = None
+        else:
+            shown = intake.record(s.fund.answers, q, value, values, other)
     except AnswerError as e:
         return _render("partials/chat_turn.html", _ctx(request, cid, new_messages=[{"role": "assistant", "text": str(e)}]))
-    s.fund.answers[q.key] = stored
     new = [s.say(shown, "user")]
+    fu = _followup(s, q.key)
+    if fu:
+        s.followup = fu
+        s.followups_asked.append(fu.key)
+        new.append(s.say(claude_agent.followup_text(fu)))
+        return _render("partials/chat_turn.html", _ctx(request, cid, new_messages=new, oob={"composer"}))
     s.step += 1
     oob = {"composer"}
     if s.done:
         fund.start(s.fund)
         new.append(s.say(claude_agent.fund_ready(s), link={"href": f"/p/{cid}/how", "label": "How your fund was built →"}))
-        oob |= {"fund", "account", "tier", "nav"}
+        oob |= {"fund", "account", "tier", "nav", "tape"}
     else:
         new.append(s.say(claude_agent.question_text(s)))
         oob.add("fund")   # the progress line
     return _render("partials/chat_turn.html", _ctx(request, cid, new_messages=new, oob=oob))
+
+
+def _followup(s: state.Session, key: str):
+    """A follow-up to ask after question `key`, if an answer needs one. Never crashes the intake."""
+    try:
+        return followups.check(s.fund.answers, key, get_profile(s.customer_id), s.followups_asked)
+    except Exception as e:  # noqa: BLE001  demo must not crash
+        print(f"[followups] skipped: {e!r}")
+        return None
 
 
 @router.post("/p/{cid}/chat", response_class=HTMLResponse)
@@ -274,6 +317,19 @@ def chat(request: Request, cid: str, message: str = Form(""), echo: str = Form("
     reply, events = claude_agent.chat_turn(s, text)
     new = ([sent] if echo else []) + [s.say(reply)]
     return _render("partials/chat_turn.html", _ctx(request, cid, new_messages=new, oob=events))
+
+
+@router.post("/p/{cid}/chat/ask", response_class=HTMLResponse)
+def chat_ask(request: Request, cid: str):
+    """Send the stored suggested prompt (see chat_page). Takes it off the session first, so a second load of
+    the page, a retry or a double request answers nothing instead of asking it again."""
+    s = _session(cid)
+    text, s.pending_ask = s.pending_ask, None
+    if not text or not s.done:
+        return HTMLResponse("")
+    sent = s.say(text, "user")
+    reply, events = claude_agent.chat_turn(s, text)
+    return _render("partials/chat_turn.html", _ctx(request, cid, new_messages=[sent, s.say(reply)], oob=events))
 
 
 # ---------- Paycheck autopilot and demo events ----------
@@ -295,6 +351,7 @@ def paycheck(request: Request, cid: str):
            + (f": {buys}." if buys else "."))
     if len(s.fund.pending) and len(s.fund.pending) != pending_before:
         say += f" Your scheduled review also lined up {len(s.fund.pending)} trades; they're waiting for your OK."
+    say += f" (Payday {d['on'].strftime('%b %-d')}.)"   # two paydays would read the same otherwise
     return _panels(request, cid, say)
 
 
@@ -310,10 +367,12 @@ def market_drop(request: Request, cid: str):
 
 @router.post("/p/{cid}/raise", response_class=HTMLResponse)
 def got_raise(request: Request, cid: str):
-    _need_fund(cid)
+    s = _need_fund(cid)
     nessie.apply_raise(cid, RAISE_PCT)
+    targets.review(s.fund)   # a pay change can suggest a new paycheck percent: show the card now, not next payday
     return _panels(request, cid, f"Nice, a {RAISE_PCT:g}% raise! Your paychecks are now "
-                                 f"${get_profile(cid).paycheck_amount:,.0f}, so the same percent invests more.")
+                                 f"${get_profile(cid).paycheck_amount:,.0f}, so the same percent invests more.",
+                   oob=("fund", "account", "tier", "today", "targets"))
 
 
 @router.post("/p/{cid}/pct", response_class=HTMLResponse)
@@ -392,12 +451,13 @@ def markets(request: Request, cid: str, s: str = "", r: str = "3M"):
     quote = q.get(sel) or market.quote(sel, end)
     shares = get_broker().positions(cid).get(sel, 0.0)
     cost = get_broker().cost_basis(cid).get(sel, 0.0)
+    worth = shares * market.raw_price(sel, end)
     detail = {
         "symbol": sel, "info": market.info(sel), "quote": quote, "range": r, "source": market.source(sel),
         "chart": {"labels": [d.isoformat() for d, _ in pts], "values": [round(p, 2) for _, p in pts]},
         "range_pct": (pts[-1][1] / pts[0][1] - 1) * 100 if len(pts) > 1 else 0.0,
         "high": max(year), "low": min(year),
-        "shares": shares, "value": shares * market.raw_price(sel, end), "cost": cost,
+        "shares": shares, "value": worth, "cost": cost, **figures.holding_gain(worth, cost),
         "example_shares": EXAMPLE_BUY / quote["price"],
         "in_fund": sel in held, "is_stock": sel in intake.stocks(a.answers),
         "can_add_stock": a.portfolio is not None and sel not in ETFS,
@@ -522,25 +582,53 @@ def interests(cid: str, values: list[str] = Form(default=[])):
 
 # ---------- Ticker tape ----------
 
-TAPE_EXTRAS = ["BND", "GLD"]
-TAPE_HOLDINGS = 8   # a custom index holds ~60 companies; the strip shows the biggest positions
-TAPE_DEFAULT = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA"]   # before a persona is picked
+# The Nasdaq Composite itself, in place of QQQ. Nasdaq's API serves its own indexes but not the S&P 500 or
+# the Dow, so those stay as their ETFs. Offline (no real closes) COMP can't be priced and QQQ stays.
+TAPE_NASDAQ = "COMP"
+# Each scrolling copy repeats its cards until it has at least this many, so a 3-holding fund still fills a
+# wide screen and the loop has no gap (a card is ~180px; 14 cover a 2560px window).
+TAPE_MIN_CARDS = 14
+TAPE_SECONDS_PER_CARD = 5.5   # scroll speed stays the same however many cards there are
+TAPE_HOLDINGS = 10   # a custom index holds ~60 companies; the strip shows its biggest positions only
+
+
+def _tape_holdings(cid: str, a) -> list[str]:
+    """What the customer holds: the fund's holdings by weight (biggest first), then anything else the
+    broker says they own outside the fund's targets (largest dollar value first). Empty before a fund is built."""
+    if not a or not a.portfolio:
+        return []
+    targets = [h.ticker for h in sorted(a.portfolio.holdings, key=lambda h: -h.weight)]
+    try:
+        owned = {t: v for t, v in values(cid, a.today).items() if v > 0.005}
+    except Exception:   # a real broker that can't be reached shouldn't break the strip
+        owned = {}
+    outside = [t for t in sorted(owned, key=lambda t: -owned[t]) if t not in targets]   # owned, no longer a target
+    return targets[:TAPE_HOLDINGS] + outside
 
 
 @router.get("/tape", response_class=HTMLResponse)
 def tape_any(request: Request, cid: str = "", part: str = ""):
-    """The strip pinned to the top of every page. part=groups returns only the scrolling cards, so the
+    """The strip pinned to the top of every page. With a fund it shows only what the customer holds; before
+    that (and on the landing page) the major indexes. part=groups returns only the scrolling cards, so the
     60s refresh swaps values inside the running animation instead of restarting it."""
     s = state.get(cid) if cid and cid in {c["id"] for c in nessie.list_customers()} else None
     a = s.fund if s else None
     on = a.today if a else market.today()
-    held = [h.ticker for h in sorted(a.portfolio.holdings, key=lambda h: -h.weight)][:TAPE_HOLDINGS] \
-        if a and a.portfolio else []
-    symbols = list(dict.fromkeys(INDEXES + held + (s.watchlist if s else TAPE_DEFAULT) + TAPE_EXTRAS))
-    q = market.quotes(symbols, on)
-    items = [{**q[t], "label": _tape_label(t), "spark": _spark(t, on, q[t])} for t in symbols if t in q]
-    ctx = {"request": request, "cid": cid if s else "", "tape": items, "part": part,
-           "live_market": market.source("SPY") == "live", "demo_date": on if on > market.today() else None}
+    held = _tape_holdings(cid, a) if s else []
+    q = market.quotes(held, on) if held else {}
+    items = [{**q[t], "label": t, "spark": _spark(t, on, q[t]), "link": t} for t in held if t in q]
+    mine = bool(items)
+    if not mine:
+        symbols =[x for t in INDEXES for x in ([TAPE_NASDAQ, t] if t == "QQQ" else [t])]
+        q = market.quotes(symbols, on)
+        if TAPE_NASDAQ in q:
+            symbols.remove("QQQ")
+        # An index can't be bought, so the Nasdaq card opens QQQ (the fund that tracks Nasdaq's biggest companies)
+        items = [{**q[t], "label": _tape_label(t), "spark": _spark(t, on, q[t]),
+                  "link": "QQQ" if t == TAPE_NASDAQ else t} for t in symbols if t in q]
+    reps = -(-TAPE_MIN_CARDS // len(items)) if items else 1
+    ctx = {"request": request, "cid": cid if s else "", "tape": items, "part": part, "on": on, "reps": reps, "mine": mine,
+           "seconds": round(len(items) * reps * TAPE_SECONDS_PER_CARD)}
     return templates.TemplateResponse(request, "partials/tape.html", ctx)
 
 
@@ -554,6 +642,8 @@ SPARK_W, SPARK_H, SPARK_DAYS = 60, 24, 30
 
 
 def _tape_label(t: str) -> str:
+    if t == TAPE_NASDAQ:
+        return "Nasdaq"
     return ETFS[t]["label"] if t in ETFS and ETFS[t]["role"] == "benchmark" else t
 
 

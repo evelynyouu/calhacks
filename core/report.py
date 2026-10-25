@@ -11,7 +11,7 @@ import csv
 import math
 from datetime import date, timedelta
 
-from core import intake, market, returns
+from core import figures, intake, market, returns
 from core.broker import get_broker, values
 from core.finances import build_finances
 from core.fund import FundAccount
@@ -79,13 +79,11 @@ def build_report(acct: FundAccount) -> dict:
     holdings = _holdings(acct, vals, total, month_ago)
     mkt = _market(today, month_ago, quarter_ago)
     since = rets["since_start"]
-    contributed = since["deposits"] if since else acct.contributed
-    gain = total - contributed
+    tot = figures.total(total, acct.contributed)      # the same "total" as every other screen
     period_pct = period["twr_pct"] if period and period["twr_pct"] is not None else 0.0
     summary = {
-        "value": round(total, 2), "contributed": round(contributed, 2), "gain": round(gain, 2),
-        "gain_pct": since["mwr_price_pct"] if since and since["mwr_price_pct"] is not None
-        else round(gain / contributed * 100, 2) if contributed else 0.0,
+        "value": round(total, 2), "contributed": tot["put_in"], "gain": tot["total_gain"],
+        "gain_pct": tot["total_gain_pct"] or 0.0,
         "period_pct": period_pct, "market_period_pct": mkt["m1"],
         "vs_market_pts": round(period_pct - mkt["m1"], 2),
         "income_estimate": since["income_estimate"] if since else 0.0,
@@ -126,6 +124,9 @@ def build_report(acct: FundAccount) -> dict:
     rep["sectors"] = [{"sector": k, "share": round(v, 4)} for k, v in
                       sorted(_sector_exposure(vals, total, _own_sectors(p)).items(), key=lambda kv: -kv[1])[:6]]
     rep["data_notes"] = _data_notes(acct, holdings)
+    from core import targets
+    rep["target_changes"] = targets.history(acct)   # accepted target changes, newest first (core/targets.py)
+    rep["target_proposal"] = acct.proposal          # one waiting for Accept / Not now on the Portfolio tab
     targets = {h.ticker: h.weight for h in p.holdings}
     rep["finances"] = build_finances(
         get_profile(cid), acct.answers, total, per_paycheck, PAYCHECKS_PER_YEAR, sim.expected_return_pct,
@@ -294,7 +295,7 @@ def _holdings(acct, vals, total, month_ago) -> list[dict]:
             "drift": drifts.get(t, 0.0), "off_target": t in flagged, "band": round(band(targets.get(t, 0.0)), 4),
             "period_pct": market.change_pct(t, month_ago, today),
             "simulated": market.simulated_on(t, today),
-            "gain_pct": round((v / cost[t] - 1) * 100, 2) if cost.get(t) else None,
+            "gain_pct": returns.total_gain(v, cost[t])[1] if cost.get(t) else None,   # since you bought
         })
     return rows
 
@@ -614,7 +615,7 @@ def _facts(rep: dict) -> list[str]:
     then their money, then the market. Claude explains these and may not add numbers."""
     s, m, r, ret = rep["summary"], rep["market"], rep["relation"], rep["returns"]
     p, since = ret["period"], ret["since_start"]
-    facts = [f"Fund value ${s['value']:,.2f}; you've put in ${s['contributed']:,.2f}; gain {_usd(s['gain'])} ({_pct(s['gain_pct'], 2)} on your money, prices only)."]
+    facts = [f"Fund value ${s['value']:,.2f}; you've put in ${s['contributed']:,.2f}; total gain {_usd(s['gain'])} since you started ({_pct(s['gain_pct'], 2)} of what you put in, prices only)."]
     if p and p["twr_pct"] is not None and p["days"] > 0:
         span = f"since you started on {_day(p['start'])}" if p["from_start"] else f"from {_day(p['start'])} to {_day(p['end'])}"
         facts.append(f"{span[0].upper()}{span[1:]} ({p['days']} days), your fund returned {_pct(p['twr_pct'], 2)} including estimated income "

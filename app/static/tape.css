@@ -1,8 +1,9 @@
 /* Ticker strip (Yahoo Finance style). Owned by app/templates/partials/tape*.html.
-   One white row pinned to the top: never wraps, never widens the page, scrolls itself. */
-:root { --tape-h:52px; --tape-up:#0b7a3e; --tape-down:#d93025; --tape-ink:#000; --tape-muted:#5f6368; --tape-line:#e5e7eb; }
+   One dark row pinned to the top, so it stands apart from the white page: never wraps, never widens the
+   page, scrolls itself. Up/down colors are brighter than the page's green/red to read on near-black. */
+:root { --tape-h:52px; --tape-bg:#0b0f0d; --tape-up:#3ddc84; --tape-down:#ff6b5e; --tape-ink:#fff; --tape-muted:#9aa0a6; --tape-line:#232b27; }
 .tape-dock { position:sticky; top:0; z-index:40; width:100%; max-width:100vw; overflow:hidden; }
-.tape { height:var(--tape-h); background:#fff; border-bottom:1px solid var(--tape-line); overflow:hidden; contain:layout paint;
+.tape { height:var(--tape-h); background:var(--tape-bg); border-bottom:1px solid var(--tape-line); overflow:hidden; contain:layout paint;
         font-family:Inter, system-ui, -apple-system, "Segoe UI", sans-serif; color:var(--tape-ink); }
 .tape-loading { display:flex; align-items:center; }
 .tape-track { display:flex; width:max-content; height:100%; animation:tape-scroll 80s linear infinite; will-change:transform; }
@@ -20,7 +21,7 @@ a.tape-item:focus-visible { outline:2px solid var(--tape-up); outline-offset:-2p
 .tape-down { color:var(--tape-down); font-weight:600; }
 .tape-spark { display:block; flex-shrink:0; overflow:visible; }
 .tape-spark polyline { fill:none; stroke-width:1.5; stroke-linejoin:round; stroke-linecap:round; }
-.tape-base { stroke:#9aa0a6; stroke-width:1; stroke-dasharray:2 2; }
+.tape-base { stroke:#5f6368; stroke-width:1; stroke-dasharray:2 2; }
 .tape-line-up { stroke:var(--tape-up); }
 .tape-line-down { stroke:var(--tape-down); }
 .tape-note { font-size:11px; color:var(--tape-muted); border-right:0; }
@@ -28,5 +29,5 @@ a.tape-item:focus-visible { outline:2px solid var(--tape-up); outline-offset:-2p
 @media (prefers-reduced-motion: reduce) {
   .tape { overflow-x:auto; scrollbar-width:thin; }
   .tape-track { animation:none; }
-  .tape-group[aria-hidden="true"] { display:none; }
+  .tape-group[aria-hidden="true"], .tape-dup { display:none; }
 }

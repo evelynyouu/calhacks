@@ -1,13 +1,15 @@
 {# The input under the chat. During the intake it matches the question: text, dollars, slider, scale,
-   multiple choice or chips. After the intake it's a free-text box for Claude. #}
+   multiple choice (cards, plus a typed "Something else" box when the question has one) or chips. A follow-up (core/followups.py) reuses the same inputs plus a "Keep my answer"
+   button, and the progress counter stays on the question it follows. After the intake it's a free-text box. #}
 <div id="composer" {% if swap_oob %}hx-swap-oob="true"{% endif %} class="border-t border-ink/10 px-5 pt-3 pb-4">
-  {% set q = s.question %}
+  {% set fu = s.followup %}
+  {% set q = fu.question if fu else s.question %}
   {% if q %}
   <div class="mb-2 flex items-center justify-between gap-3">
     <div class="flex gap-1" aria-hidden="true">
       {% for _ in questions %}<span class="h-1 w-5 rounded-full {% if loop.index0 < s.step %}bg-moss-500{% elif loop.index0 == s.step %}bg-moss-500/50{% else %}bg-ink/10{% endif %}"></span>{% endfor %}
     </div>
-    <span class="text-xs text-ink/50">Question {{ s.step + 1 }} of {{ questions | length }}</span>
+    <span class="text-xs text-ink/50">Question {{ s.step + 1 }} of {{ questions | length }}{% if fu %} · quick follow-up{% endif %}</span>
   </div>
   {% if q.help %}<p class="mb-2 text-sm text-ink/60">{{ q.help }}</p>{% endif %}
   <form hx-post="/p/{{ cid }}/answer" hx-target="#chat-messages" hx-swap="beforeend" hx-indicator="#typing"
@@ -53,10 +55,29 @@
     <div class="flex justify-between text-xs text-ink/50"><span>{{ q.ends[0] }}</span><span>{{ q.ends[1] }}</span></div>
 
     {% elif q.kind == 'choice' %}
+    {# The horizon question highlights the card the goal suggests (core/intake.suggested_horizon); any card works. #}
+    {% set sugg = suggested_horizon(s.fund.answers) if (q.key == 'horizon' and not fu) else None %}
+    {% if sugg %}
+    <p class="text-sm text-moss-700" data-suggested="{{ sugg[0] }}">{{ sugg[1] }}</p>
+    {% endif %}
+    {# "Something else" comes first in the page so Enter in it submits its own Send button, not the first card;
+       order-last still shows it under the cards. #}
+    <div class="flex flex-col gap-2">
+    {% if q.other %}
+    <div class="composer-box order-last">
+      <input name="other" placeholder="{{ q.other }}: type your own" aria-label="{{ q.other }}" maxlength="300">
+      <button class="btn">Send</button>
+    </div>
+    {% endif %}
     <div class="grid sm:grid-cols-2 gap-2" role="group" aria-label="{{ q.prompt }}">
       {% for v, label in q.options %}
+      {% if sugg and v == sugg[0] %}
+      <button name="value" value="{{ v }}" class="choice-btn" style="border-color:#0b7a3e;background:#e8f6ee" autofocus>{{ label }} <span class="ml-1 text-xs font-semibold text-moss-700">Suggested</span></button>
+      {% else %}
       <button name="value" value="{{ v }}" class="choice-btn">{{ label }}</button>
+      {% endif %}
       {% endfor %}
+    </div>
     </div>
 
     {% elif q.kind == 'chips' %}
@@ -68,9 +89,18 @@
       </label>
       {% endfor %}
     </div>
+    {% if fu %}
+    <div class="flex justify-end"><button class="btn whitespace-nowrap">Add these</button></div>
+    {% else %}
     <div class="composer-box">
       <input name="other" placeholder="Other: type anything, like “pet care” or “coffee”" aria-label="Other interests">
       <button class="btn whitespace-nowrap">Build my fund</button>
+    </div>
+    {% endif %}
+    {% endif %}
+    {% if fu %}
+    <div class="flex justify-end">
+      <button name="keep" value="1" formnovalidate class="btn-ghost">{{ fu.keep_label }}</button>
     </div>
     {% endif %}
   </form>
@@ -79,7 +109,7 @@
   <form hx-post="/p/{{ cid }}/chat" hx-target="#chat-messages" hx-swap="beforeend" hx-indicator="#typing"
         hx-disabled-elt="find button" data-optimistic>
     <div class="composer-box">
-      <textarea name="message" rows="1" required data-autogrow placeholder="Ask about your fund, the market, or what to do next…" aria-label="Message"></textarea>
+      <textarea name="message" rows="1" required data-autogrow class="placeholder:truncate" placeholder="Ask about your fund, the market, or what to do next…" aria-label="Message"></textarea>
       <button class="btn">Send</button>
     </div>
   </form>

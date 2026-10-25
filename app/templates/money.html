@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}Money · FirstFund{% endblock %}
+{% block header_right %}{% include "partials/tier.html" %}{% endblock %}
+{% block content %}
+{# Bank and investing together. Every number comes from app/routes/money.py; this file only formats them. #}
+{% macro signed_money(v) %}{{ '+' if v >= 0 else '−' }}{{ v | abs | money2 }}{% endmacro %}
+
+<div class="flex flex-wrap items-end justify-between gap-2 mb-4">
+  <div>
+    <p class="eyebrow">Money</p>
+    <h1 class="font-display text-3xl font-bold">Your bank and your fund</h1>
+    <p class="text-sm text-ink/60">A mock bank (Capital One's Nessie sandbox): pretend money, real arithmetic.</p>
+  </div>
+</div>
+
+{% if not has_fund %}
+<div class="mb-5 rounded-xl border border-ink/15 bg-paper px-4 py-3 text-sm" role="status">
+  <strong>Your fund isn't built yet:</strong> finish the questions and this page shows your investing next to your bank.
+  <a href="/p/{{ cid }}" class="ml-1 font-medium text-moss-600 hover:underline">Back to the questions →</a>
+</div>
+{% endif %}
+
+<section aria-labelledby="accounts-h">
+  <h2 id="accounts-h" class="sr-only">Accounts</h2>
+  <ul class="grid grid-cols-1 min-[420px]:grid-cols-2 lg:grid-cols-4 gap-3">
+    {% for acc in accounts %}
+    <li class="card p-4 {{ 'border-moss-600/40' if acc.investing else '' }}" data-account="{{ acc.kind }}">
+      <div class="flex items-center justify-between gap-2">
+        <p class="text-sm font-medium">{{ acc.name }}</p>
+        <span class="text-xs text-ink/50 tabular-nums">{% if acc.last4 %}••••{{ acc.last4 }}{% else %}demo{% endif %}</span>
+      </div>
+      <p class="mt-1 font-display text-2xl font-bold tabular-nums {{ 'text-clay-500' if acc.owed and acc.balance > 0 else '' }}" data-balance>{{ acc.balance | money2 }}</p>
+      <p class="text-xs text-ink/55">{{ acc.note }}</p>
+    </li>
+    {% endfor %}
+  </ul>
+  <p class="mt-2 text-xs text-ink/50">Bank balances are {{ 'from the live Nessie sandbox (pretend money)' if nessie_mode == 'live' and not nessie_offline else 'demo data' }}. Account numbers show the last 4 of the Nessie account id{% if nessie_mode != 'live' or nessie_offline %} when connected live{% endif %}.</p>
+</section>
+
+<div class="mt-5 grid lg:grid-cols-12 gap-5">
+  <div class="lg:col-span-7 space-y-5 min-w-0">
+
+    <section class="card" id="next-paycheck">
+      <p class="eyebrow">Next paycheck</p>
+      <div class="mt-2 flex flex-wrap items-baseline justify-between gap-2">
+        <p class="font-display text-2xl font-bold tabular-nums">{{ next_pay.paycheck | money2 }}</p>
+        <p class="text-sm text-ink/60">{{ next_pay.on | day }} · in {{ next_pay.days }} day{{ 's' if next_pay.days != 1 }}</p>
+      </div>
+      {% if has_fund %}
+      <p class="mt-2 text-sm">At {{ '%g' % next_pay.pct }}% of each paycheck, <strong class="tabular-nums" data-next-invest>{{ next_pay.invested | money }}</strong> moves to FirstFund the moment it lands, and is invested right away.
+        <span class="text-ink/55">Whole dollars, rounded down.</span></p>
+      <a href="/p/{{ cid }}/account#investing" class="mt-2 inline-block text-sm font-medium text-moss-600 hover:underline">Change the percent →</a>
+      {% else %}
+      <p class="mt-2 text-sm text-ink/60">Nothing is invested until your fund is built. You'll pick the percent in the questions.</p>
+      {% endif %}
+    </section>
+
+    <section class="card" id="money-flow">
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <p class="eyebrow">Money flow by month</p>
+        <p class="text-xs text-ink/50">From your bank activity</p>
+      </div>
+      {% if flow.months %}
+      <ul class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink/65" aria-hidden="true">
+        {% for key, label in flow.buckets %}<li class="flex items-center gap-1.5"><span class="flow-key flow-{{ key }}"></span>{{ label }}</li>{% endfor %}
+      </ul>
+      <div class="mt-3 space-y-4">
+        {% for m in flow.months %}
+        <div>
+          <p class="text-sm font-medium">{{ m.month.strftime('%B %Y') }}</p>
+          <dl class="mt-1 space-y-1">
+            {% for b in m.bars %}
+            <div class="grid grid-cols-[6.5rem_1fr_auto] sm:grid-cols-[9rem_1fr_auto] items-center gap-2 text-xs">
+              <dt class="text-ink/60 truncate">{{ b.label }}</dt>
+              <dd class="h-2.5 rounded-full bg-ink/5 overflow-hidden" aria-hidden="true"><div class="h-full rounded-full flow-{{ b.key }}" style="width: {{ b.width }}%"></div></dd>
+              <dd class="tabular-nums text-right w-[5.5rem]">{{ b.amount | money }}</dd>
+            </div>
+            {% endfor %}
+          </dl>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="mt-2 text-sm text-ink/60">No bank activity yet.</p>
+      {% endif %}
+      <div class="mt-4 rounded-xl bg-paper px-3 py-2.5 text-sm" id="moved-vs-value">
+        {% if has_fund %}
+        <p>You've put in <strong class="tabular-nums">{{ inv.contributed | money2 }}</strong>{% if inv.starting > 0 and inv.from_paychecks > 0 %} ({{ inv.starting | money2 }} to start, {{ inv.from_paychecks | money2 }} from paychecks){% elif inv.from_paychecks > 0 %} from paychecks{% elif inv.starting > 0 %} as your starting amount{% endif %}. It's worth <strong class="tabular-nums">{{ inv.value | money2 }}</strong> now:
+          <strong class="{{ 'text-moss-600' if inv.gain >= 0 else 'text-clay-500' }} tabular-nums">{{ signed_money(inv.gain) }}</strong> since you started.</p>
+        <p class="mt-0.5 text-xs text-ink/55">The starting amount is a mock deposit; paycheck amounts move from checking through Nessie ({{ inv.moved_by_bank | money2 }} recorded by the bank).</p>
+        {% else %}
+        <p class="text-ink/60">Nothing has moved to investing yet.</p>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="card" id="activity">
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <p class="eyebrow">Recent bank activity</p>
+      </div>
+      {% if feed %}
+      <ul class="mt-2 divide-y divide-ink/10 text-sm">
+        {% for x in feed %}
+        <li class="py-2 flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <p class="font-medium">{{ x.text[:1] | upper }}{{ x.text[1:] }}
+              {% if x.tag == 'firstfund' %}<span class="ml-1 rounded-full bg-moss-50 px-2 py-0.5 text-xs font-medium text-moss-700">Moved to investing</span>{% endif %}</p>
+            <p class="text-xs text-ink/55">{{ x.on }} · {{ x.account }}{% if x.to %} → {{ x.to }}{% endif %}</p>
+          </div>
+          <span class="tabular-nums shrink-0 {{ 'text-moss-600' if x.flow == 'in' else 'text-ink/50' if x.flow not in ('in', 'out') else '' }}">{% if x.flow == 'in' %}+{% elif x.flow == 'out' %}−{% endif %}{{ x.amount | money2 }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="mt-2 text-sm text-ink/60">No activity yet.</p>
+      {% endif %}
+    </section>
+  </div>
+
+  <div class="lg:col-span-5 space-y-5 min-w-0">
+    <section class="card" id="investing">
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <p class="eyebrow">Investing</p>
+        {% if has_fund %}<div class="flex gap-3 text-sm font-medium"><a href="/p/{{ cid }}" class="text-moss-600 hover:underline">Portfolio →</a><a href="/p/{{ cid }}/report" class="text-moss-600 hover:underline">Report →</a></div>{% endif %}
+      </div>
+      {% if has_fund %}
+      <p class="mt-1 font-display text-3xl font-bold tabular-nums">{{ inv.value | money2 }}</p>
+      <p class="text-base font-semibold {{ 'text-moss-600' if inv.gain >= 0 else 'text-clay-500' }}" title="{{ defs.total }}" data-fig="total">{{ signed_money(inv.gain) }}{% if inv.gain_pct is not none %} ({{ inv.gain_pct | signed(2) }}){% endif %}
+        <span class="font-normal text-ink/60">since you started{% if inv.started %} on {{ inv.started | day }}{% endif %} · you put in {{ inv.contributed | money2 }}</span></p>
+      {% set up = inv.day_change >= 0 %}
+      <p class="text-sm font-medium {{ 'text-moss-600' if up else 'text-clay-500' }}" title="{{ defs.today }}" data-fig="today">{{ signed_money(inv.day_change) }} ({{ inv.day_pct | signed(2) }}) <span class="font-normal text-ink/60">today</span></p>
+
+      {% if inv.value > 0 %}
+      <p class="mt-4 text-sm font-medium">Biggest holdings</p>
+      <ul class="mt-1 divide-y divide-ink/10 text-sm">
+        {% for r in inv.top %}
+        <li class="py-2 flex items-center justify-between gap-3">
+          <a href="/p/{{ cid }}/markets?s={{ r.ticker }}" class="min-w-0 hover:underline"><strong>{{ r.ticker }}</strong> <span class="text-ink/55">{{ r.info.label }}</span></a>
+          <span class="tabular-nums shrink-0">{{ r.value | money2 }} <span class="text-ink/50">· {{ r.share | pct(1) }}</span></span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="mt-3 text-sm text-ink/60">$0 invested so far. Your next paycheck starts it{% if next_pay.invested == 0 %} once you choose a percent above 0{% endif %}.</p>
+      {% endif %}
+      {% else %}
+      <p class="mt-2 text-sm text-ink/60">Your fund isn't built yet: finish the questions.</p>
+      <a href="/p/{{ cid }}" class="btn mt-3 inline-block">Finish the questions</a>
+      {% endif %}
+    </section>
+
+    <section class="card" id="bills">
+      <p class="eyebrow">Bills before your next paycheck</p>
+      {% if bills_due %}
+      <ul class="mt-2 divide-y divide-ink/10 text-sm">
+        {% for b in bills_due %}
+        <li class="py-2 flex items-center justify-between gap-3">
+          <div><p class="font-medium">{{ b.name }}</p><p class="text-xs text-ink/55">Due {{ b.due | day }}{% if b.in_days == 0 %} (today){% endif %}</p></div>
+          <span class="tabular-nums">{{ b.amount | money2 }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      <p class="mt-2 flex justify-between text-sm font-medium"><span>Total</span><span class="tabular-nums">{{ bills_total | money2 }}</span></p>
+      {% else %}
+      <p class="mt-2 text-sm text-ink/60">No bills due before {{ next_pay.on | day }}.</p>
+      {% endif %}
+      <p class="mt-2 text-xs text-ink/50">Bills come from the bank (demo schedule). FirstFund doesn't hold back money for them; that's your call.</p>
+    </section>
+  </div>
+</div>
+{% endblock %}
