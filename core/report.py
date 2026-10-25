@@ -276,6 +276,7 @@ def _holdings(acct, vals, total, month_ago) -> list[dict]:
     drifts = drift_of(p, vals) if total else {t: -w for t, w in targets.items()}
     flagged = off_target(p, vals) if total else {}
     where, sector_of = {h.ticker: p.slice_of(h) for h in p.holdings}, _own_sectors(p)
+    names = {h.ticker: h.name for h in p.holdings}
     tickers = list(targets) + [t for t in vals if t not in targets]
     day = market.quotes(tickers, today)
     rows = []
@@ -283,7 +284,8 @@ def _holdings(acct, vals, total, month_ago) -> list[dict]:
         v = vals.get(t, 0.0)
         row = market.info(t)
         rows.append({
-            "ticker": t, "name": row["name"], "label": row["label"], "about": row["about"],
+            "ticker": t, "name": row["name"], "about": row["about"],
+            "label": names[t] if t in sector_of else row["label"],      # a company is shown by its name, a fund by its label
             "slice": where.get(t, "former"), "sector": sector_of.get(t, ""),
             "role": row["role"] if row["role"] in ("core", "stock") else "tilt", "shares": round(shares.get(t, 0.0), 4),
             "day_pct": day[t]["change_pct"] if t in day else None,

@@ -371,3 +371,11 @@ def test_what_moved_your_fund_opens_with_the_ten_biggest_and_a_show_all():
     assert movers.count("<li") == 10 and "Show all 58 holdings" in text(html)
     rep = build_report(s.fund)["returns"]["period"]
     assert sum(x["dollars"] for x in rep["attribution"]) == pytest.approx(rep["market_gain"], abs=0.05)    # all 58 add up
+
+
+def test_a_company_row_in_the_report_shows_the_funds_name_for_it_not_its_ticker_twice():
+    _, rep = custom_report()
+    rows = {r["ticker"]: r for r in rep["holdings"]}
+    assert rows["TGT"]["label"] == "Target" and rows["NVDA"]["label"] == "NVIDIA"
+    assert rows["VXUS"]["label"] == "International stocks"                      # a fund keeps its short label
+    assert "TGT TGT" not in text(client.get("/p/sam/report").text)
