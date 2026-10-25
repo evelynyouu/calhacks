@@ -21,6 +21,8 @@ class Session:
     prefs: dict = field(default_factory=lambda: dict(DEFAULT_PREFS))   # notification settings
     rundown: dict | None = None                                        # {"text", "at"}: the News tab's AI rundown
     linked: dict | None = None   # the demo bank link (core.onboarding.link): {"bank", "checking", "investing", "note"}
+    followup: object = None                                    # core.followups.FollowUp waiting for an answer
+    followups_asked: list[str] = field(default_factory=list)   # follow-up rule keys asked this intake (max 2)
 
     def __post_init__(self):
         if self.fund is None:

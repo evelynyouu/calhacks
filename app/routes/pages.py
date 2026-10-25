@@ -18,7 +18,7 @@ from agent import claude_agent
 from agent.tools import INDEXES, news_tickers
 from app.routes.auth import auth_disabled, csrf_token
 from app import state
-from core import feed, fund, intake, market, nessie
+from core import feed, followups, fund, intake, market, nessie
 from core.broker import get_broker, values
 from core.intake import QUESTIONS, AnswerError, parse
 from core.market import ETFS
@@ -182,7 +182,7 @@ def reset(cid: str):
 
 @router.post("/p/{cid}/answer", response_class=HTMLResponse)
 def answer(request: Request, cid: str, value: str = Form(""), values: list[str] = Form(default=[]),
-           other: str = Form("")):
+           other: str = Form(""), keep: str = Form("")):
     s = _session(cid)
     q = s.question
     if q is None:
@@ -190,11 +190,21 @@ def answer(request: Request, cid: str, value: str = Form(""), values: list[str] 
     if not s.linked:
         raise HTTPException(400, "Link a bank account first")
     try:
-        stored, shown = parse(q, value, values, other)
+        if s.followup:   # this submit answers a follow-up; the step (and the progress counter) stay put
+            shown = followups.apply(s.followup, s.fund.answers, value, values, keep=bool(keep))
+            s.followup = None
+        else:
+            stored, shown = parse(q, value, values, other)
+            s.fund.answers[q.key] = stored
     except AnswerError as e:
         return _render("partials/chat_turn.html", _ctx(request, cid, new_messages=[{"role": "assistant", "text": str(e)}]))
-    s.fund.answers[q.key] = stored
     new = [s.say(shown, "user")]
+    fu = _followup(s, q.key)
+    if fu:
+        s.followup = fu
+        s.followups_asked.append(fu.key)
+        new.append(s.say(claude_agent.followup_text(fu)))
+        return _render("partials/chat_turn.html", _ctx(request, cid, new_messages=new, oob={"composer"}))
     s.step += 1
     oob = {"composer"}
     if s.done:
@@ -205,6 +215,15 @@ def answer(request: Request, cid: str, value: str = Form(""), values: list[str] 
         new.append(s.say(claude_agent.question_text(s)))
         oob.add("fund")   # the progress line
     return _render("partials/chat_turn.html", _ctx(request, cid, new_messages=new, oob=oob))
+
+
+def _followup(s: state.Session, key: str):
+    """A follow-up to ask after question `key`, if an answer needs one. Never crashes the intake."""
+    try:
+        return followups.check(s.fund.answers, key, get_profile(s.customer_id), s.followups_asked)
+    except Exception as e:  # noqa: BLE001  demo must not crash
+        print(f"[followups] skipped: {e!r}")
+        return None
 
 
 @router.post("/p/{cid}/chat", response_class=HTMLResponse)
