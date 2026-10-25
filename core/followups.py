@@ -76,12 +76,11 @@ HORIZON_OPTIONS = [("lt3", "Under 3 years"), ("3to7", "3 to 7 years"), ("7to15",
                    ("15plus", "15 years or more"), ("unsure", "Not sure yet")]
 HORIZON_LABELS = dict(HORIZON_OPTIONS)
 
-# Goals that are usually spent soon (unless the text says otherwise)
+# Goal cards that are usually spent soon (unless typed words give a later date)
+NEAR_GOALS = {"safety", "travel"}
+# Typed "Something else" goals that are usually spent soon (unless the text says otherwise)
 _NEAR_GOAL = re.compile(r"\b(cars?|wedding|tuition|emergency fund|emergencies|safety net|rainy day|vacation|"
                         r"trip|honeymoon)\b")
-# Goals where the timeline changes what fits, and is often left out
-_TIMED_GOAL = re.compile(r"\b(retire\w*|house|home|condo|apartment|down payment|school|college|tuition|"
-                         r"university|grad school|education)\b")
 _SOMEDAY = re.compile(r"\b(someday|some day|one day|eventually|long[- ]term|long run|in the future|later on|"
                       r"no rush|forever)\b")
 _NEAR_PHRASE = re.compile(r"\b(this year|next year|next month|this summer|this winter|soon|asap|"
@@ -322,22 +321,31 @@ def contradictory_risk(answers, after, profile, asked):
 
 
 def near_term_high_risk(answers, after, profile, asked):
-    """A goal that's usually spent soon, with growth-leaning risk answers: ask when the money is needed."""
-    if after != _last_risk_key() or _has_horizon_question() or "horizon" in answers or "goal" not in answers:
+    """A goal that's usually spent soon (a safety net, travel, or typed words like "wedding in 2027"), growth-
+    leaning risk answers, and no timeline ("Not sure yet", or an intake without the horizon question):
+    ask once when the money is needed. Runs after the horizon question, or the last risk question without one."""
+    if after != ("horizon" if _has_horizon_question() else _last_risk_key()):
         return None
-    goal = str(answers["goal"])
-    when = timeline(goal)
-    if not (when == "near" or (when is None and _NEAR_GOAL.search(goal.lower()))):
+    if answers.get("horizon") not in (None, "unsure"):
+        return None
+    g, typed = intake.goal_key(answers), intake.goal_text(answers)
+    when = timeline(typed)
+    near_card = g in NEAR_GOALS and when != "far"
+    if not (when == "near" or near_card or (g == intake.OTHER_GOAL and when is None and _NEAR_GOAL.search(typed.lower()))):
         return None
     level = intake.risk_level(intake.risk_score(answers))
     if level < HIGH_RISK_LEVEL:
         return None
     label = "growth" if level == 3 else "aggressive growth"
-    return _horizon("near_term_high_risk", after,
-                    f"You mentioned “{goal[:60]}”, and your answers lean toward {label}. "
-                    "When do you expect to need this money?",
-                    "Just so I can explain your fund for your timeline. Your answers stay as they are.",
-                    [f"Goal: {goal[:60]}.", f"Risk answers point to level {level} of 4 ({label})."])
+    goal = typed[:60] or intake.GOAL_LABELS.get(g, "")
+    fu = _horizon("near_term_high_risk", after,
+                  f"Your goal is “{goal}”, and your answers lean toward {label}. "
+                  "When do you expect to need this money?",
+                  "Just so I can explain your fund for your timeline. Your answers stay as they are.",
+                  [f"Goal: {goal}.", f"Risk answers point to level {level} of 4 ({label})."])
+    if "horizon" in answers:   # they already said "Not sure yet": offer only actual timelines, plus Keep
+        fu.options = [o for o in fu.options if o[0] != "unsure"]
+    return fu
 
 
 def unmatched_interests(answers, after, profile, asked):
@@ -356,22 +364,11 @@ def unmatched_interests(answers, after, profile, asked):
                     keep_label="Skip it", facts=[f"No fund matched: {', '.join(phrases)}."])
 
 
-def goal_no_timeline(answers, after, profile, asked):
-    """Retirement / a home / school with no year, age or 'someday': ask once, only if nothing else was asked."""
-    last = intake.QUESTIONS[-1].key if intake.QUESTIONS else None
-    if after != last or asked or _has_horizon_question() or "horizon" in answers or "goal" not in answers:
-        return None
-    goal = str(answers["goal"])
-    m = _TIMED_GOAL.search(goal.lower())
-    if not m or timeline(goal) is not None:
-        return None
-    return _horizon("goal_no_timeline", after, f"One last thing: when do you expect to need the money for “{goal[:60]}”?",
-                    "Optional. It just helps me explain your fund.", [f"Goal: {goal[:60]}."])
-
-
 # Order matters within a step: the first rule that fires is asked.
+# (goal_no_timeline was removed with the goal cards: it asked "when?" for a typed goal with no date, which the
+# horizon question and the goal's suggested horizon now cover.)
 RULES = [unclear_goal, start_over_balance, nothing_invested, paycheck_over_leftover, contradictory_risk,
-         near_term_high_risk, unmatched_interests, goal_no_timeline]
+         near_term_high_risk, unmatched_interests]
 
 
 def suggest_themes(phrases: list[str], exclude=()) -> dict[str, str]:
