@@ -1,0 +1,22 @@
+group_a,group_b,correlation,source
+us_stocks,us_stocks,0.9,Large Cap vs Small Cap
+intl_stocks,intl_stocks,0.86,EAFE vs EM
+bonds,bonds,1.0,single fund
+gold,gold,1.0,single fund
+us_stocks,intl_stocks,0.87,Large Cap vs EAFE
+us_stocks,bonds,0.3,Large Cap vs Aggregate
+intl_stocks,bonds,0.34,EAFE vs Aggregate
+gold,bonds,0.38,Gold vs Aggregate
+gold,us_stocks,0.03,Gold vs Large Cap
+gold,intl_stocks,0.14,Gold vs EAFE
+sector,sector,0.4,"measured from daily closes, 522 days"
+company,company,0.15,"measured from daily closes, 522 days"
+sector,us_stocks,0.58,"measured from daily closes, 522 days"
+company,us_stocks,0.35,"measured from daily closes, 522 days"
+sector,intl_stocks,0.5,"measured from daily closes, 522 days"
+company,intl_stocks,0.27,"measured from daily closes, 522 days"
+sector,bonds,0.16,"measured from daily closes, 522 days"
+company,bonds,0.1,"measured from daily closes, 522 days"
+sector,gold,0.15,"measured from daily closes, 522 days"
+company,gold,0.08,"measured from daily closes, 522 days"
+sector,company,0.25,"measured from daily closes, 522 days"

@@ -5,10 +5,11 @@ from dataclasses import asdict, is_dataclass
 from datetime import date, datetime
 
 from app.state import Session
-from core import feed, fund, intake, market
+from core import feed, fund, intake, market, spending
 from core.market import ETFS
 from core.portfolio import THEMES
 from core.explain import explain_for_chat
+from core.profile import get_profile
 from core.report import build_report
 
 INDEXES = ["SPY", "QQQ", "DIA"]
@@ -82,6 +83,27 @@ TOOLS = [
         "description": "Change the percent of each paycheck that's invested. Only call when the customer asks.",
         "input_schema": {"type": "object", "properties": {"percent": {"type": "number", "minimum": 0, "maximum": 100}},
                          "required": ["percent"]},
+    },
+    {
+        "name": "get_spending_insights",
+        "description": "Spending breakdown from the customer's C1/Nessie bank data: what categories they spend on, "
+                       "up to 5 fund themes that match their real spending habits (e.g. dining → consumer sector), "
+                       "a reinvestment signal if actual spending came in under their monthly baseline, "
+                       "and a risk-level sanity-check driven by cushion size, card debt and monthly surplus. "
+                       "Use this to suggest fund themes or flag a mismatch between intake risk and real finances.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "toggle_auto_trade",
+        "description": "Turn automatic trade execution on or off. Only call when the customer asks. "
+                       "When on and the customer is Tier 4+ ($50K+ AUM), rebalancing trades execute automatically "
+                       "on each scheduled review without a confirmation click. Lower tiers still queue trades for "
+                       "the customer to confirm.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"enabled": {"type": "boolean"}},
+            "required": ["enabled"],
+        },
     },
 ]
 
@@ -201,4 +223,35 @@ def run_tool(session: Session, name: str, args: dict) -> tuple[dict, list[str]]:
     if name == "set_paycheck_percent":
         fund.set_invest_pct(session.fund, args["percent"])
         return {"paycheck_percent": session.fund.invest_pct}, ["account"]
+    if name == "get_spending_insights":
+        profile = get_profile(session.fund.customer_id)
+        breakdown = spending.spending_breakdown(session.fund.customer_id, profile)
+        risk_adj = spending.banking_risk_adjustment(profile, session.fund.risk_score or 50)
+        # Convert raw risk_score to level for context
+        from core.intake import risk_level as _rl
+        current_level = _rl(session.fund.risk_score or 50) if session.fund.risk_score is not None else None
+        return _plain({
+            "spending": breakdown,
+            "risk_adjustment": {**risk_adj, "intake_level": current_level},
+        }), []
+    if name == "toggle_auto_trade":
+        from core.policy import tier_for
+        from core.fund import AUTO_EXECUTE_TIER
+        enabled = bool(args["enabled"])
+        session.fund.auto_trade = enabled
+        bal = fund.value(session.fund)
+        tier = tier_for(bal)
+        auto_executes = enabled and tier.tier >= AUTO_EXECUTE_TIER
+        return {
+            "auto_trade": enabled,
+            "tier": tier.tier,
+            "balance_range": tier.balance_range,
+            "auto_executes_immediately": auto_executes,
+            "note": (
+                f"Trades will execute automatically on each {tier.check_frequency.lower()} review."
+                if auto_executes else
+                f"Trades will be queued for your confirmation (auto-execute kicks in at Tier {AUTO_EXECUTE_TIER}, "
+                f"${50_000:,}+ AUM; you're currently Tier {tier.tier})."
+            ),
+        }, ["account"]
     return {"error": f"unknown tool {name}"}, []

@@ -7,7 +7,8 @@
 {% if s.done %}
 {% set items = [('portfolio', 'Portfolio', '')] + ([('money', 'Money', '/money')] if linked else []) +
                [('markets', 'Markets', '/markets'), ('news', 'News', '/news'), ('chat', 'Chat', '/chat'),
-                ('report', 'Report', '/report'), ('account', 'Account', '/account')] %}
+                ('report', 'Report', '/report'), ('backtest', 'Backtest', '/backtest'),
+                ('account', 'Account', '/account')] %}
 {% else %}
 {% set items = [('intake', 'Build my fund', '')] + ([('money', 'Money', '/money')] if linked else []) %}
 {% endif %}
@@ -19,6 +20,7 @@
   'news': '<rect x="3" y="4" width="14" height="12" rx="1.5"/><path d="M6 8h8M6 11h8M6 14h5"/>',
   'chat': '<path d="M4 4h12v9H8l-4 3z"/>',
   'report': '<path d="M5 3h7l3 3v11H5z"/><path d="M8 13v-2m3 2V9m3 4v-3"/>',
+  'backtest': '<path d="M3 16h14"/><path d="M4 13l3-4 3 2 4-6 2 2"/><path d="M4 5v3h3"/>',
   'account': '<circle cx="10" cy="7" r="3.2"/><path d="M4 17c.8-3 3.2-4.5 6-4.5s5.2 1.5 6 4.5"/>',
 } %}
 <aside id="nav" {% if swap_oob %}hx-swap-oob="true"{% endif %} class="side" aria-label="Main navigation">

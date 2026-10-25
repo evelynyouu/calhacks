@@ -1,30 +1,30 @@
-ticker,group,expected_return_pct,volatility_pct
-VTI,us_stocks,7.0,16.0
-VXUS,intl_stocks,7.0,18.0
-BND,bonds,4.0,5.5
-SPY,us_stocks,7.0,15.5
-QQQ,sector,8.0,21.0
-DIA,us_stocks,7.0,15.0
-XLK,sector,8.0,22.0
-SMH,sector,9.0,28.0
-IGV,sector,8.5,24.0
-CIBR,sector,8.0,22.0
-BOTZ,sector,8.0,24.0
-XLV,sector,7.0,15.0
-XBI,sector,8.0,27.0
-ICLN,sector,7.5,28.0
-XLE,sector,7.5,26.0
-XLF,sector,7.5,20.0
-VNQ,sector,6.5,20.0
-XLY,sector,7.5,20.0
-XLP,sector,6.0,13.0
-XLI,sector,7.5,18.0
-XLC,sector,7.5,20.0
-XLU,sector,6.0,16.0
-ITA,sector,7.5,19.0
-ESPO,sector,8.0,25.0
-VWO,intl_stocks,8.0,21.0
-SCHD,us_stocks,7.0,15.0
-VB,us_stocks,7.5,21.0
-GLD,gold,3.0,16.0
-company,company,8.0,30.0
+ticker,group,expected_return_pct,volatility_pct,source
+VTI,us_stocks,7.94,16.47,J.P. Morgan 2026 LTCMA: U.S. Large Cap
+VXUS,intl_stocks,8.9,17.63,J.P. Morgan 2026 LTCMA: EAFE Equity
+BND,bonds,4.91,4.76,J.P. Morgan 2026 LTCMA: U.S. Aggregate Bonds
+SPY,us_stocks,7.94,16.47,J.P. Morgan 2026 LTCMA: U.S. Large Cap
+QQQ,sector,7.94,21.5,return: J.P. Morgan 2026 LTCMA U.S. Large Cap; volatility measured from daily closes
+DIA,us_stocks,7.94,16.47,J.P. Morgan 2026 LTCMA: U.S. Large Cap
+XLK,sector,7.94,26.6,return: J.P. Morgan 2026 LTCMA U.S. Large Cap; volatility measured from daily closes
+SMH,sector,7.94,38.4,return: J.P. Morgan 2026 LTCMA U.S. Large Cap; volatility measured from daily closes
+IGV,sector,7.94,29.6,return: J.P. Morgan 2026 LTCMA U.S. Large Cap; volatility measured from daily closes
+CIBR,sector,7.94,26.7,return: J.P. Morgan 2026 LTCMA U.S. Large Cap; volatility measured from daily closes
+BOTZ,sector,7.94,26.6,return: J.P. Morgan 2026 LTCMA U.S. Large Cap; volatility measured from daily closes
+XLV,sector,7.94,16.5,return: J.P. Morgan 2026 LTCMA U.S. Large Cap; volatility measured from daily closes
+XBI,sector,7.94,28.1,return: J.P. Morgan 2026 LTCMA U.S. Large Cap; volatility measured from daily closes
+ICLN,sector,7.94,26.9,return: J.P. Morgan 2026 LTCMA U.S. Large Cap; volatility measured from daily closes
+XLE,sector,7.94,23.6,return: J.P. Morgan 2026 LTCMA U.S. Large Cap; volatility measured from daily closes
+XLF,sector,7.94,17.4,return: J.P. Morgan 2026 LTCMA U.S. Large Cap; volatility measured from daily closes
+VNQ,sector,10.15,17.4,J.P. Morgan 2026 LTCMA: U.S. REITs
+XLY,sector,7.94,21.8,return: J.P. Morgan 2026 LTCMA U.S. Large Cap; volatility measured from daily closes
+XLP,sector,7.94,14.3,return: J.P. Morgan 2026 LTCMA U.S. Large Cap; volatility measured from daily closes
+XLI,sector,7.94,17.9,return: J.P. Morgan 2026 LTCMA U.S. Large Cap; volatility measured from daily closes
+XLC,sector,7.94,17.4,return: J.P. Morgan 2026 LTCMA U.S. Large Cap; volatility measured from daily closes
+XLU,sector,7.94,16.2,return: J.P. Morgan 2026 LTCMA U.S. Large Cap; volatility measured from daily closes
+ITA,sector,7.94,22.3,return: J.P. Morgan 2026 LTCMA U.S. Large Cap; volatility measured from daily closes
+ESPO,sector,7.94,21.4,return: J.P. Morgan 2026 LTCMA U.S. Large Cap; volatility measured from daily closes
+VWO,intl_stocks,9.74,20.93,J.P. Morgan 2026 LTCMA: Emerging Markets Equity
+SCHD,us_stocks,7.94,16.47,J.P. Morgan 2026 LTCMA: U.S. Large Cap
+VB,us_stocks,8.89,21.1,J.P. Morgan 2026 LTCMA: U.S. Small Cap
+GLD,gold,6.78,16.68,J.P. Morgan 2026 LTCMA: Gold
+company,company,7.94,33.2,return: J.P. Morgan 2026 LTCMA U.S. Large Cap; volatility measured from daily closes (median of 55 companies)

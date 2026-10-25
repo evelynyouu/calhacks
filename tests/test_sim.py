@@ -16,18 +16,26 @@ def portfolio(fee: float = 0.0, **weights) -> Portfolio:
 
 def test_fund_return_and_volatility_follow_the_weights():
     a = sim.portfolio_assumptions(portfolio(VTI=0.6, BND=0.4))
-    assert a["mean"] == pytest.approx(0.6 * 0.07 + 0.4 * 0.04)
-    # 0.36 x 16%^2 + 0.16 x 5.5%^2 + 2 x 0.6 x 0.4 x 0.10 (stock-bond correlation) x 16% x 5.5%
-    assert a["vol"] == pytest.approx(math.sqrt(0.36 * 0.16 ** 2 + 0.16 * 0.055 ** 2 + 0.48 * 0.10 * 0.16 * 0.055))
+    stock, bond = sim.assumption("VTI"), sim.assumption("BND")
+    assert a["mean"] == pytest.approx(0.6 * stock["mean"] + 0.4 * bond["mean"])
+    rho = sim.CORRELATION[frozenset({"us_stocks", "bonds"})]       # stock-bond correlation
+    assert a["vol"] == pytest.approx(math.sqrt(0.36 * stock["vol"] ** 2 + 0.16 * bond["vol"] ** 2
+                                               + 0.48 * rho * stock["vol"] * bond["vol"]))
+
+
+def test_the_broad_funds_use_the_sourced_jpmorgan_figures():
+    assert (sim.assumption("VTI")["mean"], sim.assumption("VTI")["vol"]) == pytest.approx((0.0794, 0.1647))   # U.S. Large Cap
+    assert (sim.assumption("BND")["mean"], sim.assumption("BND")["vol"]) == pytest.approx((0.0491, 0.0476))   # U.S. Aggregate
+    assert sim.CORRELATION[frozenset({"us_stocks", "intl_stocks"})] == 0.87                      # Large Cap vs EAFE
 
 
 def test_the_yearly_fee_comes_off_the_return():
-    assert sim.portfolio_assumptions(portfolio(fee=0.5, VTI=1.0))["mean"] == pytest.approx(0.07 - 0.005)
+    assert sim.portfolio_assumptions(portfolio(fee=0.5, VTI=1.0))["mean"] == pytest.approx(sim.assumption("VTI")["mean"] - 0.005)
 
 
 def test_stocks_and_bonds_together_swing_less_than_their_average():
     both = sim.portfolio_assumptions(portfolio(VTI=0.5, BND=0.5))["vol"]
-    assert both < 0.5 * 0.16 + 0.5 * 0.055
+    assert both < 0.5 * sim.assumption("VTI")["vol"] + 0.5 * sim.assumption("BND")["vol"]
 
 
 def test_every_fund_and_group_pair_has_an_assumption():
@@ -40,7 +48,7 @@ def test_every_fund_and_group_pair_has_an_assumption():
 def test_two_funds_at_the_same_risk_level_get_different_ranges_when_their_holdings_differ():
     chips = sim.portfolio_assumptions(build_portfolio(3, ["ai_chips"]))
     steady = sim.portfolio_assumptions(build_portfolio(3, ["utilities"]))
-    assert chips["vol"] > steady["vol"] and chips["mean"] > steady["mean"]
+    assert chips["vol"] > steady["vol"]      # no sector return premium is assumed, only more swing
 
 
 def test_a_smooth_bond_share_works_not_just_four_fixed_ones():

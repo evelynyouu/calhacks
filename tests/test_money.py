@@ -17,7 +17,7 @@ from tests.fund_helpers import make_fund
 client = TestClient(app)
 PERSONAS = ["maria", "jordan", "sam", "alex"]
 TABS = {"portfolio": "", "money": "/money", "markets": "/markets", "news": "/news", "chat": "/chat",
-        "report": "/report", "account": "/account"}
+        "report": "/report", "backtest": "/backtest", "account": "/account"}
 
 
 @pytest.fixture(autouse=True)
