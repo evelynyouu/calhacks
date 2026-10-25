@@ -27,6 +27,31 @@ answers from the report offline, so the demo never dies on wifi. Market prices a
 (`core/market.py`); trades go to a simulated broker unless `BROKER=alpaca` plus Alpaca keys are set
 (`ALPACA_PAPER=false` for real money; `pip install alpaca-py`).
 
+## Bank data (Nessie)
+
+| `NESSIE_MODE` | Data comes from | Needs |
+|---|---|---|
+| `fixture` (default) | the four personas in memory, from `data/personas.json` | nothing |
+| `live` | real Capital One Nessie | `NESSIE_API_KEY` in `.env`, personas seeded |
+
+Every function returns the same types in both modes (`core/models.py`). The test suite runs every
+button in both and checks the numbers match to the dollar, and `python -m core.profile --diff`
+checks the same thing against the real API.
+
+To switch to live Nessie:
+
+```bash
+# in .env: NESSIE_MODE=live and NESSIE_API_KEY=<your key>
+python scripts/nessie_spike.py                       # smoke test: prints PASS
+python -m scripts.seed_nessie                        # seeds personas missing from data/nessie_ids.json
+NESSIE_MODE=live python -m core.profile --diff       # live vs. expected numbers: OK for all four
+uvicorn app.main:app --reload
+```
+
+`data/nessie_ids.json` holds only Nessie ids (no key) and is committed, so teammates share the same
+seeded accounts. A reset moves a persona to new accounts; the new ids are also saved in Nessie, and
+every machine picks them up on its next start.
+
 ## Who owns what
 
 | Path | Owner | Status |
@@ -76,13 +101,16 @@ Claude never generates numbers. Every number on screen is rendered by Jinja from
 
 ## Deploy (Render)
 
-1. Push this repo to GitHub (see Git steps below).
-2. In Render: **New → Blueprint**, connect the repo. Render reads `render.yaml` and creates the `firstfund` web service automatically (free plan, Python runtime, health check at `/health`).
-3. After the service is created, open it in the Render dashboard → **Environment** and fill in the `sync: false` secrets: `ANTHROPIC_API_KEY`, `NESSIE_API_KEY`, `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`. (`CLAUDE_MODEL` and `ALPACA_BASE_URL` already have values from `render.yaml`.) For real Nessie data also add `NESSIE_MODE=live`; without it the site runs on demo data.
-4. Trigger a deploy (push to the connected branch, or **Manual Deploy** in the dashboard).
-5. Visit the service URL once it's live to confirm `/` loads.
+1. In Render: **New → Blueprint**, connect the repo. Render reads `render.yaml` and creates the
+   `firstfund` web service (free plan, health check at `/health`).
+2. In the service's **Environment** tab, fill in the `sync: false` secrets: `ANTHROPIC_API_KEY`,
+   `NESSIE_API_KEY`, `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`. Add `NESSIE_MODE=live` for real Nessie;
+   without it the site runs on demo data.
+3. Deploy (push to the connected branch, or **Manual Deploy**), then open the URL.
 
-**Cold start warning:** Render's free tier sleeps the service after inactivity, and the first request after sleeping can take 30–60s to wake up. Open the site yourself a minute or two before judging walks over, so it's warm when they see it.
+Render's free tier sleeps after inactivity and the first request can take 30–60s. Open the site a
+minute before judges walk over. Because the sim clock lives in Nessie, a sleep or redeploy loses
+nothing.
 
 ## Known gaps
 

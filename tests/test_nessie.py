@@ -345,11 +345,21 @@ def test_the_key_is_nowhere_in_a_raised_error(fake, monkeypatch):
 
 
 
-def test_a_failed_tls_handshake_is_retried_even_for_writes(fake):
-    """The handshake failed, so the request never went out: safe to send again."""
+def test_a_tls_error_on_a_write_is_never_retried(fake):
+    """A TLS error after the request went out looks exactly like a failed handshake, so a write
+    with any TLS error might already be in Nessie: never send it again."""
     from urllib3.exceptions import SSLError as Urllib3SSLError
     calls, queue = fake
-    tls = requests.exceptions.SSLError(MaxRetryError(None, "/x", Urllib3SSLError("handshake failed")))
+    tls = requests.exceptions.SSLError(MaxRetryError(None, "/x", Urllib3SSLError("bad record mac")))
     queue += [tls, (201, {"objectCreated": {"_id": "d1"}})]
-    assert nessie.create_deposit("a1", 100, "2026-10-30", "[payroll]")["_id"] == "d1"
-    assert len(calls) == 2
+    with pytest.raises(requests.exceptions.SSLError):
+        nessie.create_deposit("a1", 100, "2026-10-30", "[payroll]")
+    assert len(calls) == 1
+
+
+def test_raises_only_go_up():
+    # live_clock reads the highest same-day "raise to N", so a pay cut can't be represented
+    with pytest.raises(ValueError):
+        nessie.apply_raise("sam", -10)
+    with pytest.raises(ValueError):
+        nessie.raise_paycheck("sam", -200)

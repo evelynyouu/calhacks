@@ -3,6 +3,7 @@
 The key check: after seeding, and after every button, the live profile matches the fixture
 profile for the same steps (money within $1, everything else exactly).
 """
+import json
 from datetime import timedelta
 
 import pytest
@@ -366,7 +367,8 @@ def test_reset_swaps_in_the_spare_without_rebuilding(fake, monkeypatch):
         n = len(fake.calls)
         assert reset_persona("sam") == start
         posts = [c for c in fake.calls[n:] if c[0] == "POST"]
-        assert posts == []                            # nothing rebuilt on the click itself
+        # nothing rebuilt on the click itself; the one write is the new ids going to the registry
+        assert [c[2]["description"][:len(nessie.REGISTRY_TAG)] for c in posts] == [nessie.REGISTRY_TAG]
         assert nessie.load_ids()["sam"] == spare
     finally:
         seed.PAUSE_BACKGROUND = False
@@ -462,13 +464,17 @@ def test_a_one_off_read_failure_does_not_drop_the_click(fake, monkeypatch):
 
 
 def test_stale_ids_after_a_restart_fall_back_instead_of_500(fake, monkeypatch):
-    """Render restores the committed nessie_ids.json on restart, which can point at deleted accounts."""
+    """Render restores the committed nessie_ids.json on restart, which can point at deleted accounts.
+    The registry normally has the current ids (tests/test_registry.py); without it, demo data, not a 500."""
     from fastapi.testclient import TestClient
     from app.main import app
     committed = nessie.IDS_PATH.read_text()
     reset_persona("sam")
     seed.wait_for_background()                                   # old accounts deleted
+    for t in [t for t, d in fake.txns["deposits"].items() if d["description"].startswith(nessie.REGISTRY_TAG)]:
+        del fake.txns["deposits"][t]                             # no registry copy to recover from
     nessie.IDS_PATH.write_text(committed)                        # the restart
+    nessie._registry.update(account=None, pulled=False)
     nessie.clear_cache()
     r = TestClient(app, raise_server_exceptions=False).get("/p/sam")
     assert r.status_code == 200
@@ -514,6 +520,7 @@ def test_two_quick_resets_leave_no_orphan_accounts(fake):
     ids = nessie.load_ids()
     referenced = {a for k, v in ids.items() if not k.startswith("_") for a in v["accounts"].values()}
     referenced |= {a for v in ids["_spares"].values() for a in v["accounts"].values()}
+    referenced |= {a for a, v in fake.accounts.items() if v["nickname"] == nessie.REGISTRY_NICKNAME}
     assert set(fake.accounts) <= referenced
 
 
@@ -646,3 +653,55 @@ def test_reset_as_first_click_then_outage_shows_the_reset_numbers(fake, monkeypa
     feed = nessie.recent_activity("sam", None)
     _ = ("after reset+outage: cash_cushion", p.cash_cushion, "car repair in feed:", any(i["text"] == "Car repair" for i in feed))
     assert p.cash_cushion == 9000
+
+
+
+# ---------- fixes from the fourth review ----------
+
+def test_reset_as_first_click_after_a_restart_fixes_stale_ids(fake):
+    """Render restored an old ids file (accounts deleted, spare available): reset must still swap
+    in the spare and stay live, not go offline on the pre-click read."""
+    committed = nessie.IDS_PATH.read_text()
+    reset_persona("sam")
+    seed.wait_for_background()
+    ids = json.loads(committed)
+    ids["_spares"] = nessie.load_ids()["_spares"]       # the current spare survives in Nessie
+    nessie.IDS_PATH.write_text(json.dumps(ids))
+    nessie._SHADOW.clear()                              # restart; page already open
+    nessie.clear_cache()
+    assert reset_persona("sam").checking_balance == 575
+    assert not nessie.offline_reason()
+
+
+def test_reset_seeds_a_persona_missing_from_the_ids_file(fake):
+    ids = nessie.load_ids()
+    del ids["jordan"]
+    nessie.save_ids(ids)
+    nessie._SHADOW.clear()
+    nessie.reset("jordan")                              # used to reseed; must not KeyError
+    assert "jordan" in nessie.load_ids() and get_profile("jordan").checking_balance == 600
+
+
+# ---------- real Nessie doesn't return lists in creation order (seen 2026-10-24) ----------
+
+def test_two_raises_in_one_day_survive_nessie_reordering_its_lists(fake, monkeypatch):
+    real = fake.request
+
+    def reversed_lists(method, path, body=None, params=None):
+        out = real(method, path, body, params)
+        return list(reversed(out)) if isinstance(out, list) else out
+    monkeypatch.setattr(nessie, "_send", reversed_lists)
+    for _ in range(2):
+        apply_life_event("sam", "raise")
+        in_mode(monkeypatch, "fixture", apply_life_event, "sam", "raise")
+    nessie.clear_cache()
+    assert get_profile("sam").paycheck_amount == 2450
+
+
+def test_upcoming_bills_are_listed_by_due_date_in_both_modes(fake, monkeypatch):
+    real = fake.request
+    monkeypatch.setattr(nessie, "_send", lambda m, p, b=None, q=None: (lambda o: list(reversed(o)) if isinstance(o, list) else o)(real(m, p, b, q)))
+    nessie.clear_cache()
+    for mode in ("live", "fixture"):
+        bills = in_mode(monkeypatch, mode, get_profile, "sam").upcoming_bills
+        assert [b.due_in_days for b in bills] == sorted(b.due_in_days for b in bills), mode
