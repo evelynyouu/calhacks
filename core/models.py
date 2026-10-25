@@ -110,6 +110,15 @@ class Portfolio:
     pointed_level: int | None = None  # the level the answers pointed to, if a ceiling lowered it
 
     @property
+    def holding_reasons(self) -> dict[str, str]:
+        """ticker -> why it's here, in one line: the holding's own reasons joined (read by the chat tools)."""
+        out: dict[str, list[str]] = {}
+        for r in self.reasons:
+            if r.ticker and r.kind in ("core", "bonds", "tilt", "stock", "spend", "combined"):
+                out.setdefault(r.ticker, []).append(r.text)
+        return {t: " ".join(texts) for t, texts in out.items()}
+
+    @property
     def core(self) -> Holding:
         return next(h for h in self.holdings if h.role == "core")
 

@@ -18,7 +18,7 @@ from agent import claude_agent
 from agent.tools import INDEXES, news_tickers
 from app.routes.auth import auth_disabled, csrf_token
 from app import state
-from core import builder, explain, feed, fund, intake, market, nessie
+from core import backtest, builder, explain, feed, fund, intake, market, nessie
 from core.broker import get_broker, values
 from core.intake import QUESTIONS, AnswerError, parse
 from core.market import ETFS
@@ -175,6 +175,28 @@ def report(request: Request, cid: str):
     ctx["gain_up"] = s["gain"] >= 0
     ctx["tab"] = "report"
     return _render("report.html", ctx)
+
+
+@router.get("/p/{cid}/backtest", response_class=HTMLResponse)
+def backtest_page(request: Request, cid: str):
+    ctx = _ctx(request, cid)
+    if not ctx["portfolio"]:
+        return RedirectResponse(f"/p/{cid}", status_code=303)
+    a = ctx["a"]
+    profile = ctx["profile"]
+    tier = ctx["tier"]
+    monthly_invest = a.invest_pct / 100 * profile.paycheck_amount * 2
+    bt = backtest.run_backtest(
+        portfolio=a.portfolio,
+        starting_amount=max(ctx["value"], 1000.0),
+        monthly_invest=monthly_invest,
+        review_every_days=tier.review_every_days,
+        today=a.today,
+    )
+    ctx["bt"] = bt
+    ctx["tab"] = "backtest"
+    ctx["price_note"] = "real closes where available, simulated past that" if market.source("SPY") == "live" else "simulated"
+    return _render("backtest.html", ctx)
 
 
 @router.post("/p/{cid}/reset")

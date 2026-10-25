@@ -561,7 +561,7 @@ def _facts(rep: dict) -> list[str]:
     then their money, then the market. Claude explains these and may not add numbers."""
     s, m, r, ret = rep["summary"], rep["market"], rep["relation"], rep["returns"]
     p, since = ret["period"], ret["since_start"]
-    facts = [f"Fund value ${s['value']:,.2f}; you've put in ${s['contributed']:,.2f}; gain ${s['gain']:,.2f} ({_pct(s['gain_pct'], 2)} on your money, prices only)."]
+    facts = [f"Fund value ${s['value']:,.2f}; you've put in ${s['contributed']:,.2f}; gain {_usd(s['gain'])} ({_pct(s['gain_pct'], 2)} on your money, prices only)."]
     if p and p["twr_pct"] is not None and p["days"] > 0:
         span = f"since you started on {_day(p['start'])}" if p["from_start"] else f"from {_day(p['start'])} to {_day(p['end'])}"
         facts.append(f"{span[0].upper()}{span[1:]} ({p['days']} days), your fund returned {_pct(p['twr_pct'], 2)} including estimated income "
@@ -571,12 +571,12 @@ def _facts(rep: dict) -> list[str]:
                      f"with the same deposits, returned {_pct(p['benchmark_pct'], 2)}, so your choices added {_pct(p['vs_benchmark_pts'], 2)[:-1]} points. "
                      f"The S&P 500 returned {_pct(p['spy_pct'], 2)}.")
         facts.append(f"In those {p['days']} days the fund started at ${p['start_value']:,.2f}, you added ${p['deposits']:,.2f}, "
-                     f"the market moved it ${p['market_gain']:+,.2f}, and it ended at ${p['end_value']:,.2f}.")
+                     f"the market moved it {_usd(p['market_gain'], True)}, and it ended at ${p['end_value']:,.2f}.")
         moved = p["attribution"]
         if moved:
             up, down = max(moved, key=lambda x: x["dollars"]), min(moved, key=lambda x: x["dollars"])
-            facts.append(f"Biggest gain: {up['ticker']} ({up['label']}) ${up['dollars']:+,.2f}."
-                         + (f" Biggest drag: {down['ticker']} ({down['label']}) ${down['dollars']:+,.2f}." if down["dollars"] < 0 else ""))
+            facts.append(f"Biggest gain: {up['ticker']} ({up['label']}) {_usd(up['dollars'], True)}."
+                         + (f" Biggest drag: {down['ticker']} ({down['label']}) {_usd(down['dollars'], True)}." if down["dollars"] < 0 else ""))
     else:
         facts.append("The fund has just started, so there is no return to report yet.")
     if since and since["mwr_pct"] is not None and since["days"] > 0:
@@ -585,7 +585,7 @@ def _facts(rep: dict) -> list[str]:
                      f"the fund itself returned {_pct(since['twr_pct'], 2)}.")
     for x in (p["picks"] if p else []):
         facts.append(f"Your pick {x['label']} ({x['ticker']}, {x['weight']:.1%} of the fund) moved {_pct(x['move_pct'], 1)}, "
-                     f"${x['dollars']:+,.2f}; the core stock funds it replaced moved {_pct(x['core_pct'], 1)}.")
+                     f"{_usd(x['dollars'], True)}; the core stock funds it replaced moved {_pct(x['core_pct'], 1)}.")
     facts.append(f"{r['stock_share']:.0%} of the fund is in stocks; it typically moves about {r['move_on_10']:g}% when the market moves 10%.")
     if rep["companies"]:
         top = rep["companies"][0]
@@ -599,6 +599,11 @@ def _facts(rep: dict) -> list[str]:
     facts.append(f"The market is {m['direction']} and {m['vol_word']}: the S&P 500 is {_pct(m['m3'], 1)} over 3 months, {_pct(m['ytd'], 1)} this year.")
     facts.append(rep["data_notes"]["price"])
     return facts
+
+
+def _usd(x: float, signed: bool = False) -> str:
+    """Dollars with the sign in front of the $: -$192.00, +$1,843.71 (never "$-192.00" or "$+1,843.71")."""
+    return f"{'-' if x < 0 else '+' if signed else ''}${abs(x):,.2f}"
 
 
 def _day(d: date) -> str:
@@ -615,7 +620,7 @@ def _narrative(rep: dict) -> str:
                  f"for the S&P 500. The gap to that mix comes from your own choices: {'your interest picks and company holdings' if p['picks'] else 'how far the funds have drifted from your targets'}.")
         if p["attribution"]:
             top = max(p["attribution"], key=lambda x: x["dollars"])
-            first += f" {top['ticker']} added the most, ${top['dollars']:+,.2f}."
+            first += f" {top['ticker']} added the most, {_usd(top['dollars'], True)}."
     else:
         first = f"Your fund is worth ${s['value']:,.2f} and has only just started, so there's no return to compare yet."
     if since and since["days"] > 0 and since["mwr_pct"] is not None:

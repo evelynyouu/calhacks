@@ -37,7 +37,8 @@ def test_claude_and_the_chat_tool_get_both_scores_and_the_reason():
 
 def test_drop_help_text_is_true_for_low_answers_and_the_default_isnt_the_floor():
     q = intake.BY_KEY["max_drop"]
-    steadiest = worst_year(build_portfolio(1, [], bond_share=BOND_MAX).holdings)[1]
+    from core.portfolio import worst_return_for
+    steadiest = worst_return_for(1, [], [], bond_share=BOND_MAX)   # the same check the builder uses
     assert f"{abs(steadiest):g}%" in q.help and "steadiest" in q.help
     assert q.default > abs(steadiest)
 

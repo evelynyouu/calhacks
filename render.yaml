@@ -9,6 +9,8 @@ services:
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: SESSION_SECRET      # signs the session cookie; generated once, so a sleep/redeploy doesn't log everyone out
+        generateValue: true
       - key: CLAUDE_MODEL
         value: claude-sonnet-5-5
       - key: NESSIE_API_KEY

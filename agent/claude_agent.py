@@ -165,8 +165,51 @@ def rundown(session: Session) -> str:
 
 
 def _offline_turn(session: Session, text: str) -> str:
+    from core import fund as _fund, intake as _intake, spending as _spending
+    from core.portfolio import THEMES as _THEMES
+    from core.profile import get_profile as _get_profile
     t = text.lower()
     rep = build_report(session.fund)
+
+    _is_spending = any(w in t for w in ("spending", "insight", "habit", "purchase", "i buy", "i spend"))
+    _is_auto = any(w in t for w in ("auto trade", "auto-trade", "auto execute", "automat"))
+
+    if _is_spending:
+        try:
+            profile = _get_profile(session.fund.customer_id)
+            breakdown = _spending.spending_breakdown(session.fund.customer_id, profile)
+            sugg = breakdown["theme_suggestions"]
+            cats = list(breakdown["categories"].items())[:3]
+            cat_str = ", ".join(f"{k} ${v:,.0f}" for k, v in cats)
+            sugg_str = "; ".join(f"{s['why']}" for s in sugg[:3])
+            surplus = breakdown["spending_surplus_estimate"]
+            out = f"Your top spending: {cat_str}. " + (f"Themes that match: {sugg_str}. " if sugg_str else "")
+            if surplus > 0:
+                out += f"You spent ${surplus:,.0f} below your baseline this month — that could be invested."
+            return out
+        except Exception as e:
+            return f"Couldn't load spending data right now ({e})."
+
+    if _is_auto:
+        from core.fund import AUTO_EXECUTE_TIER
+        from core.policy import tier_for
+        import core.fund as _cf
+        enabled = "on" in t or "enabl" in t or "turn on" in t
+        disabled = "off" in t or "disabl" in t or "turn off" in t
+        if enabled or disabled:
+            session.fund.auto_trade = enabled and not disabled
+            bal = _cf.value(session.fund)
+            tier = tier_for(bal)
+            auto_exec = session.fund.auto_trade and tier.tier >= AUTO_EXECUTE_TIER
+            return (f"Auto-trade is now {'on' if session.fund.auto_trade else 'off'}. "
+                    + (f"You're Tier {tier.tier} — trades will execute automatically on each {tier.check_frequency.lower()} review."
+                       if auto_exec else
+                       f"You're Tier {tier.tier}; trades will queue for your confirmation "
+                       f"(auto-execute starts at Tier {AUTO_EXECUTE_TIER}, $50K+ AUM)."))
+        return (f"Auto-trade is currently {'on' if session.fund.auto_trade else 'off'}. "
+                'Say "turn auto-trade on" or "turn auto-trade off" to change it.')
+
+    # --- original offline handlers ---
     if any(w in t for w in ("today", "moved", "move ")):
         return " ".join(_moves(session))
     if "news" in t or "rundown" in t or "going on" in t:
@@ -186,8 +229,8 @@ def _offline_turn(session: Session, text: str) -> str:
         p = session.fund.portfolio
         return f"Your fund is {p.risk_label.lower()}: " + " ".join(
             f"{h.ticker} ({h.weight:.0%}): {market.info(h.ticker)['about']}." for h in p.holdings[:4])
-    return ("I'm in offline mode right now, so I can answer about your fund, your report, recommendations, or "
-            "your paycheck percent. Try “how am I doing?” or “what should I do next?”")
+    return ("I'm in offline mode right now, so I can answer about your fund, your report, recommendations, your "
+            "spending, or your paycheck percent. Try “how am I doing?” or “what should I do next?”")
 
 
 # ---------- Explanations ----------

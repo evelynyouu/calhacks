@@ -205,7 +205,8 @@ def test_a_ticker_with_no_real_data_is_flagged_on_its_own_row(monkeypatch):
 
 def test_estimated_income_accrues_daily_and_stays_out_of_the_balance():
     a = account(starting_amount=10_000, started_days_ago=365, interests={"themes": [], "unmatched": []})
-    w = build_report(a)["returns"]["since_start"]
+    rep = build_report(a)
+    w = rep["returns"]["since_start"]
     assert w["start_value"] + w["deposits"] + w["market_gain"] == pytest.approx(w["end_value"], abs=0.02)   # price only
     # the fund's own yield: each holding's target weight x its yearly yield (data/yields.csv). Computed from the
     # targets because the mix now follows the answers smoothly (core/builder.py), not a fixed per-level table.
@@ -239,7 +240,7 @@ def fresh() -> None:
     market.clear_shocks()
 
 
-def all_recs() -> list[tuple[str, dict]]:
+def all_recs(monkeypatch=None) -> list[tuple[str, dict]]:
     """A report for each situation that should raise a different recommendation."""
     out = []
     a = account(starting_amount=20_000, started_days_ago=90, interests={"themes": ["ai_chips"], "unmatched": []})
@@ -262,15 +263,17 @@ def all_recs() -> list[tuple[str, dict]]:
     fresh()
     out.append(("hold", build_report(account(interests={"themes": ["healthcare"], "unmatched": []}))))
     fresh()
+    if monkeypatch:   # the builder decides how much tech a fund holds; put the fund-wide line below that so only it fires
+        monkeypatch.setattr(report_module, "TECH_FUND_TRIGGER", 0.05)
     a = account(starting_amount=10_000, interests={"themes": ["tech", "financials"], "unmatched": []},
                 stocks=["NVDA", "AAPL"], risk_priority="max", risk_range="widest", max_drop=50, horizon="15plus")
     out.append(("explore", build_report(a)))
     return out
 
 
-def test_every_recommendation_shows_the_number_that_triggered_it_and_the_threshold():
+def test_every_recommendation_shows_the_number_that_triggered_it_and_the_threshold(monkeypatch):
     seen = set()
-    for _, rep in all_recs():
+    for _, rep in all_recs(monkeypatch):
         for rec in rep["recommendations"]:
             seen.add(rec["action"])
             assert rec["trigger"], rec["title"]
@@ -292,8 +295,8 @@ def test_every_company_over_the_trigger_is_flagged_not_just_the_biggest(monkeypa
     assert all(any(c["name"] in f for f in rec["facts"]) for c in over)
 
 
-def test_tech_check_counts_the_whole_fund_not_just_the_interest_slice():
-    rep = dict(all_recs())["explore"]
+def test_tech_check_counts_the_whole_fund_not_just_the_interest_slice(monkeypatch):
+    rep = dict(all_recs(monkeypatch))["explore"]
     rec = next(r for r in rep["recommendations"] if r["action"] == "explore")
     assert "whole fund" in rec["facts"][0] and "approximate" in rec["facts"][0]
     assert len(rec["trigger"]) == 1                    # the picks are half tech, below the 60% line: only the fund-wide check fired
@@ -450,3 +453,17 @@ def test_a_reply_with_text_is_used(monkeypatch):
     from agent import claude_agent
     monkeypatch.setattr(claude_agent, "_get_client", lambda: _Client(_Resp([_Block("thinking"), _Block("text", " Hello. ")], "end_turn")))
     assert claude_agent.explain(["a fact"], "intro", fallback="offline") == "Hello."
+
+
+def test_a_loss_puts_the_minus_sign_before_the_dollar_sign_in_the_facts():
+    a = account(starting_amount=5_000, started_days_ago=40)
+    market.add_shock(a.today - timedelta(days=10), -25)
+    rep = build_report(a)
+    text = " ".join(rep["facts"]) + rep["narrative"]
+    assert rep["summary"]["gain"] < 0 and "$-" not in text and "$+" not in text
+    assert f"gain {report_module._usd(rep['summary']['gain'])}" in rep["facts"][0] and "gain -$" in rep["facts"][0]
+
+
+def test_usd_formats_signs_before_the_dollar_sign():
+    assert report_module._usd(-192) == "-$192.00" and report_module._usd(1843.7, True) == "+$1,843.70"
+    assert report_module._usd(5) == "$5.00" and report_module._usd(-0.0) == "$0.00"
