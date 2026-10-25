@@ -1,16 +1,16 @@
 <section id="rundown" class="card">
   <div class="flex items-center justify-between gap-2">
-    <p class="eyebrow">{% if claude_on %}AI rundown · Claude{% else %}Rundown · Claude offline, so this is the plain numbers{% endif %}</p>
-    <button class="text-sm font-medium text-moss-600 hover:underline" hx-get="/p/{{ cid }}/rundown?refresh=1" hx-target="#rundown" hx-swap="outerHTML"
+    <div class="flex flex-wrap items-center gap-2"><h2 class="eyebrow">Today's rundown</h2><span class="badge">{% if claude_on %}Written by Claude{% else %}Claude offline: plain numbers{% endif %}</span></div>
+    <button class="btn-quiet" hx-get="/p/{{ cid }}/rundown?refresh=1" hx-target="#rundown" hx-swap="outerHTML"
             hx-disabled-elt="this">Refresh</button>
   </div>
-  <div class="mt-2 space-y-3 text-[.95rem] leading-relaxed">
+  <div class="mt-4 space-y-3 text-sm">
     {% for block in s.rundown.text.split('\n\n') %}
     {% set lines = block.strip().split('\n', 1) %}
     {% if lines | length == 2 and lines[0] | length < 40 %}
-    <div><h3 class="font-semibold">{{ lines[0].strip('#* ') }}</h3><p class="text-ink/80">{{ lines[1] }}</p></div>
-    {% else %}<p class="text-ink/80">{{ block }}</p>{% endif %}
+    <div><h3 class="font-semibold">{{ lines[0].strip('#* ') }}</h3><p class="text-ink-2">{{ lines[1] }}</p></div>
+    {% else %}<p class="text-ink-2">{{ block }}</p>{% endif %}
     {% endfor %}
   </div>
-  <p class="mt-3 text-xs text-ink/45">Written {{ s.rundown.at.strftime('%-I:%M %p') }} from today's prices and headlines. A summary, not advice.</p>
+  <p class="mt-3 text-xs text-muted">Written {{ s.rundown.at.strftime('%-I:%M %p') }} from today's prices and headlines. A summary, not advice.</p>
 </section>

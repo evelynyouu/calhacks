@@ -1,9 +1,9 @@
 {# Report: a target change waiting on the Portfolio tab, then the ones accepted (core/targets.py via build_report). #}
 {% if rep.target_proposal %}
 <section class="card" id="target-waiting">
-  <p class="eyebrow">A suggested change is waiting</p>
+  <h2 class="eyebrow">A suggested change is waiting</h2>
   <p class="mt-1 text-sm"><strong>{{ rep.target_proposal.title }}</strong>: {{ rep.target_proposal.because }}.</p>
-  <a href="/p/{{ cid }}#target-proposal" class="mt-2 inline-block text-sm font-medium text-moss-600">Accept or say not now on your Portfolio tab →</a>
+  <a href="/p/{{ cid }}#target-proposal" class="mt-3 inline-block link text-sm">Accept or say not now on your Portfolio tab</a>
 </section>
 {% endif %}
 {% include "partials/target_history.html" %}

@@ -2,27 +2,23 @@
 {% block title %}Backtest · FirstFund{% endblock %}
 {% block header_right %}{% include "partials/tier.html" %}{% endblock %}
 {% macro pv(x) %}{% if x is none %}—{% elif x >= 0 %}+{{ "%.2f"|format(x) }}%{% else %}{{ "%.2f"|format(x) }}%{% endif %}{% endmacro %}
-{% macro tone(x) %}{{ 'text-moss-600' if x >= 0 else 'text-clay-500' }}{% endmacro %}
+{% macro tone(x) %}{{ 'text-pos' if x >= 0 else 'text-neg' }}{% endmacro %}
 {% block content %}
 
-<div class="max-w-4xl mx-auto space-y-5">
+<div class="max-w-4xl mx-auto space-y-6">
 
   <!-- Header -->
   <section class="card">
-    <div class="flex flex-wrap items-start justify-between gap-3">
+    <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
-        <p class="eyebrow">Auto-trade backtest · {{ profile.name }}'s fund</p>
-        <h1 class="font-display text-2xl font-bold mt-1">How would auto-trading have done?</h1>
-        <p class="mt-1 text-sm text-ink/60">Same {{ bt.summary.total_contributed | money }} and deposits — only difference is rebalancing. Prices: {{ price_note }}.</p>
-        <p class="mt-1 text-xs text-ink/50">{{ bt.summary.start | replace("-", " ") }} → {{ bt.summary.end | replace("-", " ") }} · {{ bt.summary.days }} days · rebalance every {{ bt.summary.review_every_days }} days</p>
+        <p class="text-sm font-semibold">Backtest · {{ profile.name }}'s fund</p>
+        <h1 class="text-lg font-semibold mt-1">How would automatic rebalancing have done?</h1>
+        <p class="mt-2 text-sm text-muted">Same {{ bt.summary.total_contributed | money2 }} and deposits; the only difference is rebalancing. Prices: {{ price_note }}.</p>
+        <p class="mt-1 text-xs text-muted">{{ bt.summary.start | replace("-", " ") }} to {{ bt.summary.end | replace("-", " ") }} · {{ bt.summary.days }} days · rebalance every {{ bt.summary.review_every_days }} days</p>
       </div>
       <nav class="flex flex-wrap gap-1" aria-label="Backtest period">
         {% for d, label in bt_periods %}
-        <a href="?days={{ d }}"
-           class="px-3 py-1 rounded-full text-sm font-medium border transition-colors
-                  {% if bt_days == d %}bg-ink text-paper border-ink{% else %}border-ink/20 text-ink/60 hover:border-ink/50{% endif %}">
-          {{ label }}
-        </a>
+        <a href="?days={{ d }}" class="range-btn {% if bt_days == d %}range-btn-active{% endif %}" {% if bt_days == d %}aria-current="true"{% endif %}>{{ label }}</a>
         {% endfor %}
       </nav>
     </div>
@@ -31,22 +27,22 @@
   <!-- Summary stats -->
   <section class="card">
     {% set period_label = bt_periods | selectattr(0, 'equalto', bt_days) | map(attribute=1) | first | default(bt.summary.days ~ ' days') %}
-    <p class="eyebrow mb-3">{{ period_label }} return comparison</p>
-    <dl class="grid grid-cols-3 gap-4 text-center">
-      <div class="stat bg-moss-50 rounded-lg py-3">
-        <dt class="text-xs font-medium text-moss-700">Auto-trade</dt>
-        <dd class="text-2xl font-bold {{ 'text-moss-600' if bt.summary.auto_return_pct >= 0 else 'text-clay-500' }}">{{ pv(bt.summary.auto_return_pct) }}</dd>
-        <dd class="text-xs text-ink/50 mt-0.5">{{ bt.summary.total_rebalance_trades }} rebalances</dd>
+    <h2 class="eyebrow">Return over {{ period_label }}</h2>
+    <dl class="mt-4 grid grid-cols-3 gap-4 border-y border-line py-3">
+      <div class="stat">
+        <dt>Auto-trade</dt>
+        <dd class="text-lg {{ tone(bt.summary.auto_return_pct) }}">{{ pv(bt.summary.auto_return_pct) }}</dd>
+        <dd class="text-xs font-normal text-muted">{{ bt.summary.total_rebalance_trades }} rebalances</dd>
       </div>
-      <div class="stat rounded-lg py-3 border border-ink/10">
-        <dt class="text-xs font-medium text-ink/60">Buy &amp; hold</dt>
-        <dd class="text-2xl font-bold">{{ pv(bt.summary.hold_return_pct) }}</dd>
-        <dd class="text-xs text-ink/50 mt-0.5">same fund, no rebalance</dd>
+      <div class="stat">
+        <dt>Buy &amp; hold</dt>
+        <dd class="text-lg">{{ pv(bt.summary.hold_return_pct) }}</dd>
+        <dd class="text-xs font-normal text-muted">Same fund, no rebalance</dd>
       </div>
-      <div class="stat rounded-lg py-3 border border-ink/10">
-        <dt class="text-xs font-medium text-ink/60">S&amp;P 500</dt>
-        <dd class="text-2xl font-bold">{{ pv(bt.summary.spy_return_pct) }}</dd>
-        <dd class="text-xs text-ink/50 mt-0.5">100% SPY</dd>
+      <div class="stat">
+        <dt>S&amp;P 500</dt>
+        <dd class="text-lg">{{ pv(bt.summary.spy_return_pct) }}</dd>
+        <dd class="text-xs font-normal text-muted">100% SPY</dd>
       </div>
     </dl>
   </section>
@@ -54,51 +50,51 @@
   <!-- Chart -->
   {% if bt.labels %}
   <section class="card">
-    <p class="eyebrow mb-1">Portfolio value over time</p>
-    <p class="text-xs text-ink/50 mb-3">Starting from {{ bt.summary.total_contributed | money }} · {{ bt.labels | length }} weekly snapshots</p>
-    <div class="h-64">
+    <h2 class="eyebrow">Fund value over time</h2>
+    <p class="mt-1 text-xs text-muted">Starting from {{ bt.summary.total_contributed | money2 }} · {{ bt.labels | length }} weekly snapshots</p>
+    <div class="h-64 mt-4">
       <canvas data-chart="backtest" data-payload='{{ bt | tojson }}'
-              aria-label="Backtest: auto-trade vs hold vs benchmark vs SPY"></canvas>
+              aria-label="Backtest: auto-trade vs hold vs SPY"></canvas>
     </div>
-    <div class="mt-3 flex flex-wrap gap-4 text-xs text-ink/60">
-      <span class="flex items-center gap-1.5"><span class="inline-block w-4 h-0.5 bg-moss-600 rounded"></span> Auto-trade</span>
-      <span class="flex items-center gap-1.5"><span class="inline-block w-4 h-0.5 bg-ink rounded"></span> Buy &amp; hold</span>
-<span class="flex items-center gap-1.5"><span class="inline-block w-4 h-0.5 bg-gray-300 rounded border border-dashed"></span> SPY</span>
-      <span class="flex items-center gap-1.5"><span class="inline-block w-4 h-0.5 border-t border-dashed border-ink/40"></span> You put in</span>
-    </div>
+    <ul class="mt-4 flex flex-wrap gap-4 text-xs text-muted">
+      <li class="flex items-center gap-2"><span class="inline-block w-4 border-t-2 border-ink"></span> Auto-trade</li>
+      <li class="flex items-center gap-2"><span class="inline-block w-4 border-t-2 border-[#545a57]"></span> Buy &amp; hold</li>
+      <li class="flex items-center gap-2"><span class="inline-block w-4 border-t-2 border-dashed border-[#d1d5db]"></span> SPY</li>
+      <li class="flex items-center gap-2"><span class="inline-block w-4 border-t-2 border-dashed border-line-strong"></span> You put in</li>
+    </ul>
   </section>
   {% endif %}
 
   <!-- Final values -->
-  <section class="card">
-    <p class="eyebrow mb-3">End values on {{ bt.summary.end }}</p>
-    <table class="w-full text-sm">
-      <thead><tr class="text-left text-xs text-ink/50 border-b border-ink/10">
-        <th class="pb-2 font-medium">Strategy</th>
-        <th class="pb-2 font-medium text-right">Value</th>
-        <th class="pb-2 font-medium text-right">vs put in ({{ bt.summary.total_contributed | money }})</th>
+  <section class="card overflow-x-auto">
+    <h2 class="eyebrow">End values on {{ bt.summary.end }}</h2>
+    <table class="tbl mt-2">
+      <thead><tr>
+        <th>Strategy</th>
+        <th class="num">Value</th>
+        <th class="num">Vs put in ({{ bt.summary.total_contributed | money2 }})</th>
       </tr></thead>
-      <tbody class="divide-y divide-ink/5">
-        <tr class="py-2">
-          <td class="py-2 font-medium text-moss-700">Auto-trade (rebalance every {{ bt.summary.review_every_days }}d)</td>
-          <td class="py-2 text-right tabular-nums font-bold">{{ bt.summary.auto_end | money }}</td>
-          <td class="py-2 text-right tabular-nums {{ 'text-moss-600' if bt.summary.auto_return_pct >= 0 else 'text-clay-500' }}">{{ pv(bt.summary.auto_return_pct) }}</td>
+      <tbody>
+        <tr>
+          <td class="font-medium">Auto-trade (rebalance every {{ bt.summary.review_every_days }} days)</td>
+          <td class="num font-semibold">{{ bt.summary.auto_end | money2 }}</td>
+          <td class="num {{ tone(bt.summary.auto_return_pct) }}">{{ pv(bt.summary.auto_return_pct) }}</td>
         </tr>
         <tr>
-          <td class="py-2 text-ink/70">Buy &amp; hold (same fund, no rebalance)</td>
-          <td class="py-2 text-right tabular-nums">{{ bt.summary.hold_end | money }}</td>
-          <td class="py-2 text-right tabular-nums">{{ pv(bt.summary.hold_return_pct) }}</td>
+          <td class="text-ink-2">Buy &amp; hold (same fund, no rebalance)</td>
+          <td class="num">{{ bt.summary.hold_end | money2 }}</td>
+          <td class="num">{{ pv(bt.summary.hold_return_pct) }}</td>
         </tr>
         <tr>
-          <td class="py-2 text-ink/70">S&amp;P 500 (SPY)</td>
-          <td class="py-2 text-right tabular-nums">{{ bt.summary.spy_end | money }}</td>
-          <td class="py-2 text-right tabular-nums">{{ pv(bt.summary.spy_return_pct) }}</td>
+          <td class="text-ink-2">S&amp;P 500 (SPY)</td>
+          <td class="num">{{ bt.summary.spy_end | money2 }}</td>
+          <td class="num">{{ pv(bt.summary.spy_return_pct) }}</td>
         </tr>
       </tbody>
     </table>
-    <p class="mt-3 text-xs text-ink/40">
-      All strategies receive the same {{ bt.summary.total_contributed | money }} total (starting amount + bi-weekly paycheck deposits).
-      Returns are money-weighted: the start date is {{ bt.summary.start }}.
+    <p class="mt-4 text-xs text-muted">
+      All strategies receive the same {{ bt.summary.total_contributed | money2 }} total (starting amount plus a deposit every two weeks).
+      Returns are money-weighted from {{ bt.summary.start }}.
       Prices are {{ price_note }}.
     </p>
   </section>
@@ -106,23 +102,23 @@
   <!-- Trade log -->
   {% if bt.trades %}
   <section class="card">
-    <p class="eyebrow mb-1">Auto-trade rebalancing log</p>
-    <p class="text-xs text-ink/50 mb-3">{{ bt.summary.total_rebalance_trades }} trade{{ 's' if bt.summary.total_rebalance_trades != 1 else '' }} placed to keep the fund on target</p>
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm">
-        <thead><tr class="text-left text-xs text-ink/50 border-b border-ink/10">
-          <th class="pb-2 font-medium">Date</th>
-          <th class="pb-2 font-medium">Symbol</th>
-          <th class="pb-2 font-medium">Side</th>
-          <th class="pb-2 font-medium text-right">Notional</th>
+    <h2 class="eyebrow">Rebalancing trades</h2>
+    <p class="mt-1 text-xs text-muted">{{ bt.summary.total_rebalance_trades }} simulated trade{{ 's' if bt.summary.total_rebalance_trades != 1 else '' }} to keep the fund on target</p>
+    <div class="overflow-x-auto mt-2">
+      <table class="tbl">
+        <thead><tr>
+          <th>Date</th>
+          <th>Symbol</th>
+          <th>Side</th>
+          <th class="num">Amount</th>
         </tr></thead>
-        <tbody class="divide-y divide-ink/5 text-xs">
+        <tbody>
           {% for t in bt.trades %}
           <tr>
-            <td class="py-1.5 text-ink/60">{{ t.on }}</td>
-            <td class="py-1.5 font-medium">{{ t.symbol }}</td>
-            <td class="py-1.5 {{ 'text-moss-600' if t.side == 'buy' else 'text-clay-500' }}">{{ t.side }}</td>
-            <td class="py-1.5 text-right tabular-nums">{{ t.notional | money2 }}</td>
+            <td class="text-muted">{{ t.on }}</td>
+            <td class="font-medium">{{ t.symbol }}</td>
+            <td>{{ t.side | capitalize }}</td>
+            <td class="num">{{ t.notional | money2 }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -132,8 +128,8 @@
   {% endif %}
 
   <!-- Methodology note -->
-  <section class="card text-xs text-ink/50">
-    <p><strong class="text-ink/70">How this works:</strong> Four portfolios, same deposits. Auto-trade rebalances drift every {{ bt.summary.review_every_days }} days; others never rebalance. Returns are money-weighted. Simulation only — past results don't predict future ones.</p>
+  <section class="card text-xs text-muted">
+    <p><strong class="text-ink-2">How this works.</strong> Three portfolios, same deposits. Auto-trade rebalances drift every {{ bt.summary.review_every_days }} days; the others never rebalance. Returns are money-weighted. A simulation only: past results don't predict future ones.</p>
   </section>
 
 </div>

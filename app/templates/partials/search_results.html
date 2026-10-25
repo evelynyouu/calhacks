@@ -1,10 +1,10 @@
 {% if q %}
-<ul class="mt-2 divide-y divide-ink/10 text-sm" aria-label="Search results">
+<ul class="mt-2 divide-y divide-line text-sm" aria-label="Search results">
   {% for r in results %}
-  <li><a href="/p/{{ cid }}/markets?s={{ r.symbol }}" class="flex justify-between gap-2 py-1.5 px-1 rounded hover:bg-paper">
-    <span class="font-semibold">{{ r.symbol }}</span><span class="truncate text-ink/60 text-right">{{ r.name }}</span></a></li>
+  <li><a href="/p/{{ cid }}/markets?s={{ r.symbol }}" class="flex justify-between gap-2 py-2 px-1 rounded hover:bg-paper">
+    <span class="font-semibold">{{ r.symbol }}</span><span class="truncate text-muted text-right">{{ r.name }}</span></a></li>
   {% else %}
-  <li class="py-1.5 text-ink/55">No matches for “{{ q }}”.</li>
+  <li class="py-2 text-muted">No matches for “{{ q }}”.</li>
   {% endfor %}
 </ul>
 {% endif %}

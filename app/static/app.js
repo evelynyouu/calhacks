@@ -1,7 +1,14 @@
 // Charts: any <canvas data-chart="pie|fan|history|price" data-payload='json'>, including HTMX/OOB swaps.
 // Inputs: [data-slider] keeps a range and a number box in sync; [data-paycheck] previews dollars.
-// Greens, blacks and grays that stay distinguishable side by side in the fund doughnut.
-const PALETTE = ['#0b7a3e', '#0b0f0d', '#8fd3a8', '#4a4f4c', '#0e9f4f', '#a3a8a5', '#075c2e', '#d5d8d6', '#3fbf74'];
+// Fund doughnut slices: a neutral ramp (green is kept for gains), dark to light so neighbours stay distinct.
+const PALETTE = ['#0b0f0d', '#545a57', '#8b918e', '#b9bebb', '#2f3532', '#dde0de', '#727875', '#a2a7a4', '#c9cdcb'];
+const INK = '#0b0f0d', MUTED = '#5c625f', LINE = '#e3e6e4', GAIN = '#0b7a3e', LOSS = '#b42318';
+if (window.Chart) {
+  Chart.defaults.font.family = '"Public Sans", system-ui, sans-serif';
+  Chart.defaults.font.size = 12;
+  Chart.defaults.color = MUTED;
+  Chart.defaults.borderColor = LINE;
+}
 
 // ---------- Markdown parser ----------
 // Handles: **bold**, *italic*, `code`, - lists, 1. lists, paragraphs, line breaks.
@@ -12,7 +19,7 @@ function parseMarkdown(raw) {
   s = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
   s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   s = s.replace(/(?<!\*)\*(?!\*)(?!\s)([\s\S]*?)(?<!\s)\*(?!\*)/g, '<em>$1</em>');
-  s = s.replace(/`([^`\n]+)`/g, '<code class="bg-ink/[.07] px-1 rounded text-[.88em] font-mono">$1</code>');
+  s = s.replace(/`([^`\n]+)`/g, '<code class="bg-paper px-1 rounded-sm text-[.9em] font-mono">$1</code>');
   // Process lines to handle lists
   const lines = s.split('\n');
   const out = [];
@@ -21,10 +28,10 @@ function parseMarkdown(raw) {
     const ul = line.match(/^[ \t]*[-*]\s+(.+)/);
     const ol = line.match(/^[ \t]*\d+\.\s+(.+)/);
     if (ul) {
-      if (!inUl) { if (inOl) { out.push('</ol>'); inOl = false; } out.push('<ul class="list-disc pl-4 space-y-0.5 my-1.5">'); inUl = true; }
+      if (!inUl) { if (inOl) { out.push('</ol>'); inOl = false; } out.push('<ul class="list-disc pl-4 space-y-1 my-2">'); inUl = true; }
       out.push(`<li>${ul[1]}</li>`);
     } else if (ol) {
-      if (!inOl) { if (inUl) { out.push('</ul>'); inUl = false; } out.push('<ol class="list-decimal pl-4 space-y-0.5 my-1.5">'); inOl = true; }
+      if (!inOl) { if (inUl) { out.push('</ul>'); inUl = false; } out.push('<ol class="list-decimal pl-4 space-y-1 my-2">'); inOl = true; }
       out.push(`<li>${ol[1]}</li>`);
     } else {
       if (inUl) { out.push('</ul>'); inUl = false; }
@@ -55,10 +62,11 @@ function renderMarkdown() {
 function animateNewMessages() {
   document.querySelectorAll('.ff-msg-in:not([data-anim])').forEach(el => {
     el.dataset.anim = '1';
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     el.style.opacity = '0';
-    el.style.transform = 'translateY(6px)';
+    el.style.transform = 'translateY(4px)';
     requestAnimationFrame(() => {
-      el.style.transition = 'opacity .22s ease, transform .22s ease';
+      el.style.transition = 'opacity .15s ease, transform .15s ease';
       el.style.opacity = '1';
       el.style.transform = 'translateY(0)';
     });
@@ -82,9 +90,9 @@ function makeChart(el) {
     new Chart(el, {
       type: 'line',
       data: { labels, datasets: [
-        { label: 'Low (10th pct)', data: d.p10, borderColor: '#0b7a3e55', pointRadius: 0, borderWidth: 1 },
-        { label: 'Typical', data: d.p50, borderColor: '#0b7a3e', pointRadius: 0, borderWidth: 2.5 },
-        { label: 'High (90th pct)', data: d.p90, borderColor: '#0b7a3e55', backgroundColor: '#0b7a3e1f',
+        { label: 'Low (10th pct)', data: d.p10, borderColor: '#8b918e', pointRadius: 0, borderWidth: 1 },
+        { label: 'Typical', data: d.p50, borderColor: INK, pointRadius: 0, borderWidth: 2 },
+        { label: 'High (90th pct)', data: d.p90, borderColor: '#8b918e', backgroundColor: '#0b0f0d0f',
           pointRadius: 0, borderWidth: 1, fill: 0 },
       ] },
       options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
@@ -100,7 +108,7 @@ function makeChart(el) {
     new Chart(el, {
       type: 'line',
       data: { labels, datasets: [
-        { label: 'Fund value', data: d.value, borderColor: '#0b7a3e', backgroundColor: '#0b7a3e1a', fill: true, pointRadius: 0, borderWidth: 2.5 },
+        { label: 'Fund value', data: d.value, borderColor: INK, backgroundColor: '#0b0f0d0d', fill: true, pointRadius: 0, borderWidth: 2 },
         { label: 'You put in', data: d.contributed, borderColor: '#0b0f0d80', borderDash: [5, 4], pointRadius: 0, borderWidth: 1.5, stepped: true },
       ] },
       options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
@@ -116,8 +124,8 @@ function makeBacktestChart(el, d) {
   new Chart(el, {
     type: 'line',
     data: { labels, datasets: [
-      { label: 'Auto-trade',        data: d.auto,       borderColor: '#0b7a3e',   backgroundColor: '#0b7a3e18', fill: true,  pointRadius: 0, borderWidth: 2.5 },
-      { label: 'Buy & hold',        data: d.hold,       borderColor: '#0b0f0d',   backgroundColor: 'transparent',            pointRadius: 0, borderWidth: 1.5 },
+      { label: 'Auto-trade',        data: d.auto,       borderColor: INK,         backgroundColor: '#0b0f0d0d', fill: true,  pointRadius: 0, borderWidth: 2 },
+      { label: 'Buy & hold',        data: d.hold,       borderColor: '#545a57',   backgroundColor: 'transparent',            pointRadius: 0, borderWidth: 1.5 },
       { label: 'Benchmark',         data: d.benchmark,  borderColor: '#9ca3af',   backgroundColor: 'transparent',            pointRadius: 0, borderWidth: 1.5 },
       { label: 'SPY',               data: d.spy,        borderColor: '#d1d5db',   backgroundColor: 'transparent',            pointRadius: 0, borderWidth: 1,   borderDash: [4,3] },
       { label: 'You put in',        data: d.contributed,borderColor: '#0b0f0d55', backgroundColor: 'transparent',            pointRadius: 0, borderWidth: 1.5, borderDash: [5,4], stepped: true },
@@ -138,13 +146,10 @@ function makeBacktestChart(el, d) {
 }
 
 function makePriceChart(el, d) {
-  const color = d.up ? '#0b7a3e' : '#d93025';
+  const color = d.up ? GAIN : LOSS;
   const long = d.labels.length > 120;
   const labels = d.labels.map(s => new Date(s + 'T00:00').toLocaleDateString(undefined, long ? { month: 'short', year: '2-digit' } : { month: 'short', day: 'numeric' }));
-  const ctx = el.getContext('2d');
-  const fill = ctx.createLinearGradient(0, 0, 0, el.clientHeight || 256);
-  fill.addColorStop(0, color + '33');
-  fill.addColorStop(1, color + '00');
+  const fill = color + '14';   // flat tint, no gradient
   new Chart(el, {
     type: 'line',
     data: { labels, datasets: [{ data: d.values, borderColor: color, backgroundColor: fill, fill: true, pointRadius: 0, borderWidth: 2, tension: 0.15 }] },
@@ -221,7 +226,7 @@ document.body.addEventListener('htmx:beforeRequest', e => {
   const row = document.createElement('div');
   row.className = 'flex justify-end';
   const p = document.createElement('p');
-  p.className = 'max-w-[85%] rounded-2xl rounded-br-md bg-ink/[.06] px-4 py-2.5 text-[.95rem] leading-relaxed whitespace-pre-line';
+  p.className = 'max-w-[85%] rounded-lg bg-paper px-4 py-3 text-base whitespace-pre-line';
   p.textContent = box.value.trim();
   row.appendChild(p);
   document.getElementById('chat-messages').appendChild(row);

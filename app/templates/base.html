@@ -4,17 +4,24 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}FirstFund{% endblock %}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <!-- Fonts load without blocking the page; offline, the system fonts below are used instead. -->
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
-  <!-- Scripts are bundled in /static/vendor (pinned versions) so the demo works on bad wifi. -->
+  <link rel="preload" href="/static/vendor/fonts/public-sans-latin-400.woff2" as="font" type="font/woff2" crossorigin>
+  <!-- Scripts and the font are bundled in /static/vendor (pinned versions) so the demo works on bad wifi. -->
   <script src="/static/vendor/tailwind-3.4.17.js"></script>
   <script>
-    tailwind.config = { theme: { extend: {
-      fontFamily: { display: ['Fraunces', 'Georgia', 'serif'], sans: ['Inter', 'system-ui', 'sans-serif'] },
-      // White, black and green; clay = red for losses; sun = neutral gray for notices; paper = light gray panels.
-      colors: { ink: '#0b0f0d', paper: '#f3f4f3', moss: { 50: '#e8f6ee', 100: '#c9ecd7', 500: '#0e9f4f', 600: '#0b7a3e', 700: '#075c2e' },
-                clay: { 100: '#fde8e6', 500: '#d93025' }, sun: { 100: '#f3f4f3', 500: '#0b0f0d' } } } } }
+    // Design tokens (docs/design/system.md). Type, radius and color replace Tailwind's defaults so off-scale
+    // values don't exist; spacing keeps Tailwind's 4px steps and templates use only 1/2/3/4/6/8/12.
+    tailwind.config = { theme: {
+      fontFamily: { sans: ['"Public Sans"', 'system-ui', '-apple-system', '"Segoe UI"', 'sans-serif'],
+                    mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'] },
+      fontSize: { xs: ['12px', '16px'], sm: ['14px', '20px'], base: ['16px', '24px'], lg: ['20px', '28px'], xl: ['28px', '36px'] },
+      fontWeight: { normal: '400', medium: '500', semibold: '600' },
+      borderRadius: { none: '0', sm: '4px', DEFAULT: '6px', md: '6px', lg: '8px', full: '9999px' },
+      extend: {
+        // Neutrals carry the page; green = gains and the primary action; red (clay) = losses. All text colors pass WCAG AA on white and paper.
+        colors: { ink: { DEFAULT: '#0b0f0d', 2: '#3c403e' }, muted: '#5c625f', paper: '#f4f5f4',
+                  line: { DEFAULT: '#e3e6e4', strong: '#8b918e' },
+                  moss: { 50: '#e8f6ee', 100: '#c9ecd7', 500: '#0b7a3e', 600: '#0b7a3e', 700: '#075c2e' },
+                  clay: { 100: '#fdecea', 500: '#b42318', 600: '#b42318' } } } } }
     // The sidebar's state (open / collapsed / hidden), applied before paint so it doesn't flash open (app.js owns the toggles).
     try { var ffNav = localStorage.getItem('ff-nav'); if (ffNav === 'collapsed' || ffNav === 'hidden') document.documentElement.classList.add('nav-' + ffNav); } catch (e) {}
   </script>
@@ -24,13 +31,13 @@
   <link rel="stylesheet" href="/static/tape.css">
   <link rel="stylesheet" href="/static/nav.css">
 </head>
-<body class="bg-white text-ink font-sans antialiased min-h-screen">
+<body class="bg-white text-ink font-sans text-base antialiased min-h-screen">
   {# Ticker strip: portfolio/home page only. Other pages (login etc.) can override to show it if they want. #}
   {% block tape %}{% if tab is not defined or tab == 'portfolio' %}<div class="tape-dock">{% include "partials/tape_loader.html" %}</div>{% else %}<style>:root{--tape-h:0px}</style>{% endif %}{% endblock %}
   {# Customer pages (they have a session `s` and a `cid`) get the left sidebar; the landing page and sign-in don't. #}
   {% set with_nav = s is defined and cid is defined %}
   {% if with_nav %}<div class="shell">{% include "partials/nav.html" %}<div class="side-backdrop" data-nav-close aria-hidden="true"></div><div class="shell-main">{% endif %}
-  <header class="{{ 'shell-header' if with_nav else '' }} max-w-6xl mx-auto px-4 sm:px-6 py-5 flex items-center justify-between gap-3">
+  <header class="{{ 'shell-header' if with_nav else '' }} max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
     <div class="flex items-center gap-2 min-w-0">
       {% if with_nav %}
       <button type="button" class="menu-btn" data-nav-toggle aria-controls="nav" aria-expanded="false" aria-label="Menu">
@@ -43,13 +50,13 @@
         <span class="text-sm font-medium" aria-hidden="true">Sidebar</span>
       </button>
       {% endif %}
-      <a href="/" class="{{ 'hdr-brand' if with_nav else '' }} font-display text-2xl font-bold tracking-tight {{ 'md:hidden' if with_nav else '' }}">First<span class="text-moss-500">Fund</span></a>
+      <a href="/" class="{{ 'hdr-brand' if with_nav else '' }} text-lg font-semibold {{ 'md:hidden' if with_nav else '' }}">FirstFund</a>
     </div>
     <div class="flex items-center gap-3">
       {% block header_right %}{% endblock %}
       {% set user = request.state.user if request is defined else None %}{# set by the sign-in gate #}
       {% if user %}
-      <span class="hidden md:inline text-sm text-ink/60" title="Signed in">{{ user.email }}</span>
+      <span class="hidden md:inline text-sm text-muted" title="Signed in">{{ user.email }}</span>
       <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf_token(request) }}">
         <button class="btn-ghost">Sign out</button></form>
       {% endif %}
@@ -66,8 +73,8 @@
   <main class="max-w-6xl mx-auto px-4 sm:px-6 pb-16">{% block content %}{% endblock %}</main>
   {% if disclosure is defined %}
   {% set dis = disclosure(a.today if a is defined and a else None) %}
-  <footer id="disclosures" class="max-w-6xl mx-auto px-4 sm:px-6 pb-10 pt-5 border-t border-ink/10 text-xs text-ink/55 space-y-1.5">
-    <p class="font-medium text-ink/70">About the numbers on this page</p>
+  <footer id="disclosures" class="max-w-6xl mx-auto px-4 sm:px-6 pb-12 pt-6 border-t border-line text-xs text-muted space-y-2">
+    <p class="text-sm font-semibold text-ink">About the numbers on this page</p>
     {% for line in dis.full %}<p>{{ line }}</p>{% endfor %}
   </footer>
   {% endif %}

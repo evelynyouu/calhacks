@@ -1,5 +1,5 @@
 {# Continue with Apple / Google. A provider that isn't configured shows a disabled button and says so. #}
-<div class="space-y-2.5">
+<div class="space-y-3">
   {% if apple_ready %}
   <a href="/auth/apple/start?next={{ next | urlencode }}" class="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-black text-[15px] font-medium text-white hover:bg-neutral-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-600 focus-visible:ring-offset-2">
   {% else %}
@@ -10,9 +10,9 @@
   {% if apple_ready %}</a>{% else %}</span>{% endif %}
 
   {% if google_ready %}
-  <a href="/auth/google/start?next={{ next | urlencode }}" class="flex h-11 w-full items-center justify-center gap-2.5 rounded-lg border border-[#747775] bg-white text-[15px] font-medium text-[#1f1f1f] hover:bg-neutral-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-600 focus-visible:ring-offset-2">
+  <a href="/auth/google/start?next={{ next | urlencode }}" class="flex h-11 w-full items-center justify-center gap-3 rounded-lg border border-[#747775] bg-white text-[15px] font-medium text-[#1f1f1f] hover:bg-neutral-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-600 focus-visible:ring-offset-2">
   {% else %}
-  <span aria-disabled="true" class="flex h-11 w-full cursor-not-allowed items-center justify-center gap-2.5 rounded-lg border border-black/15 bg-white text-[15px] font-medium text-black/40">
+  <span aria-disabled="true" class="flex h-11 w-full cursor-not-allowed items-center justify-center gap-3 rounded-lg border border-black/15 bg-white text-[15px] font-medium text-black/40">
   {% endif %}
     <svg aria-hidden="true" viewBox="0 0 48 48" class="h-[18px] w-[18px] {% if not google_ready %}opacity-50{% endif %}">
       <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
@@ -30,4 +30,4 @@
   {% endif %}
   <p class="text-center text-xs text-black/50">With Apple or Google, your account's own 2-step verification protects the sign-in.</p>
 </div>
-<div class="my-5 flex items-center gap-3 text-xs text-black/40" aria-hidden="true"><span class="h-px flex-1 bg-black/10"></span>or use email<span class="h-px flex-1 bg-black/10"></span></div>
+<div class="my-6 flex items-center gap-3 text-xs text-black/40" aria-hidden="true"><span class="h-px flex-1 bg-black/10"></span>or use email<span class="h-px flex-1 bg-black/10"></span></div>

@@ -2,39 +2,40 @@
 <section id="today" {% if swap_oob %}hx-swap-oob="true"{% endif %} class="card">
   {# Every figure comes from core/figures.py (fig); this only formats it. Total since you started leads, today second. #}
   <div>
-    <p class="eyebrow">Your fund</p>
-    <p class="font-display text-4xl font-bold mt-1 tabular-nums" data-fig="value">{{ fig.value | money2 }}</p>
+    <h2 class="eyebrow">Your fund</h2>
+    <p class="text-xl font-semibold mt-2" data-fig="value">{{ fig.value | money2 }}</p>
     {% set gain_up = fig.total_gain >= 0 %}
-    <p class="mt-0.5 text-base font-semibold {{ 'text-moss-600' if gain_up else 'text-clay-500' }}" title="{{ defs.total }}" data-fig="total">
+    <p class="mt-2 text-base font-semibold {{ 'text-moss-600' if gain_up else 'text-clay-500' }}" title="{{ defs.total }}" data-fig="total">
       {{ '+' if gain_up else '−' }}{{ fig.total_gain | abs | money2 }}{% if fig.total_gain_pct is not none %} ({{ fig.total_gain_pct | signed(2) }}){% endif %}
-      <span class="font-normal text-ink/60">since you started{% if fig.started %} on {{ fig.started | day }}{% endif %} · you put in {{ fig.put_in | money2 }}</span>
+      <span class="font-normal text-muted">since you started{% if fig.started %} on {{ fig.started | day }}{% endif %} · you put in {{ fig.put_in | money2 }}</span>
     </p>
     {% set up = fig.day_change >= 0 %}
-    <p class="mt-0.5 text-sm font-medium {{ 'text-moss-600' if up else 'text-clay-500' }}" title="{{ defs.today }}" data-fig="today">
-      {{ '+' if up else '−' }}{{ fig.day_change | abs | money2 }} ({{ fig.day_pct | signed(2) }}) <span class="font-normal text-ink/60">today</span>
+    <p class="mt-1 text-sm font-medium {{ 'text-moss-600' if up else 'text-clay-500' }}" title="{{ defs.today }}" data-fig="today">
+      {{ '+' if up else '−' }}{{ fig.day_change | abs | money2 }} ({{ fig.day_pct | signed(2) }}) <span class="font-normal text-muted">today</span>
     </p>
   </div>
   {% macro position(r) %}
     <li>
-      <a href="/p/{{ cid }}/markets?s={{ r.ticker }}" class="flex items-center justify-between gap-3 py-2.5 hover:bg-paper/60 -mx-2 px-2 rounded-lg">
+      <a href="/p/{{ cid }}/markets?s={{ r.ticker }}" class="flex items-center justify-between gap-3 py-2 hover:bg-paper -mx-2 px-2 rounded-md">
         <span class="min-w-0">
           <span class="font-semibold">{{ r.ticker }}</span>
-          <span class="block truncate text-xs text-ink/55">{{ r.info.label }}{% if r.slice and r.slice.split()[0] not in r.info.label %} · {{ r.slice }}{% endif %}</span>
+          <span class="block truncate text-xs text-muted">{{ r.info.label }}{% if r.slice and r.slice.split()[0] not in r.info.label %} · {{ r.slice }}{% endif %}</span>
         </span>
         <span class="flex items-center gap-3 shrink-0">
-          <span class="tabular-nums text-sm">{{ r.value | money2 }}</span>
+          <span class="num text-sm">{{ r.value | money2 }}</span>
           {% if r.quote %}<span class="pill {{ 'pill-up' if r.quote.change_pct >= 0 else 'pill-down' }}">{{ r.quote.change_pct | signed(2) }}</span>{% endif %}
         </span>
       </a>
     </li>
   {% endmacro %}
-  <ul class="mt-4 divide-y divide-ink/10" id="positions">
+  <div class="mt-6 flex justify-between gap-3 border-b border-line pb-2 text-xs text-muted"><span>Biggest positions</span><span>Value · today</span></div>
+  <ul class="divide-y divide-line" id="positions">
     {% for r in rows %}{{ position(r) }}{% endfor %}
   </ul>
   {% if rest %}
   <details class="mt-1" id="all-positions">
-    <summary class="chev py-2 text-sm font-medium text-moss-600">Show all {{ rows | length + rest | length }} positions</summary>
-    <ul class="divide-y divide-ink/10 border-t border-ink/10">
+    <summary class="chev py-2 text-sm font-medium">Show all {{ rows | length + rest | length }} positions</summary>
+    <ul class="divide-y divide-line border-t border-line">
       {% for r in rest %}{{ position(r) }}{% endfor %}
     </ul>
   </details>

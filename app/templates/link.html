@@ -4,32 +4,32 @@
 {% block content %}
 <div class="max-w-md mx-auto">
   <div class="flex items-center justify-between gap-3">
-    <p class="eyebrow">Link your bank · step {{ step_no }} of {{ steps }}</p>
-    <span class="rounded-full bg-paper px-2 py-0.5 text-xs font-semibold text-ink/70">Demo · mock bank</span>
+    <p class="text-sm font-semibold">Link your bank · step {{ step_no }} of {{ steps }}</p>
+    <span class="badge">Demo · mock bank</span>
   </div>
-  <div class="mt-2 grid grid-cols-3 gap-1.5" aria-hidden="true">
-    {% for i in range(steps) %}<span class="h-1 rounded-full {{ 'bg-moss-600' if i < step_no else 'bg-ink/10' }}"></span>{% endfor %}
+  <div class="mt-2 grid grid-cols-3 gap-2" aria-hidden="true">
+    {% for i in range(steps) %}<span class="h-1 rounded-full {{ 'bg-ink' if i < step_no else 'bg-line' }}"></span>{% endfor %}
   </div>
 
   <section class="card mt-4">
   {% if step == "bank" %}
-    <h1 class="font-display text-2xl font-bold">Hi {{ profile.name }}, where does your paycheck land?</h1>
-    <p class="mt-1 text-sm text-ink/65">FirstFund links to the checking account your pay goes into, so each paycheck can invest itself.</p>
+    <h1 class="text-lg font-semibold">Hi {{ profile.name }}, where does your paycheck land?</h1>
+    <p class="mt-1 text-sm text-muted">FirstFund links to the checking account your pay goes into, so each paycheck can invest itself.</p>
     <ul class="mt-4 space-y-2">
       <li>
         <a href="/p/{{ cid }}/link?step=signin" class="choice-btn"><span class="flex items-center gap-3">
-          <span class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink font-bold text-white">C</span>
+          <span class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink font-semibold text-white">C</span>
           <span class="min-w-0">
             <span class="block">{{ bank }}</span>
-            <span class="block text-xs font-normal text-ink/60">{{ bank_note }} · works in the demo</span>
+            <span class="block text-xs font-normal text-muted">{{ bank_note }} · works in the demo</span>
           </span>
-          <span class="ml-auto text-moss-600" aria-hidden="true">→</span>
+          <span class="ml-auto text-muted"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 5 5 5-5 5"/></svg></span>
         </span></a>
       </li>
       {% for b in not_in_demo %}
       <li>
-        <div class="flex items-center gap-3 rounded-[.85rem] border border-ink/10 bg-paper px-4 py-3 text-ink/45" aria-disabled="true">
-          <span class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink/10 font-bold">{{ b[0] }}</span>
+        <div class="flex items-center gap-3 rounded-md border border-line bg-paper px-4 py-3 text-muted" aria-disabled="true">
+          <span class="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-line font-semibold">{{ b[0] }}</span>
           <span class="min-w-0">
             <span class="block text-sm font-medium">{{ b }}</span>
             <span class="block text-xs">Not available in the demo</span>
@@ -40,25 +40,25 @@
     </ul>
 
   {% elif step == "signin" %}
-    <h1 class="font-display text-2xl font-bold">Sign in to {{ bank }}</h1>
-    <p class="mt-1 text-sm text-ink/65">This is a demo account at {{ mock_source }}, so there's no password to enter. A real link would happen on your bank's own page, and FirstFund would never see your password.</p>
-    <a href="/p/{{ cid }}/link?step=accounts" class="btn mt-5 block w-full py-3 text-center text-base">Continue as {{ profile.name }} (demo account)</a>
-    <a href="/p/{{ cid }}/link" class="mt-3 block text-center text-sm text-ink/60 hover:text-ink">← Choose a different bank</a>
+    <h1 class="text-lg font-semibold">Sign in to {{ bank }}</h1>
+    <p class="mt-1 text-sm text-muted">This is a demo account at {{ mock_source }}, so there's no password to enter. A real link would happen on your bank's own page, and FirstFund would never see your password.</p>
+    <a href="/p/{{ cid }}/link?step=accounts" class="btn mt-6 w-full py-3">Continue as {{ profile.name }} (demo account)</a>
+    <a href="/p/{{ cid }}/link" class="mt-4 block text-center text-sm link">Choose a different bank</a>
 
   {% else %}
-    <h1 class="font-display text-2xl font-bold">Choose accounts</h1>
-    <p class="mt-1 text-sm text-ink/65">Balances from {{ mock_source }}.</p>
+    <h1 class="text-lg font-semibold">Choose accounts</h1>
+    <p class="mt-1 text-sm text-muted">Balances from {{ mock_source }}.</p>
     <form method="post" action="/p/{{ cid }}/link" class="mt-4 space-y-4">
       {% for role, title in [("paycheck", "Your paycheck lands in"), ("invest", "Your paycheck share goes to")] %}
       <fieldset>
         <legend class="text-sm font-semibold">{{ title }}</legend>
         {% for a in accounts if a.role == role %}
-        <label class="mt-1.5 block">
+        <label class="mt-2 block">
           <input type="radio" name="{{ a.key }}" value="{{ a.key }}" checked class="peer sr-only">
-          <span class="choice-btn peer-checked:border-moss-600 peer-checked:bg-moss-50"><span class="flex items-center justify-between gap-3">
+          <span class="choice-btn peer-checked:border-ink peer-checked:shadow-[inset_0_0_0_1px_#0b0f0d] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ink"><span class="flex items-center justify-between gap-3">
             <span class="min-w-0"><span class="block truncate">{{ a.name }}</span>
-              <span class="block text-xs font-normal text-ink/60">{{ a.type }} ••{{ a.mask }}</span></span>
-            <span class="tabular-nums">{{ a.balance | money2 }}</span>
+              <span class="block text-xs font-normal text-muted">{{ a.type }} ••{{ a.mask }}</span></span>
+            <span class="num">{{ a.balance | money2 }}</span>
           </span></span>
         </label>
         {% endfor %}
@@ -66,31 +66,31 @@
       {% endfor %}
       <div>
         <p class="text-sm font-semibold">Not linked</p>
-        <ul class="mt-1 divide-y divide-ink/5 text-sm text-ink/60">
+        <ul class="mt-1 divide-y divide-line text-sm text-muted">
           {% for a in accounts if a.role == "untouched" %}
-          <li class="flex items-center justify-between gap-3 py-1.5">
+          <li class="flex items-center justify-between gap-3 py-2">
             <span class="min-w-0 truncate">{{ a.name }} ••{{ a.mask }}</span>
-            <span class="tabular-nums">{{ a.balance | money2 }}{% if a.owed %} owed{% endif %}</span>
+            <span class="num">{{ a.balance | money2 }}{% if a.owed %} owed{% endif %}</span>
           </li>
           {% endfor %}
         </ul>
       </div>
 
-      <div class="rounded-xl bg-paper p-3 text-sm">
+      <div class="border-t border-line pt-4 text-sm">
         <p class="font-semibold">FirstFund will</p>
-        <ul class="mt-1 list-disc space-y-0.5 pl-5 text-ink/75">
+        <ul class="mt-1 list-disc space-y-1 pl-6 text-ink-2">
           <li>Read balances and transactions on these two accounts</li>
           <li>On each payday ({{ profile.paycheck_amount | money }} {{ frequency }}), move the percent you choose from checking to FirstFund Investing. You pick the percent next.</li>
         </ul>
-        <p class="mt-2 font-semibold">FirstFund won't</p>
-        <ul class="mt-1 list-disc space-y-0.5 pl-5 text-ink/75">
+        <p class="mt-4 font-semibold">FirstFund won't</p>
+        <ul class="mt-1 list-disc space-y-1 pl-6 text-ink-2">
           <li>Touch your savings or card</li>
           <li>Move money unless a paycheck has landed</li>
           <li>Buy or sell anything without your Confirm</li>
         </ul>
       </div>
-      <button class="btn w-full py-3 text-base">Link account</button>
-      <p class="text-center text-xs text-ink/55">Demo: no real money moves. “Start over” later unlinks it.</p>
+      <button class="btn w-full py-3">Link account</button>
+      <p class="text-center text-xs text-muted">Demo: no real money moves. “Start over” later unlinks it.</p>
     </form>
   {% endif %}
   </section>

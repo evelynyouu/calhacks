@@ -1,72 +1,117 @@
-/* Palette: white, black and green; red only for losses.
-   ink #0b0f0d · green #0b7a3e (hover #075c2e, bright #0e9f4f, tint #e8f6ee) · red #d93025 · gray tint #f3f4f3 · border rgba(11,15,13,.12) */
-.card { background:#fff; border:1px solid rgba(11,15,13,.1); border-radius:1.25rem; padding:1.25rem; box-shadow:0 1px 2px rgba(11,15,13,.05); }
-.eyebrow { font-size:.72rem; letter-spacing:.08em; text-transform:uppercase; font-weight:600; color:rgba(11,15,13,.55); }
-.stat { background:#f3f4f3; border-radius:.85rem; padding:.55rem .5rem; }
-.stat dt { font-size:.7rem; color:rgba(11,15,13,.6); }
-.stat dd { font-weight:600; font-variant-numeric:tabular-nums; }
-.btn { background:#0b7a3e; color:#fff; font-weight:500; font-size:.875rem; border-radius:.75rem; padding:.5rem .9rem; transition:background .15s; }
-.btn:hover { background:#075c2e; }
-.btn-ghost { background:#fff; border:1px solid rgba(11,15,13,.18); font-weight:500; font-size:.875rem; border-radius:.75rem; padding:.45rem .85rem; transition:border-color .15s; }
-.btn-ghost:hover { border-color:#0b7a3e; }
-.btn:disabled, .btn-ghost:disabled { opacity:.6; cursor:progress; }
+/* FirstFund components. Tokens and rules: docs/design/system.md (Tailwind gets the same values in base.html).
+   Neutrals carry the page; green only for gains and the primary action; red only for losses. */
+@font-face { font-family:"Public Sans"; font-style:normal; font-weight:400; font-display:swap; src:url(/static/vendor/fonts/public-sans-latin-400.woff2) format("woff2"); }
+@font-face { font-family:"Public Sans"; font-style:normal; font-weight:500; font-display:swap; src:url(/static/vendor/fonts/public-sans-latin-500.woff2) format("woff2"); }
+@font-face { font-family:"Public Sans"; font-style:normal; font-weight:600; font-display:swap; src:url(/static/vendor/fonts/public-sans-latin-600.woff2) format("woff2"); }
+
+:root {
+  --ink:#0b0f0d; --ink-2:#3c403e; --muted:#5c625f; --paper:#f4f5f4; --line:#e3e6e4; --line-strong:#8b918e;
+  --gain:#0b7a3e; --gain-hover:#075c2e; --gain-tint:#e8f6ee; --loss:#b42318; --loss-tint:#fdecea;
+  --r-card:8px; --r-control:6px; --focus:0 0 0 2px #fff, 0 0 0 4px var(--ink);
+}
+/* Every number lines up: tabular figures everywhere (prose included; Public Sans' tabular digits read fine in text). */
+body { font-variant-numeric:tabular-nums; font-feature-settings:"tnum"; }
+/* One visible focus ring for everything focusable. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible { outline:2px solid var(--ink); outline-offset:2px; }
+
+/* Surfaces: one card, no shadow. Inside a card, separate with dividers and whitespace, not more cards. */
+.card { background:#fff; border:1px solid var(--line); border-radius:var(--r-card); padding:24px; }
+@media (max-width:639.98px) { .card { padding:16px; } }
+/* Section heading inside a card (was an uppercase eyebrow). */
+.eyebrow { font-size:14px; line-height:20px; font-weight:600; color:var(--ink); }
+.label { font-size:12px; line-height:16px; color:var(--muted); }
+/* Figure in a row of figures: label above, number below. No boxes; a row of these sits on a divider. */
+.stat { padding:0; }
+.stat dt { font-size:12px; line-height:16px; color:var(--muted); }
+.stat dd { font-size:16px; line-height:24px; font-weight:600; }
+.link { color:var(--ink); font-weight:500; text-decoration:underline; text-decoration-color:var(--line-strong); text-underline-offset:3px; }
+.link:hover { text-decoration-color:var(--ink); }
+.notice { border-left:3px solid var(--ink); background:var(--paper); border-radius:0 var(--r-control) var(--r-control) 0; padding:12px 16px; font-size:14px; line-height:20px; }
+.empty { padding:32px 16px; text-align:center; color:var(--muted); font-size:14px; }
+.empty strong { display:block; color:var(--ink); font-size:16px; font-weight:600; margin-bottom:4px; }
+
+/* Buttons: primary (green, one per view), secondary (outlined), quiet (text). */
+.btn, .btn-ghost, .btn-quiet { display:inline-flex; align-items:center; justify-content:center; gap:8px; font-size:14px; line-height:20px; font-weight:500;
+  border-radius:var(--r-control); padding:8px 16px; transition:background-color .12s, border-color .12s, color .12s; cursor:pointer; }
+.btn { background:var(--gain); color:#fff; border:1px solid var(--gain); }
+.btn:hover { background:var(--gain-hover); border-color:var(--gain-hover); }
+.btn-ghost { background:#fff; color:var(--ink); border:1px solid var(--line-strong); }
+.btn-ghost:hover { border-color:var(--ink); }
+.btn-quiet { background:transparent; color:var(--ink); border:1px solid transparent; padding-left:8px; padding-right:8px; }
+.btn-quiet:hover { background:var(--paper); }
+.btn:disabled, .btn-ghost:disabled, .btn-quiet:disabled { opacity:.6; cursor:progress; }
 .htmx-indicator { display:none; }
 .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { display:block; }
 
-/* Composer */
-.composer-box { display:flex; align-items:flex-end; gap:.5rem; border:1px solid rgba(11,15,13,.18); border-radius:1rem; background:#fff; padding:.4rem .4rem .4rem .75rem; transition:border-color .15s, box-shadow .15s; }
-.composer-box:focus-within { border-color:#0b7a3e; box-shadow:0 0 0 3px rgba(11,122,62,.15); }
-.composer-box input, .composer-box textarea { flex:1; min-width:0; border:0; outline:0; background:transparent; padding:.4rem 0; font-size:.95rem; resize:none; align-self:center; }
-.num-box { display:flex; align-items:center; gap:.15rem; border:1px solid rgba(11,15,13,.18); border-radius:.65rem; padding:.3rem .5rem; background:#fff; }
-.num-box:focus-within { border-color:#0b7a3e; }
-.num-box input { width:3.25rem; text-align:right; border:0; outline:0; font-variant-numeric:tabular-nums; font-weight:600; }
-/* Multiple choice: each option is its own bordered box, no letter badges */
-.choice-btn { display:block; width:100%; text-align:left; border:1.5px solid rgba(11,15,13,.22); border-radius:.85rem; padding:.8rem 1rem; font-size:.92rem; font-weight:500; color:#0b0f0d; background:#fff; transition:border-color .15s, background .15s, box-shadow .15s; }
-.choice-btn:hover { border-color:#0b7a3e; background:#e8f6ee; }
-.choice-btn:focus-visible { outline:0; border-color:#0b7a3e; box-shadow:0 0 0 3px rgba(11,122,62,.2); }
-.choice-btn:active, .choice-btn:disabled { border-color:#0b0f0d; background:#0b0f0d; color:#fff; }
-.scale-btn { border:1.5px solid rgba(11,15,13,.22); border-radius:.65rem; padding:.55rem 0; font-weight:600; font-variant-numeric:tabular-nums; background:#fff; transition:border-color .15s, background .15s; }
-.scale-btn:hover, .scale-btn:focus-visible { border-color:#0b7a3e; background:#0b7a3e; color:#fff; outline:0; }
-.chip { display:inline-block; border:1px solid rgba(11,15,13,.2); border-radius:999px; padding:.35rem .8rem; font-size:.85rem; background:#fff; transition:background .15s, border-color .15s; user-select:none; }
-.chip:hover { border-color:#0b7a3e; }
+/* Inputs: one style. */
+:where(.input, input[type="text"], input[type="number"], input[type="email"], input[type="password"], input[type="search"], select, textarea) {
+  border-color:var(--line-strong); border-radius:var(--r-control); }
+:where(input[type="range"], input[type="checkbox"], input[type="radio"]) { accent-color:var(--ink); }
+.composer-box { display:flex; align-items:flex-end; gap:8px; border:1px solid var(--line-strong); border-radius:var(--r-control); background:#fff; padding:4px 4px 4px 12px; transition:border-color .12s, box-shadow .12s; }
+.composer-box:focus-within { border-color:var(--ink); box-shadow:0 0 0 1px var(--ink); }
+.composer-box input, .composer-box textarea { flex:1; min-width:0; border:0; outline:0; background:transparent; padding:6px 0; font-size:16px; resize:none; align-self:center; }
+.num-box { display:flex; align-items:center; gap:2px; border:1px solid var(--line-strong); border-radius:var(--r-control); padding:4px 8px; background:#fff; }
+.num-box:focus-within { border-color:var(--ink); box-shadow:0 0 0 1px var(--ink); }
+.num-box input { width:3.25rem; text-align:right; border:0; outline:0; font-weight:600; }
+/* Multiple choice: each option a bordered row; selected = ink. */
+.choice-btn { display:block; width:100%; text-align:left; border:1px solid var(--line-strong); border-radius:var(--r-control); padding:12px 16px; font-size:14px; line-height:20px; font-weight:500; color:var(--ink); background:#fff; transition:border-color .12s, background-color .12s; }
+.choice-btn:hover { border-color:var(--ink); background:var(--paper); }
+.choice-btn:focus-visible { outline:2px solid var(--ink); outline-offset:2px; }
+.choice-btn:active, .choice-btn:disabled { border-color:var(--ink); background:var(--ink); color:#fff; }
+.scale-btn { border:1px solid var(--line-strong); border-radius:var(--r-control); padding:8px 0; font-weight:600; background:#fff; transition:border-color .12s, background-color .12s; }
+.scale-btn:hover, .scale-btn:focus-visible { border-color:var(--ink); background:var(--ink); color:#fff; outline:0; }
+/* Chips are toggles (industries, notification picks): square-ish like other controls. */
+.chip { display:inline-block; border:1px solid var(--line-strong); border-radius:var(--r-control); padding:6px 12px; font-size:14px; line-height:20px; background:#fff; transition:background-color .12s, border-color .12s; user-select:none; }
+.chip:hover { border-color:var(--ink); }
+.prompt-chip { display:inline-block; border:1px solid var(--line); border-radius:var(--r-control); padding:6px 12px; font-size:14px; line-height:20px; background:#fff; text-align:left; transition:border-color .12s, background-color .12s; }
+.prompt-chip:hover { border-color:var(--ink); }
 
-/* Report recommendation tags */
-.rec-tag { flex-shrink:0; border-radius:.5rem; padding:.15rem .5rem; font-size:.7rem; font-weight:600; text-transform:uppercase; letter-spacing:.04em; background:#e8f6ee; color:#075c2e; }
-.rec-rebalance, .rec-steer { background:#0b0f0d; color:#fff; }
-.rec-invest_more { background:#0b7a3e; color:#fff; }
-.rec-invest_less, .rec-diversify { background:#fde8e6; color:#a5241b; }
-.rec-explore { background:#f3f4f3; color:#0b0f0d; border:1px solid rgba(11,15,13,.18); }
+/* Status badges: the only pills. Neutral unless the status is a gain or a loss. */
+.badge { display:inline-flex; align-items:center; gap:4px; border-radius:999px; padding:2px 8px; font-size:12px; line-height:16px; font-weight:500; background:var(--paper); color:var(--ink-2); border:1px solid var(--line); white-space:nowrap; }
+
+/* Report recommendation tags: neutral labels; the text says what kind. */
+.rec-tag { flex-shrink:0; border-radius:var(--r-control); padding:2px 8px; font-size:12px; line-height:16px; font-weight:500; background:var(--paper); color:var(--ink-2); border:1px solid var(--line); }
+.rec-invest_less, .rec-diversify { background:var(--loss-tint); color:var(--loss); border-color:transparent; }
 
 /* Tabs */
-.tab { padding:.6rem .9rem; font-size:.9rem; font-weight:500; color:rgba(11,15,13,.6); border-bottom:2px solid transparent; margin-bottom:-1px; white-space:nowrap; }
-.tab:hover { color:#0b0f0d; }
-.tab-active { color:#0b0f0d; font-weight:600; border-bottom-color:#0b7a3e; }
+.tab { padding:8px 12px; font-size:14px; font-weight:500; color:var(--muted); border-bottom:2px solid transparent; margin-bottom:-1px; white-space:nowrap; }
+.tab:hover { color:var(--ink); }
+.tab-active { color:var(--ink); font-weight:600; border-bottom-color:var(--ink); }
 
-/* Day-change pills: green up, red down */
-.pill { display:inline-block; min-width:4.25rem; text-align:right; border-radius:.45rem; padding:.1rem .4rem; font-size:.78rem; font-weight:600; font-variant-numeric:tabular-nums; color:#fff; }
-.pill-up { background:#0b7a3e; }
-.pill-down { background:#d93025; }
+/* Day change: colored text, not filled pills, so a list of them stays calm. */
+.pill { display:inline-block; min-width:4.5rem; text-align:right; font-size:14px; line-height:20px; font-weight:500; }
+.pill-up { color:var(--gain); }
+.pill-down { color:var(--loss); }
+
+/* Tables: one style. Numbers right-aligned (add .num to th/td). */
+.tbl { width:100%; font-size:14px; line-height:20px; border-collapse:collapse; }
+.tbl th { font-size:12px; line-height:16px; font-weight:500; color:var(--muted); text-align:left; padding:8px 0; border-bottom:1px solid var(--line); }
+.tbl td { padding:8px 0; border-bottom:1px solid var(--line); vertical-align:top; }
+.tbl th + th, .tbl td + td { padding-left:16px; }
+.tbl tr:last-child td { border-bottom:0; }
+.num, .tbl .num { text-align:right; white-space:nowrap; }
 
 /* Markets list and chart ranges */
-.mk-row { display:flex; align-items:center; justify-content:space-between; gap:.75rem; padding:.55rem 1rem; border-left:3px solid transparent; }
-.mk-row:hover { background:#f3f4f3; }
-.mk-row-active { background:#e8f6ee; border-left-color:#0b7a3e; }
-.range-btn { border-radius:.55rem; padding:.25rem .6rem; font-size:.8rem; font-weight:600; color:rgba(11,15,13,.6); }
-.range-btn:hover { background:#f3f4f3; }
-.range-btn-active { background:#0b0f0d; color:#fff; }
-.range-btn-active:hover { background:#0b0f0d; }
-.prompt-chip { border:1px solid rgba(11,15,13,.18); border-radius:999px; padding:.3rem .75rem; font-size:.8rem; background:#fff; transition:border-color .15s, background .15s; }
-.prompt-chip:hover { border-color:#0b7a3e; background:#e8f6ee; }
+.mk-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 16px; border-left:2px solid transparent; }
+.mk-row:hover { background:var(--paper); }
+.mk-row-active { background:var(--paper); border-left-color:var(--ink); }
+.range-btn { border-radius:var(--r-control); padding:4px 8px; font-size:12px; line-height:16px; font-weight:500; color:var(--muted); }
+.range-btn:hover { background:var(--paper); color:var(--ink); }
+.range-btn-active, .range-btn-active:hover { background:var(--ink); color:#fff; }
 
-/* Money tab: money-flow bars (labels carry the meaning; color only groups them) */
-.flow-key { display:inline-block; width:.7rem; height:.7rem; border-radius:.2rem; }
-.flow-paychecks { background:#0b7a3e; }
-.flow-invested { background:#0b0f0d; }
-.flow-spending { background:#8a8f8c; }
-.flow-bills { background:#c4c8c6; }
-/* A chevron on every <summary> that opens a slice, a sector or "Show all", so it reads as clickable. It is
-   positioned in the summary's left padding so it doesn't become a flex item and push the label around. */
-summary.chev { list-style: none; cursor: pointer; position: relative; padding-left: 1.1em; }
-summary.chev::-webkit-details-marker { display: none; }
-summary.chev::before { content: "\25B8"; position: absolute; left: 0; top: 0; color: #0b7a3e; transition: transform .15s; }
-details[open] > summary.chev::before { transform: rotate(90deg); }
+/* Money tab: money-flow bars (labels carry the meaning; shade only groups them) */
+.flow-key { display:inline-block; width:10px; height:10px; border-radius:2px; }
+.flow-paychecks { background:#0b0f0d; }
+.flow-invested { background:#545a57; }
+.flow-spending { background:#9aa09d; }
+.flow-bills { background:#cfd3d1; }
+/* A chevron on every <summary> that opens a slice, a sector or "Show all", so it reads as clickable. It sits in
+   the summary's left padding so it doesn't become a flex item and push the label around. */
+summary.chev { list-style:none; cursor:pointer; position:relative; padding-left:20px; }
+summary.chev::-webkit-details-marker { display:none; }
+summary.chev::before { content:""; position:absolute; left:4px; top:calc(10px - 4px); width:6px; height:6px; border-right:1.5px solid var(--muted); border-bottom:1.5px solid var(--muted); transform:rotate(-45deg); transition:transform .12s; }
+details[open] > summary.chev::before { transform:rotate(45deg); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration:0s !important; animation-duration:0s !important; animation-iteration-count:1 !important; }
+}

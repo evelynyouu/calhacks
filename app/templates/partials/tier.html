@@ -1,5 +1,5 @@
 <span id="tier" {% if swap_oob %}hx-swap-oob="true"{% endif %}
-      class="{% if not portfolio %}hidden{% else %}hidden sm:inline-flex{% endif %} items-center gap-1.5 rounded-full bg-moss-50 text-moss-700 text-sm font-medium px-3 py-1"
+      class="{% if not portfolio %}hidden{% else %}hidden sm:inline-flex{% endif %} badge"
       title="{{ tier.behaviors | join(' · ') }}">
   Tier {{ tier.tier }} · {{ tier.balance_range }} · reviews {{ tier.check_frequency | lower }}
 </span>

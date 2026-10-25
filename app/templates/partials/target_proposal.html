@@ -4,47 +4,47 @@
 {% set tc = target_card(a) %}
 {% set prop = tc.proposal %}
 {% set st = tc.status %}
-<section id="target-proposal" {% if swap_oob %}hx-swap-oob="true"{% endif %} class="{% if prop %}card border-2 border-moss-600{% elif st and st.target_date %}card py-3{% else %}hidden{% endif %}" aria-live="polite">
+<section id="target-proposal" {% if swap_oob %}hx-swap-oob="true"{% endif %} class="{% if prop %}card border-ink{% elif st and st.target_date %}card py-4{% else %}hidden{% endif %}" aria-live="polite">
   {% if prop %}
-  <p class="eyebrow">{{ prop.heading }} · suggested change</p>
-  <h2 class="font-display text-xl font-bold mt-1">{{ prop.title }}</h2>
-  <p class="mt-1 text-sm text-ink/75 leading-relaxed">Because {{ prop.because }}. {{ prop.detail }}</p>
+  <p class="text-xs text-muted">{{ prop.heading }} · suggested change</p>
+  <h2 class="text-lg font-semibold mt-1">{{ prop.title }}</h2>
+  <p class="mt-2 text-sm text-ink-2">Because {{ prop.because }}. {{ prop.detail }}</p>
 
   {% if prop.pct %}
-  <dl class="mt-3 grid grid-cols-2 gap-2 text-center">
+  <dl class="mt-4 grid grid-cols-2 gap-4 border-y border-line py-3">
     <div class="stat"><dt>Now</dt><dd>{{ prop.pct.before | int }}% · {{ prop.pct.per_check_before | money }}</dd></div>
-    <div class="stat"><dt>Suggested</dt><dd class="text-moss-600">{{ prop.pct.after | int }}% · {{ prop.pct.per_check_after | money }}</dd></div>
+    <div class="stat"><dt>Suggested</dt><dd>{{ prop.pct.after | int }}% · {{ prop.pct.per_check_after | money }}</dd></div>
   </dl>
-  <p class="mt-1 text-xs text-ink/55">Per {{ prop.pct.paycheck | money }} paycheck, from your bank's numbers.</p>
+  <p class="mt-1 text-xs text-muted">Per {{ prop.pct.paycheck | money }} paycheck, from your bank's numbers.</p>
   {% else %}
-  <table class="mt-3 w-full text-sm">
-    <thead class="text-xs text-ink/50 text-left"><tr><th class="py-1 font-medium">Holding</th><th class="text-right font-medium">Now</th><th class="text-right font-medium">After</th><th class="text-right font-medium">Change</th></tr></thead>
+  <table class="tbl mt-4">
+    <thead><tr><th>Holding</th><th class="num">Now</th><th class="num">After</th><th class="num">Change</th></tr></thead>
     <tbody>
       {% for r in prop.rows %}
       {% set d = r.after - r.before %}
-      <tr class="border-t border-ink/10" data-target-row="{{ r.ticker }}">
-        <td class="py-1.5"><strong>{{ r.ticker }}</strong> <span class="text-ink/60">{{ info(r.ticker).label }}</span></td>
-        <td class="text-right tabular-nums">{{ r.before | pct(1) }}</td>
-        <td class="text-right tabular-nums font-medium">{{ r.after | pct(1) }}</td>
-        <td class="text-right tabular-nums {% if d > 0.00005 %}text-moss-600{% elif d < -0.00005 %}text-ink/70{% else %}text-ink/40{% endif %}">{% if d > 0.00005 or d < -0.00005 %}{{ '%+.1f' % (d * 100) }} pts{% else %}–{% endif %}</td>
+      <tr data-target-row="{{ r.ticker }}">
+        <td><strong>{{ r.ticker }}</strong> <span class="text-muted">{{ info(r.ticker).label }}</span></td>
+        <td class="num">{{ r.before | pct(1) }}</td>
+        <td class="num font-medium">{{ r.after | pct(1) }}</td>
+        <td class="num {% if d > 0.00005 or d < -0.00005 %}text-ink-2{% else %}text-muted{% endif %}">{% if d > 0.00005 or d < -0.00005 %}{{ '%+.1f' % (d * 100) }} pts{% else %}–{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
-  <p class="mt-1 text-xs text-ink/55">Accepting changes your targets only. New paychecks steer toward them; nothing is sold unless you confirm a rebalance.</p>
+  <p class="mt-2 text-xs text-muted">Accepting changes your targets only. New paychecks steer toward them; nothing is sold unless you confirm a rebalance.</p>
   {% endif %}
 
-  <div class="mt-3 flex flex-wrap gap-2">
+  <div class="mt-4 flex flex-wrap gap-2">
     <form hx-post="/p/{{ cid }}/targets/accept" hx-target="#target-proposal" hx-swap="outerHTML"><button class="btn">Accept</button></form>
     <form hx-post="/p/{{ cid }}/targets/dismiss" hx-target="#target-proposal" hx-swap="outerHTML"><button class="btn-ghost">Not now</button></form>
   </div>
   {% elif st and st.target_date %}
   <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
-    <p class="text-ink/70"><span class="font-medium text-ink">Goal date: about {{ st.target_date.strftime('%B %Y') }}</span>
-      <span class="text-ink/55">(the middle of “{{ st.horizon_label | lower }}”, counted from when you set it).</span>
+    <p class="text-ink-2"><span class="font-medium text-ink">Goal date: about {{ st.target_date.strftime('%B %Y') }}</span>
+      <span class="text-muted">(the middle of “{{ st.horizon_label | lower }}”, counted from when you set it).</span>
       {% if st.glide_floor is not none %}Glide path: the schedule now calls for at least {{ st.glide_floor | pct }} bonds; your fund has {{ st.bonds | pct }}.
       {% else %}Bonds start stepping up {{ st.glide_starts.strftime('%B %Y') }}, {{ st.window }} years out.{% endif %}</p>
-    <form hx-post="/p/{{ cid }}/targets/check" hx-target="#target-proposal" hx-swap="outerHTML"><button class="text-sm font-medium text-moss-600 hover:underline">Check my targets</button></form>
+    <form hx-post="/p/{{ cid }}/targets/check" hx-target="#target-proposal" hx-swap="outerHTML"><button class="btn-ghost">Check my targets</button></form>
   </div>
   {% endif %}
 </section>

@@ -1,5 +1,5 @@
 {# Suggested prompts: one tap sends it to the chat (echo=1 brings the question back as a bubble). #}
-<div class="flex gap-2 overflow-x-auto pb-1 px-5" role="group" aria-label="Suggested questions">
+<div class="flex gap-2 overflow-x-auto pb-1 px-6" role="group" aria-label="Suggested questions">
   {% for p in prompts %}
   <button class="prompt-chip shrink-0" hx-post="/p/{{ cid }}/chat" hx-vals='{{ {"message": p, "echo": "1"} | tojson }}'
           hx-target="#chat-messages" hx-swap="beforeend" hx-indicator="#typing" hx-disabled-elt="this">{{ p }}</button>

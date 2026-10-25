@@ -1,14 +1,14 @@
 {% extends "auth/layout.html" %}
 {% block title %}Enter your code · FirstFund{% endblock %}
 {% block card %}
-<h1 class="text-2xl font-bold text-black">Enter your code</h1>
-<p class="mt-1 mb-5 text-sm text-black/60">Open your authenticator app and enter the 6-digit code for FirstFund ({{ email }}).</p>
+<h1 class="text-xl font-semibold text-black">Enter your code</h1>
+<p class="mt-1 mb-6 text-sm text-black/60">Open your authenticator app and enter the 6-digit code for FirstFund ({{ email }}).</p>
 {% include "auth/_error.html" %}
 <form method="post" action="/2fa" class="space-y-3">
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <label for="code" class="sr-only">6-digit code or recovery code</label>
   <input id="code" name="code" required autocomplete="one-time-code" autofocus maxlength="20" spellcheck="false"
-         class="block h-12 w-full rounded-lg border border-black/20 bg-white px-3 text-center font-mono text-xl tracking-[.3em] text-black focus:border-green-700 focus:outline-none focus:ring-2 focus:ring-green-600/30">
+         class="block h-12 w-full rounded-lg border border-black/20 bg-white px-3 text-center font-mono text-lg tracking-[.3em] text-black focus:border-green-700 focus:outline-none focus:ring-2 focus:ring-green-600/30">
   <button class="h-11 w-full rounded-lg bg-green-700 font-medium text-white hover:bg-green-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-600 focus-visible:ring-offset-2">Verify</button>
 </form>
 <p class="mt-4 text-center text-xs text-black/50">Lost your phone? Enter one of your recovery codes (like abcd-efgh-jkmn) in the same box.</p>
