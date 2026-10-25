@@ -15,8 +15,8 @@
       // White, black and green; clay = red for losses; sun = neutral gray for notices; paper = light gray panels.
       colors: { ink: '#0b0f0d', paper: '#f3f4f3', moss: { 50: '#e8f6ee', 100: '#c9ecd7', 500: '#0e9f4f', 600: '#0b7a3e', 700: '#075c2e' },
                 clay: { 100: '#fde8e6', 500: '#d93025' }, sun: { 100: '#f3f4f3', 500: '#0b0f0d' } } } } }
-    // The sidebar's collapsed choice, applied before paint so it doesn't flash open (app.js owns the toggle).
-    try { if (localStorage.getItem('ff-nav') === 'collapsed') document.documentElement.classList.add('nav-collapsed'); } catch (e) {}
+    // The sidebar's state (open / collapsed / hidden), applied before paint so it doesn't flash open (app.js owns the toggles).
+    try { var ffNav = localStorage.getItem('ff-nav'); if (ffNav === 'collapsed' || ffNav === 'hidden') document.documentElement.classList.add('nav-' + ffNav); } catch (e) {}
   </script>
   <script src="/static/vendor/htmx-2.0.4.min.js"></script>
   <script src="/static/vendor/chart-4.4.4.umd.js"></script>
@@ -37,8 +37,13 @@
         <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg>
         <span class="hidden min-[400px]:inline text-sm font-medium" aria-hidden="true">Menu</span>
       </button>
+      {# Desktop only, while the sidebar is hidden (nav.css): brings it back. #}
+      <button type="button" class="nav-show" data-nav-show aria-controls="nav" aria-label="Show sidebar" title="Show the sidebar">
+        <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="1.5"/><path d="M8 4v12"/><path d="m11.5 8 2 2-2 2"/></svg>
+        <span class="text-sm font-medium" aria-hidden="true">Sidebar</span>
+      </button>
       {% endif %}
-      <a href="/" class="font-display text-2xl font-bold tracking-tight {{ 'md:hidden' if with_nav else '' }}">First<span class="text-moss-500">Fund</span></a>
+      <a href="/" class="{{ 'hdr-brand' if with_nav else '' }} font-display text-2xl font-bold tracking-tight {{ 'md:hidden' if with_nav else '' }}">First<span class="text-moss-500">Fund</span></a>
     </div>
     <div class="flex items-center gap-3">
       {% block header_right %}{% endblock %}
@@ -47,6 +52,13 @@
       <span class="hidden md:inline text-sm text-ink/60" title="Signed in">{{ user.email }}</span>
       <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf_token(request) }}">
         <button class="btn-ghost">Sign out</button></form>
+      {% endif %}
+      {% if with_nav %}
+      {# Switch customer: its own control at the far right, set apart by a divider, away from the sidebar's tab icons. #}
+      <a href="/" class="switch-cust" data-switch-customer aria-label="Switch customer (now {{ profile.name }})" title="Back to the customer picker">
+        <span class="switch-cust-avatar" aria-hidden="true">{{ profile.name[0] }}</span>
+        <span class="hidden sm:inline">Switch customer</span><span class="sm:hidden" aria-hidden="true">Switch</span>
+      </a>
       {% endif %}
     </div>
   </header>
