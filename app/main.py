@@ -27,7 +27,10 @@ if not SESSION_SECRET:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    feed.prefetch(list(market.ETFS) + list(market.COMPANIES))   # real prices load in the background
+    all_tickers = list(market.ETFS) + list(market.COMPANIES)
+    feed.prefetch(all_tickers)                          # history cache warms in the background
+    from concurrent.futures import ThreadPoolExecutor
+    ThreadPoolExecutor(max_workers=1).submit(feed.quotes, all_tickers)   # quotes too
     yield
 
 
