@@ -37,9 +37,9 @@
             <p class="text-muted">{% if nessie_offline %}Offline right now; showing saved demo data{% elif nessie_mode == 'live' %}Connected to the live Nessie sandbox{% else %}Demo data (no live connection){% endif %}</p>
             {% if accounts %}<p class="text-xs text-muted">{% for kind, id in accounts.items() %}{{ kind | capitalize }} ••••{{ id[-4:] }}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}</div>
           <dl class="grid grid-cols-3 gap-4 text-right">
-            <div><dt class="text-xs text-muted">Checking</dt><dd>{{ profile.checking_balance | money }}</dd></div>
-            <div><dt class="text-xs text-muted">Savings</dt><dd>{{ profile.cash_cushion | money }}</dd></div>
-            <div><dt class="text-xs text-muted">Paycheck</dt><dd>{{ profile.paycheck_amount | money }}</dd></div>
+            <div><dt class="text-xs text-muted">Checking</dt><dd>{{ profile.checking_balance | money2 }}</dd></div>
+            <div><dt class="text-xs text-muted">Savings</dt><dd>{{ profile.cash_cushion | money2 }}</dd></div>
+            <div><dt class="text-xs text-muted">Paycheck</dt><dd>{{ profile.paycheck_amount | money2 }}</dd></div>
           </dl>
         </li>
         <li class="py-3">
