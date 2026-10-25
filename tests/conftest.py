@@ -13,6 +13,7 @@ from core.broker import get_broker
 def sandbox(monkeypatch, tmp_path):
     monkeypatch.setenv("NESSIE_MODE", "fixture")
     monkeypatch.setenv("MARKET_DATA", "sim")   # no real prices or news in tests: simulated, deterministic
+    monkeypatch.setenv("BROKER", "sim")        # no real broker calls in tests
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)   # app.main loads .env: tests must never call (or pay for) the real Claude API
     monkeypatch.setattr(claude_agent, "_client", None)
     monkeypatch.setenv("AUTH_DISABLED", "1")   # skip the sign-in gate; tests/test_auth.py turns it back on
@@ -31,6 +32,9 @@ def sandbox(monkeypatch, tmp_path):
     nessie.go_online()   # a test that simulated an outage must not leave the app "offline"
     nessie.forget_new_customers()   # customers made with "Start as a new customer"
     nessie.reset()
+    import core.broker as _broker_mod
+    _broker_mod._broker = None        # force re-init as SimBroker under BROKER=sim
+    _broker_mod._broker_mode = None
     app_state._SESSIONS.clear()   # chat sessions, simulated trades and market shocks are in memory too
     get_broker().reset()
     market.clear_shocks()
