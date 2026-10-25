@@ -105,7 +105,8 @@ Claude never generates numbers. Every number on screen is rendered by Jinja from
    `firstfund` web service (free plan, health check at `/health`).
 2. In the service's **Environment** tab, fill in the `sync: false` secrets: `ANTHROPIC_API_KEY`,
    `NESSIE_API_KEY`, `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`. Add `NESSIE_MODE=live` for real Nessie;
-   without it the site runs on demo data.
+   without it the site runs on demo data. `SESSION_SECRET` is generated for you the first time, so a sleep
+   or redeploy doesn't invalidate open pages. Sign-in stays off unless you add `LOGIN_ENABLED=1`.
 3. Deploy (push to the connected branch, or **Manual Deploy**), then open the URL.
 
 Render's free tier sleeps after inactivity and the first request can take 30–60s. Open the site a
