@@ -1,7 +1,6 @@
 {# Portfolio tab: the fund's value, its total gain since the start, today's move, and each holding's move today. Rows link to the Markets tab. #}
 <section id="today" {% if swap_oob %}hx-swap-oob="true"{% endif %} class="card">
   {# Every figure comes from core/figures.py (fig); this only formats it. Total since you started leads, today second. #}
-  <div class="flex flex-wrap items-start justify-between gap-2">
   <div>
     <p class="eyebrow">Your fund</p>
     <p class="font-display text-4xl font-bold mt-1 tabular-nums" data-fig="value">{{ fig.value | money2 }}</p>
@@ -14,10 +13,6 @@
     <p class="mt-0.5 text-sm font-medium {{ 'text-moss-600' if up else 'text-clay-500' }}" title="{{ defs.today }}" data-fig="today">
       {{ '+' if up else '−' }}{{ fig.day_change | abs | money2 }} ({{ fig.day_pct | signed(2) }}) <span class="font-normal text-ink/60">today</span>
     </p>
-  </div>
-    <span class="rounded-full px-2 py-0.5 text-xs {{ 'bg-moss-50 text-moss-700' if live_market and not fast_forwarded else 'bg-ink/5 text-ink/60' }}">
-      {{ price_label(a.today) }}
-    </span>
   </div>
   <ul class="mt-4 divide-y divide-ink/10">
     {% for r in rows %}

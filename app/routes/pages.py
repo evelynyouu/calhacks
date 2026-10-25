@@ -18,7 +18,7 @@ from agent import claude_agent
 from agent.tools import INDEXES, news_tickers
 from app.routes.auth import auth_disabled, csrf_token
 from app import state
-from core import backtest, builder, explain, feed, figures, followups, fund, intake, market, nessie
+from core import backtest, builder, disclosure, explain, feed, figures, followups, fund, intake, market, nessie
 from core.broker import get_broker, values
 from core.intake import QUESTIONS, AnswerError, parse
 from core.market import ETFS
@@ -40,6 +40,7 @@ templates.env.globals["info"] = market.info
 templates.env.globals["price_label"] = market.price_label
 templates.env.globals["csrf_token"] = csrf_token
 templates.env.globals["defs"] = figures.DEFINITIONS   # one definition per return figure
+templates.env.globals["disclosure"] = disclosure.disclosure   # header line + footer in base.html
 
 MARKET_DROP_PCT = -10.0
 RAISE_PCT = 10.0

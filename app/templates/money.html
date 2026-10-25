@@ -3,11 +3,6 @@
 {% block header_right %}{% include "partials/tier.html" %}{% endblock %}
 {% block content %}
 {# Bank and investing together. Every number comes from app/routes/money.py; this file only formats them. #}
-{% macro bank_badge() %}
-{% if nessie_offline %}<span class="rounded-full bg-ink px-2 py-0.5 text-xs text-white" title="{{ nessie_offline }}">Nessie offline: demo data</span>
-{% elif nessie_mode == 'live' %}<span class="rounded-full bg-moss-50 px-2 py-0.5 text-xs text-moss-700">Live: Capital One Nessie</span>
-{% else %}<span class="rounded-full bg-ink/5 px-2 py-0.5 text-xs text-ink/60">Bank: demo data</span>{% endif %}
-{% endmacro %}
 {% macro signed_money(v) %}{{ '+' if v >= 0 else '−' }}{{ v | abs | money2 }}{% endmacro %}
 
 <div class="flex flex-wrap items-end justify-between gap-2 mb-4">
@@ -15,10 +10,6 @@
     <p class="eyebrow">Money</p>
     <h1 class="font-display text-3xl font-bold">Your bank and your fund</h1>
     <p class="text-sm text-ink/60">A mock bank (Capital One's Nessie sandbox): pretend money, real arithmetic.</p>
-  </div>
-  <div class="flex flex-wrap gap-1.5">
-    {{ bank_badge() }}
-    {% if has_fund %}<span class="rounded-full px-2 py-0.5 text-xs {{ 'bg-moss-50 text-moss-700' if live_market and not fast_forwarded else 'bg-ink/5 text-ink/60' }}">{{ price_label(a.today) }}</span>{% endif %}
   </div>
 </div>
 
@@ -106,7 +97,6 @@
     <section class="card" id="activity">
       <div class="flex flex-wrap items-baseline justify-between gap-2">
         <p class="eyebrow">Recent bank activity</p>
-        {{ bank_badge() }}
       </div>
       {% if feed %}
       <ul class="mt-2 divide-y divide-ink/10 text-sm">
