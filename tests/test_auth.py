@@ -258,5 +258,5 @@ def test_login_switched_off_by_default_removes_the_pages_and_the_gate(monkeypatc
     monkeypatch.delenv("LOGIN_ENABLED")
     c = TestClient(app)
     assert c.get("/login").status_code == 404 and c.get("/signup").status_code == 404
-    r = c.get("/p/sam", follow_redirects=False)
+    r = c.get("/p/sam/link", follow_redirects=False)   # a persona's first stop: the demo bank link
     assert r.status_code == 200 and "Sign out" not in r.text

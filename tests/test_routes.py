@@ -24,6 +24,12 @@ INTAKE = [  # (form data, what the chat shows as the user's message)
 ]
 
 
+def link(cid: str) -> str:
+    """Go through the demo bank link (every customer does, before the intake) and return the chat page."""
+    client.post(f"/p/{cid}/link", data={"checking": "checking", "investing": "investing"})
+    return client.get(f"/p/{cid}").text
+
+
 @pytest.fixture(autouse=True)
 def offline(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
@@ -45,13 +51,13 @@ def test_unknown_persona_404():
 
 
 def test_first_visit_greets_and_asks_the_first_question_with_a_text_box():
-    page = client.get("/p/sam").text
+    page = link("sam")
     assert "Hi Sam!" in page and "What are you investing for?" in page
     assert '<textarea name="value"' in page and "Question 1 of 8" in page
 
 
 def test_full_intake_builds_the_fund():
-    client.get("/p/sam")
+    link("sam")
     for i, (form, shown) in enumerate(INTAKE):
         r = client.post("/p/sam/answer", data=form)
         assert r.status_code == 200 and shown in r.text, i
@@ -70,7 +76,7 @@ def test_full_intake_builds_the_fund():
 
 
 def test_bad_answer_explains_and_stays_on_the_question():
-    client.get("/p/sam")
+    link("sam")
     client.post("/p/sam/answer", data={"value": "house"})
     r = client.post("/p/sam/answer", data={"value": "lots"})
     assert "Type a dollar amount" in r.text and state.get("sam").step == 1
@@ -171,14 +177,15 @@ def test_start_over_resets_everything():
     client.post("/p/sam/paycheck")
     r = client.post("/p/sam/reset", follow_redirects=False)
     assert r.status_code == 303
-    page = client.get("/p/sam").text
+    assert client.get("/p/sam", follow_redirects=False).headers["location"] == "/p/sam/link"   # reset un-links
+    page = link("sam")
     assert "Question 1 of 8" in page and state.get("sam").fund.contributed == 0
 
 
 # ---------- Tabs after the intake ----------
 
 def test_finishing_the_intake_shows_the_tabs():
-    client.get("/p/sam")
+    link("sam")
     for form, _ in INTAKE:
         r = client.post("/p/sam/answer", data=form)
     assert 'id="nav" hx-swap-oob' in r.text and "/p/sam/markets" in r.text

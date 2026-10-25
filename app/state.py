@@ -20,6 +20,7 @@ class Session:
     watchlist: list[str] = field(default_factory=lambda: list(DEFAULT_WATCHLIST))
     prefs: dict = field(default_factory=lambda: dict(DEFAULT_PREFS))   # notification settings
     rundown: dict | None = None                                        # {"text", "at"}: the News tab's AI rundown
+    linked: dict | None = None   # the demo bank link (core.onboarding.link): {"bank", "checking", "investing", "note"}
 
     def __post_init__(self):
         if self.fund is None:

@@ -69,7 +69,9 @@ def _session(cid: str) -> state.Session:
             s.step = len(QUESTIONS)
             s.say(f"Welcome back, {profile.name}. Your fund has been running for a year. Open the report to see "
                   f"how it's doing, or press “Paycheck arrives” to watch the next paycheck invest itself.")
-        else:
+        elif s.linked:   # the bank link step (app/routes/onboarding.py) comes before the intake
+            if s.linked.get("note"):
+                s.say(s.linked["note"])
             s.say(claude_agent.greeting(profile.name))
             s.say(claude_agent.question_text(s))
     return s
@@ -120,6 +122,8 @@ def index(request: Request):
 def dashboard(request: Request, cid: str):
     """The intake chat until the fund is built, then the Portfolio tab."""
     s = _session(cid)
+    if not s.done and not s.linked:
+        return RedirectResponse(f"/p/{cid}/link", status_code=303)
     if not s.done:
         return _render("dashboard.html", _ctx(request, cid))
     return _render("portfolio.html", _ctx(request, cid, tab="portfolio", prompts=claude_agent.suggested_prompts(s)[:3],
@@ -183,6 +187,8 @@ def answer(request: Request, cid: str, value: str = Form(""), values: list[str] 
     q = s.question
     if q is None:
         raise HTTPException(400, "The intake is already done")
+    if not s.linked:
+        raise HTTPException(400, "Link a bank account first")
     try:
         stored, shown = parse(q, value, values, other)
     except AnswerError as e:
