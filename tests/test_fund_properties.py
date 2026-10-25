@@ -177,8 +177,8 @@ def _golden(cid):
 #   Maria shops at Walmart, Starbucks, Uber; Walmart is also an "everyday essentials" pick, so it's capped.
 #   Jordan's Corner Cafe is local, so it counts toward the biggest restaurant companies (MCD, SBUX, YUM).
 #   Sam's Trader Joe's is private: its grocery spending goes to WMT, COST, KR.
-#   Alex is built at 59, not 67: the US index's companies swing a bit more than VTI (beta ~1.09), so the
-#   riskiest mix within his 25% drop has 35% bonds instead of 30%. Still Growth, so no override offer.
+#   Alex is at 67 with 30% bonds, as before: the max-drop check counts the US index as the market (VTI's real
+#   returns), since it follows the market by design.
 GOLDEN = {
     "maria": ("Conservative", 0, {"bonds": 0.65, "intl": 0.105, "us_core": 0.1153, "spend": 0.05, "interest": 0.0795,
                                   "added": 0}, ["SBUX", "UBER", "WMT"], ["COST", "WMT"],
@@ -189,7 +189,7 @@ GOLDEN = {
     "sam": ("Growth", 50, {"bonds": 0.4, "intl": 0.18, "us_core": 0.1666, "spend": 0.0998, "interest": 0.1539,
                            "added": 0}, ["COST", "KR", "NFLX", "TGT", "WMT"], ["AAPL", "JNJ", "LLY", "MSFT"],
             ["bonds", "combined", "core", "drop", "horizon", "score", "spend", "swing", "tilt"]),
-    "alex": ("Growth", 59, {"bonds": 0.35, "intl": 0.195, "us_core": 0.2015, "spend": 0.1, "interest": 0.1539,
+    "alex": ("Growth", 67, {"bonds": 0.3, "intl": 0.21, "us_core": 0.2368, "spend": 0.1, "interest": 0.1539,
                             "added": 0}, ["AMZN", "COST", "TSLA"], ["AAPL", "JNJ", "LLY", "MSFT"],
              ["bonds", "combined", "core", "drop", "horizon", "score", "spend", "swing", "tilt"]),
 }

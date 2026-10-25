@@ -14,7 +14,7 @@ from core.policy import tier_for
 from core.portfolio import (BOND_MAX, BOND_MIN, BOND_STEP, CONCENTRATION_NOTE, CORE_NAME_CAP, INTL_SHARE, LEVEL_BAND,
                             MIN_PICK, MIN_TILT, PER_INTEREST_CAP, RISK_LABELS, SPEND_CAP_BY_RISK, SPEND_PICKS,
                             STOCK_CAP_BY_RISK, STOCK_EACH, SWING_REF, THEME_LABELS, THEME_PICKS, THEMES,
-                            TILT_CAP_BY_RISK, US_SHARE, lookthrough, swing)
+                            TILT_CAP_BY_RISK, US_SHARE, lookthrough, share, swing)
 from core.universe import core_companies
 from core.profile import get_profile
 from core.rebalance import DRIFT_ABS, DRIFT_REL
@@ -57,14 +57,50 @@ def build(acct: FundAccount) -> dict:
     }
 
 
+# Which reasons explain a holding's part in each slice ("combined" goes with every part of a shared company)
+SLICE_REASONS = {"bonds": ("bonds",), "intl": ("core",), "us_core": ("core",), "spend": ("spend",),
+                 "interest": ("tilt",), "added": ("stock",)}
+
+
 def _slices(p: Portfolio) -> list[dict]:
-    """The fund's parts in SLICES order, each with its exact share and its holdings' reasons (for the page)."""
-    weights, groups = p.slice_weights(), p.by_slice()
-    return [{"key": k, "label": label, "weight": weights[k],
-             "holdings": [{"ticker": h.ticker, "name": h.name, "weight": h.weight, "sector": h.sector,
-                           "texts": [r.text for r in p.reasons if r.ticker == h.ticker and r.kind not in ADJUST_KINDS]}
-                          for h in groups[k]]}
-            for k, label in SLICES]
+    """The fund's parts in SLICES order. Each lists every company in it with that slice's own part (a company held
+    for two reasons appears under both), so a slice's holdings add up to its share. "position" is the whole holding."""
+    weights = p.slice_weights()
+    position = {h.ticker: h for h in p.holdings}
+    out = []
+    for k, label in SLICES:
+        part = p.parts.get(k) if p.parts else {h.ticker: h.weight for h in p.by_slice()[k]}
+        order = sorted(part, key=lambda t: -part[t])
+        out.append({"key": k, "label": label, "weight": weights[k], "holdings": [
+            {"ticker": t, "name": position[t].name, "weight": part[t], "position": position[t].weight,
+             "sector": position[t].sector,
+             "texts": [r.text for r in p.reasons if r.ticker == t and r.kind in SLICE_REASONS[k] + ("combined",)]}
+            for t in order if t in position]})
+    return out
+
+
+def slice_facts(p: Portfolio) -> list[str]:
+    """The fund in one line per slice (Claude's facts and the offline message): exact shares, names not 60 rows."""
+    w, parts = p.slice_weights(), p.parts
+    def names(k, n=4):
+        top = sorted(parts.get(k, {}).items(), key=lambda tw: -tw[1])[:n]
+        return ", ".join(f"{market.name(t)} ({t})" for t, _ in top)
+    if not parts:   # a portfolio built outside the custom-index builder
+        return [f"Holdings: {', '.join(f'{h.ticker} {share(h.weight)}' for h in p.holdings)}."]
+    out = [f"Bonds: {share(w['bonds'])} (BND, a fund).", f"International stocks: {share(w['intl'])} (VXUS, a fund)."]
+    if w["us_core"]:
+        out.append(f"Your US index: {share(w['us_core'])}, {len(parts.get('us_core', {}))} companies weighted by size; "
+                   f"the biggest are {names('us_core', 3)}.")
+    if w["spend"]:
+        out.append(f"Where you spend: {share(w['spend'])}, in {names('spend')}, from the customer's purchases in the "
+                   f"last 90 days. This personalizes the fund; it isn't a prediction those companies will do well.")
+    elif any(r.kind == "spend" and r.facts.get("empty") for r in p.reasons):
+        out.append("Where you spend: no purchases found in the last 90 days, so there's no such slice.")
+    if w["interest"]:
+        out.append(f"Your interests: {share(w['interest'])}, in {names('interest')}.")
+    if w["added"]:
+        out.append(f"Companies you added: {share(w['added'])}, {names('added')}.")
+    return out
 
 
 def intro_facts(acct: FundAccount) -> list[str]:

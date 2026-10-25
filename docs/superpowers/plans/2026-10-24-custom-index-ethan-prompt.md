@@ -30,7 +30,13 @@ are marked DONE below. Read the final contract notes first:
 - **`Portfolio.parts`** is `{slice: {ticker: weight}}`, each slice's exact share. **Use `p.slice_weights()`**,
   which reads `parts`, for the pie and the slice subtotals. Don't add up `by_slice()` holdings: a Costco that's
   both an index company and a spend pick would count fully in "spend".
-- **`explain.build(acct)["slices"]`** already carries each slice's exact weight and its holdings' reason texts.
+- **`explain.build(acct)["slices"]`** carries each slice's exact weight and lists *every* company in it with that
+  slice's own part (`weight`). So Costco can appear under both "Your US index" and "Where you spend". `position`
+  is the whole holding. Each slice's holdings add up to its weight.
+- **Rebalancing inside the US index:** like any index fund, price moves between its companies aren't drift
+  (`core/rebalance.targets`). When a real rebalance runs (stocks vs bonds, or a personal pick fell behind), the
+  index sells proportionally, which shows as ~50 small trades. **Show trades grouped by slice** in the report and
+  the trades panel (for example "Your US index: sell $2,400 across 54 companies"), with the full list expandable.
 
 Your half is everything that **shows or uses** the fund. Evelyn's half decides **what's in it**. You work in parallel against the contract:
 - `Holding.sector`, `Holding.slice`, the `SLICES` labels

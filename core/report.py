@@ -19,7 +19,7 @@ from core.market import ETFS, HOLDINGS
 from core.policy import tier_for
 from core.portfolio import THEME_LABELS, THEMES, plain_index
 from core.profile import PAY_PERIOD_DAYS, get_profile
-from core.rebalance import band, drift as drift_of, off_target, rebalance_trades
+from core.rebalance import targets as rebalance_targets, band, drift as drift_of, off_target, rebalance_trades
 from core.sim import portfolio_assumptions, simulate
 
 QUARTER_DAYS = 91
@@ -122,7 +122,7 @@ def build_report(acct: FundAccount) -> dict:
     targets = {h.ticker: h.weight for h in p.holdings}
     rep["finances"] = build_finances(
         get_profile(cid), acct.answers, total, per_paycheck, PAYCHECKS_PER_YEAR, sim.expected_return_pct,
-        relation["beta"], targets.get("BND", 0.0), round(sum(h.weight for h in p.holdings if h.role != "core"), 4),
+        relation["beta"], targets.get("BND", 0.0), _personal_share(p),
         summary["fee_dollars"], sim.p50[-1])
     rep["facts"] = _facts(rep)
     rep["narrative"] = _narrative(rep)
@@ -181,7 +181,7 @@ def benchmark_weights(p) -> dict[str, float]:
 
 
 def _three_fund_benchmark(p) -> dict[str, float]:
-    """The fund's own core mix: VTI/VXUS/BND at the fund's stock/bond split. Every US holding (the US index of
+    """An older fund's core mix: VTI/VXUS/BND at the fund's stock/bond split. Every US holding (the US index of
     single companies, interests, where you spend, added companies, or a VTI core) counts as US stocks, since
     the personal slices come out of the US part. Read from the target weights, so it holds for any bond share."""
     w = {h.ticker: h.weight for h in p.holdings}
@@ -256,7 +256,7 @@ def _picks(r: returns.Replay, p, bench: dict[str, float], px, since: date) -> li
 
 def _holdings(acct, vals, total, month_ago) -> list[dict]:
     p, today = acct.portfolio, acct.today
-    targets = {h.ticker: h.weight for h in p.holdings}
+    targets = rebalance_targets(p, vals)   # inside a custom index, targets follow prices (core/rebalance.py)
     shares, cost = get_broker().positions(acct.customer_id), get_broker().cost_basis(acct.customer_id)
     drifts = drift_of(p, vals) if total else {t: -w for t, w in targets.items()}
     flagged = off_target(p, vals) if total else {}
@@ -349,7 +349,7 @@ def _recommendations(acct, vals, total, holdings, companies, interests, mkt, tie
         for h in off[:3]:
             seen, limit = f"{h['weight']:.1%}", f"{h['band'] * 100:.1f} points"
             facts.append(f"{h['ticker']} ({h['label']}) is {seen} of your fund; its target is {h['target']:.1%}. "
-                         f"We flag a fund that is {limit} off its target ({abs(h['drift']) * 100:.1f} here).")
+                         f"We flag a holding that is {limit} off its target ({abs(h['drift']) * 100:.1f} here).")
             trig.append({"what": h["ticker"], "text": facts[-1], "value_text": f"{abs(h['drift']) * 100:.1f}",
                          "threshold_text": limit})
         if tier.auto_trades:
@@ -470,6 +470,14 @@ def _stock_sleeve(holdings: list[dict], today: date) -> dict | None:
             "below_high": round((index[-1] / max(index) - 1) * 100, 2)}
 
 
+def _personal_share(p) -> float:
+    """The customer's own picks: where they spend, their interests, companies they added (exact parts for a
+    custom index; otherwise every holding outside the core funds)."""
+    if getattr(p, "parts", None):
+        return round(sum(sum(p.parts.get(k, {}).values()) for k in ("spend", "interest", "added")), 4)
+    return round(sum(h.weight for h in p.holdings if h.role != "core"), 4)
+
+
 def _interest_parts(p, holdings: list[dict]) -> dict[str, float]:
     """{ticker: target share} of the interest slice. The custom-index builder records it exactly (a company held
     for an interest and in the US index counts only its interest part); otherwise it's the tilt holdings."""
@@ -558,8 +566,9 @@ def _facts(rep: dict) -> list[str]:
         span = f"since you started on {_day(p['start'])}" if p["from_start"] else f"from {_day(p['start'])} to {_day(p['end'])}"
         facts.append(f"{span[0].upper()}{span[1:]} ({p['days']} days), your fund returned {_pct(p['twr_pct'], 2)} including estimated income "
                      f"({_pct(p['twr_price_pct'], 2)} from prices alone).")
-        facts.append(f"Its benchmark, VTI/VXUS/BND at your fund's own {1 - ret['benchmark']['BND']:.0%} stock / {ret['benchmark']['BND']:.0%} "
-                     f"bond split with the same deposits, returned {_pct(p['benchmark_pct'], 2)}, so your choices added {_pct(p['vs_benchmark_pts'], 2)[:-1]} points. "
+        facts.append(f"Its benchmark, your plain mix (the same stock / bond split, {1 - ret['benchmark']['BND']:.0%} / "
+                     f"{ret['benchmark']['BND']:.0%}, with nothing personal: your US index at its normal weights, VXUS and BND) "
+                     f"with the same deposits, returned {_pct(p['benchmark_pct'], 2)}, so your choices added {_pct(p['vs_benchmark_pts'], 2)[:-1]} points. "
                      f"The S&P 500 returned {_pct(p['spy_pct'], 2)}.")
         facts.append(f"In those {p['days']} days the fund started at ${p['start_value']:,.2f}, you added ${p['deposits']:,.2f}, "
                      f"the market moved it ${p['market_gain']:+,.2f}, and it ended at ${p['end_value']:,.2f}.")

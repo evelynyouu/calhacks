@@ -61,11 +61,16 @@ def spending_profile(cid: str, days: int = WINDOW_DAYS) -> list[Spend]:
 
 def company_spend(profile: list[Spend]) -> dict[str, float]:
     """{ticker: dollars}. A category fallback splits its dollars evenly over the category's leaders."""
-    out: dict[str, float] = {}
+    return {t: sum(d for _, d, _ in parts) for t, parts in company_spend_detail(profile).items()}
+
+
+def company_spend_detail(profile: list[Spend]) -> dict[str, list[tuple[str, float, str]]]:
+    """{ticker: [(merchant, dollars, via)]}: where each company's dollars came from."""
+    out: dict[str, list[tuple[str, float, str]]] = {}
     for s in profile:
         tickers = [s.ticker] if s.ticker else CATEGORY_LEADERS.get(s.category, []) if s.via == "category" else []
         for t in tickers:
-            out[t] = out.get(t, 0.0) + s.dollars / len(tickers)
+            out.setdefault(t, []).append((s.merchant, s.dollars / len(tickers), s.via))
     return out
 
 

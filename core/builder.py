@@ -148,8 +148,10 @@ def _drop_reason(answers: dict, p: Portfolio, why: list[str], used: int, overrid
     worst = f"{p.worst_year}, {abs(p.worst_year_return):g}%"
     bonds = next((h.weight for h in p.holdings if h.ticker == "BND"), 0.0)
     lowered = "drop" in why and not override
+    how = ("Worst years use the real 2008 and 2022 returns of the market, VXUS and BND; single companies outside "
+           "your US index are estimated from how much they move with the market.")
     if override and not within:
-        text = (f"This mix's worst real year was {worst}, more than the {d:g}% drop you said you could live with. "
+        text = (f"This mix's worst year was {worst}, more than the {d:g}% drop you said you could live with. "
                 f"You chose it over our suggestion.")
     elif not within:
         text = (f"You said you could live with a {d:g}% drop in a year. No mix of these funds stayed within that in "
@@ -160,8 +162,8 @@ def _drop_reason(answers: dict, p: Portfolio, why: list[str], used: int, overrid
                 f"further than that in 2008 or 2022: a risk score of {used}, {bonds:.0%} bonds. Its worst year was "
                 f"{worst}.")
     else:
-        text = f"This mix's worst real year was {worst}, within the {d:g}% drop you said you could live with."
-    return [Reason("drop", text, facts={"max_drop": d, "worst_year": p.worst_year, "worst_return": p.worst_year_return,
+        text = f"This mix's worst year was {worst}, within the {d:g}% drop you said you could live with."
+    return [Reason("drop", f"{text} {how}", facts={"max_drop": d, "worst_year": p.worst_year, "worst_return": p.worst_year_return,
                                         "lowered": lowered, "warn": not within})]
 
 

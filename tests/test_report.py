@@ -391,7 +391,7 @@ def test_the_agent_tool_returns_json_with_python_numbers_only():
 def test_facts_put_the_customers_own_fund_first_and_carry_the_dates_and_benchmark():
     a = account("alex", started_days_ago=365, starting_amount=60_000)
     facts = build_report(a)["facts"]
-    assert facts[0].startswith("Fund value") and "VTI/VXUS/BND" in facts[2] and f"{(a.today - timedelta(days=7)).strftime('%b')}" in facts[1]
+    assert facts[0].startswith("Fund value") and "plain mix" in facts[2] and f"{(a.today - timedelta(days=7)).strftime('%b')}" in facts[1]
     assert any("Looking ahead" in f for f in facts) and facts[-1].startswith("All prices here are simulated")
     assert max(i for i, f in enumerate(facts) if "Fund value" in f or "benchmark" in f) < min(i for i, f in enumerate(facts) if "market is" in f)
 

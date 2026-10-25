@@ -130,7 +130,8 @@ def report_summary(session: Session) -> dict:
         "as_of": rep["as_of"], "summary": rep["summary"],
         "period": window(ret["period"]), "since_start": window(ret["since_start"]),
         "benchmark_weights": ret["benchmark"],
-        "benchmark_note": "The benchmark is VTI/VXUS/BND at this fund's own stock/bond split, with the same deposits.",
+        "benchmark_note": "The benchmark is this fund's plain mix: the same stock/bond split with nothing personal (the US "
+                          "index at its normal weights, VXUS and BND), with the same deposits.",
         "holdings": [{k: h[k] for k in ("ticker", "label", "value", "weight", "target", "off_target", "day_pct",
                                         "period_pct", "gain_pct", "simulated")} for h in rep["holdings"]],
         "top_companies": [{k: c[k] for k in ("name", "ticker", "share", "via", "period_pct")} for c in rep["companies"][:5]],

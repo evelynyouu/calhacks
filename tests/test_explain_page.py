@@ -77,8 +77,9 @@ def test_explanation_data_has_the_slices_in_order_with_exact_weights():
     assert [x["key"] for x in how["slices"]] == [k for k, _ in SLICES]
     for x in how["slices"]:
         assert x["weight"] == p.slice_weights()[x["key"]] and x["label"] == dict(SLICES)[x["key"]]
-        for h in x["holdings"]:
-            assert h["texts"] == [r.text for r in p.reasons if r.ticker == h["ticker"] and r.kind not in explain.ADJUST_KINDS]
+        for h in x["holdings"]:   # the reasons for this slice's part of the holding (and "held for N reasons")
+            kinds = explain.SLICE_REASONS[x["key"]] + ("combined",)
+            assert h["texts"] == [r.text for r in p.reasons if r.ticker == h["ticker"] and r.kind in kinds]
     titles = [sec["title"] for sec in how["full"]]
     assert "Why your own index" in titles and "Where you spend" in titles and "Why some parts stay funds" in titles
     spend = next(sec for sec in how["full"] if sec["title"] == "Where you spend")

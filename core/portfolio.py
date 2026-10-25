@@ -101,7 +101,7 @@ def build_portfolio(risk_level: int, interests: list[str] | None = None, stocks:
     reasons = (_holding_reasons(holdings, parts, kind, score, overlaps) + reasons + _overlap_reasons(held_funds)
                + _lookthrough_reasons(holdings))
     fee = sum(h.weight * h.expense_ratio for h in holdings)
-    wy, wr = worst_year(holdings)
+    wy, wr = _worst_of_parts(parts)
     exact = {k: {t: round(w, 4) for t, w in v.items() if round(w, 4) > 0} for k, v in parts.items()}
     return Portfolio(risk_level, RISK_LABELS[risk_level], holdings, round(fee, 3), wy, wr,
                      warnings_from(reasons), reasons, exact, score)
@@ -111,11 +111,19 @@ def worst_return_for(risk_level: int, interests, stocks, *, bond_share: float, s
     """Just the fund's real-worst-year return (percent) for these choices: what core/builder.py searches
     over for the max-drop ceiling, without building reasons."""
     parts, _ = _compose(min(4, max(1, int(risk_level))), interests, stocks, bond_share, spending, [])
-    total: dict[str, float] = {}
-    for part in parts.values():
-        for t, w in part.items():
-            total[t] = total.get(t, 0.0) + w
-    return worst_year([Holding(t, t, w, "core", 0.0) for t, w in total.items()])[1]
+    return _worst_of_parts(parts)[1]
+
+
+def _worst_of_parts(parts: dict[str, dict[str, float]]) -> tuple[int, float]:
+    """The fund's worst of 2008 and 2022 from its exact slice weights (so the max-drop search and the built fund
+    agree to the decimal). The US index follows the market by design, so that part counts as VTI's real return;
+    VXUS and BND are real; other companies are beta x VTI's real return (an estimate)."""
+    weights: dict[str, float] = {"VTI": sum(parts.get("us_core", {}).values())}
+    for k, part in parts.items():
+        if k != "us_core":
+            for t, w in part.items():
+                weights[t] = weights.get(t, 0.0) + w
+    return worst_year([Holding(t, t, w, "core", 0.0) for t, w in weights.items()])
 
 
 def _compose(risk_level: int, interests, stocks, bond_share: float, spending, reasons: list[Reason]):
@@ -265,10 +273,8 @@ def _spend_slice(spending, cap: float, reasons: list[Reason]) -> dict[str, float
                                   {"dropped": True, "dollars": round(dollars[t], 2)}))
     total = sum(dollars[t] for t in kept)
     out = {t: math.floor(cap * dollars[t] / total * 1e4) / 1e4 for t in kept}   # down, so rounding can't pass the cap
-    via = {}
-    for s in spending:
-        for t in ([s.ticker] if s.ticker else []):
-            via.setdefault(t, []).append(s)
+    from core.spending import company_spend_detail
+    detail = company_spend_detail(spending)
     for s in spending:
         if s.via == "category" and not s.ticker:
             from core.spending import CATEGORY_LEADERS
@@ -280,11 +286,11 @@ def _spend_slice(spending, cap: float, reasons: list[Reason]) -> dict[str, float
                                                f"{', '.join(market.name(t) for t in leaders)}.", None,
                                       {"merchant": s.merchant, "category": s.category, "tickers": leaders}))
     for t, w in out.items():
-        names = " and ".join(sorted({x.merchant for x in via.get(t, [])})) or "its category"
-        reasons.append(Reason("spend", f"{share(w)} in {market.name(t)} ({t}): you spent ${dollars[t]:,.0f} at "
-                                       f"{names} in the last 90 days. This personalizes your fund; it isn't a "
-                                       f"prediction that the company will do well.", t,
-                              {"weight": round(w, 4), "dollars": round(dollars[t], 2)}))
+        where = " and ".join(f"${d:,.0f} at {m}" if how == "brand" else f"${d:,.0f} of your spending at {m}"
+                             for m, d, how in sorted(detail.get(t, []), key=lambda x: -x[1]))
+        reasons.append(Reason("spend", f"{share(w)} in {market.name(t)} ({t}): you spent {where} in the last 90 "
+                                       f"days. This personalizes your fund; it isn't a prediction that the company "
+                                       f"will do well.", t, {"weight": round(w, 4), "dollars": round(dollars[t], 2)}))
     return out
 
 
