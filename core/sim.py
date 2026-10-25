@@ -5,10 +5,12 @@ data/assumptions.csv (one row per fund; single companies share the `company` row
 together according to CORRELATION below, with stocks and bonds only weakly linked. Return and volatility for
 the whole fund follow from the target weights, less the fund's yearly fee. Deposits arrive monthly.
 
-These are ASSUMPTIONS, not forecasts. They are rounded planning figures in the general range of long-run
-historical US returns (stocks near 10% a year, bonds near 5%, before today's lower starting yields) and of
-published long-term capital-market assumptions; they are not copied from one source and should be replaced
-with sourced figures. The UI labels the projection as assumptions.
+These are ASSUMPTIONS, not forecasts. Returns and volatilities for the broad funds (US and international stocks,
+bonds, gold, REITs) and the correlations between them are from J.P. Morgan Asset Management's 2026 Long-Term
+Capital Market Assumptions (Oct 2025). Sector funds and single companies are not forecast there, so they get
+the US large cap return and a volatility and correlations measured from about two years of daily prices. Each
+row of data/assumptions.csv and data/correlations.csv names its source, and scripts/build_assumptions.py
+rebuilds both files. The UI labels the projection as assumptions.
 
 simulate() keeps its old signature. The band at each year is the sum, over every dollar put in, of that
 dollar's own lognormal band (its low/typical/high after the time it has been invested), which treats the
@@ -30,20 +32,11 @@ with (DATA / "assumptions.csv").open() as _f:
     ASSUMPTIONS: dict[str, dict] = {r["ticker"]: {"group": r["group"], "mean": float(r["expected_return_pct"]) / 100,
                                                   "vol": float(r["volatility_pct"]) / 100} for r in csv.DictReader(_f)}
 
-# Correlation between two different funds, by group. A fund is perfectly correlated with itself.
-# Stocks and bonds are only weakly linked (they fell together in 2022, but not usually); single companies
-# share less with each other than funds do.
-CORRELATION: dict[frozenset, float] = {
-    frozenset({"us_stocks"}): 0.95, frozenset({"intl_stocks"}): 0.90, frozenset({"sector"}): 0.75,
-    frozenset({"company"}): 0.50, frozenset({"bonds"}): 0.90, frozenset({"gold"}): 1.0,
-    frozenset({"us_stocks", "intl_stocks"}): 0.85, frozenset({"us_stocks", "sector"}): 0.85,
-    frozenset({"us_stocks", "company"}): 0.65, frozenset({"intl_stocks", "sector"}): 0.75,
-    frozenset({"intl_stocks", "company"}): 0.55, frozenset({"sector", "company"}): 0.60,
-    frozenset({"us_stocks", "bonds"}): 0.10, frozenset({"intl_stocks", "bonds"}): 0.10,
-    frozenset({"sector", "bonds"}): 0.05, frozenset({"company", "bonds"}): 0.05,
-    frozenset({"gold", "bonds"}): 0.20, frozenset({"gold", "us_stocks"}): 0.05,
-    frozenset({"gold", "intl_stocks"}): 0.10, frozenset({"gold", "sector"}): 0.05, frozenset({"gold", "company"}): 0.05,
-}
+# Correlation between two different funds, by group (data/correlations.csv). A fund is perfectly correlated
+# with itself.
+with (DATA / "correlations.csv").open() as _f:
+    CORRELATION: dict[frozenset, float] = {frozenset({r["group_a"], r["group_b"]}): float(r["correlation"])
+                                           for r in csv.DictReader(_f)}
 
 
 def assumption(ticker: str) -> dict:

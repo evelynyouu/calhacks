@@ -13,3 +13,4 @@ data/cache/
 data/users.db
 data/users.db-*
 *.p8
+data/sources/
