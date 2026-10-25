@@ -132,7 +132,8 @@ def test_queue_then_confirm_rebalance_trades():
     page = client.get("/p/sam").text
     assert "waiting for your OK" in page and "Confirm trades" in page
     r = client.post("/p/sam/trades/confirm")
-    assert "Done: sell SMH" in r.text and not state.get("sam").fund.pending
+    # SMH is smaller now (sized for how much it swings), so it's no longer the first sale
+    assert "Done: sell" in r.text and "sell SMH" in r.text and not state.get("sam").fund.pending
 
 
 def test_recommendation_buttons_change_pct_and_interests():
