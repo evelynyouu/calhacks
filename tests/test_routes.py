@@ -278,3 +278,12 @@ def test_ticker_tape_has_holdings():
     make_fund("sam")
     r = client.get("/p/sam/tape")
     assert "S&amp;P 500" not in r.text and "VTI" in r.text and "Simulated prices" in r.text
+
+
+def test_finishing_the_intake_reloads_the_ticker_with_the_holdings():
+    link("sam")
+    for form, _ in INTAKE:
+        r = client.post("/p/sam/answer", data=form)
+    assert 'hx-swap-oob="innerHTML:.tape-dock"' in r.text and 'hx-get="/tape?cid=sam"' in r.text
+    tape = client.get("/tape?cid=sam").text
+    assert 'aria-label="Your holdings"' in tape

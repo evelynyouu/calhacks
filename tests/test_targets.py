@@ -342,3 +342,12 @@ def test_account_answers_form_makes_a_proposal_with_before_and_after():
     assert c.post("/p/sam/targets/answers", data={**form, "horizon": "soon"}).status_code == 400
     same = c.post("/p/sam/targets/answers", data=form, follow_redirects=False)
     assert same.headers["location"].endswith("saved=risk#risk")
+
+
+def test_a_raise_shows_the_paycheck_card_right_away():
+    from tests.test_routes import client
+    make_fund("maria")
+    r = client.post("/p/maria/raise")
+    assert r.status_code == 200
+    assert 'id="target-proposal" hx-swap-oob="true"' in r.text and "Accept" in r.text
+    assert app_state.get("maria").fund.proposal["kind"] == "income"

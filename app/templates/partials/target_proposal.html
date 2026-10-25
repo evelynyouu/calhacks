@@ -4,7 +4,7 @@
 {% set tc = target_card(a) %}
 {% set prop = tc.proposal %}
 {% set st = tc.status %}
-<section id="target-proposal" class="{% if prop %}card border-2 border-moss-600{% elif st and st.target_date %}card py-3{% else %}hidden{% endif %}" aria-live="polite">
+<section id="target-proposal" {% if swap_oob %}hx-swap-oob="true"{% endif %} class="{% if prop %}card border-2 border-moss-600{% elif st and st.target_date %}card py-3{% else %}hidden{% endif %}" aria-live="polite">
   {% if prop %}
   <p class="eyebrow">{{ prop.heading }} · suggested change</p>
   <h2 class="font-display text-xl font-bold mt-1">{{ prop.title }}</h2>

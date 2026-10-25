@@ -3,6 +3,7 @@
   {% if 'fund' in oob %}{% include "partials/fund_card.html" %}{% endif %}
   {% if 'account' in oob %}{% include "partials/account.html" %}{% endif %}
   {% if 'tier' in oob %}{% include "partials/tier.html" %}{% endif %}
+  {% if 'targets' in oob %}{% include "partials/target_proposal.html" %}{% endif %}
   {% if 'today' in oob and rows is defined %}{% include "partials/today.html" %}{% endif %}
   {% include "partials/disclosure.html" %}{# bank, price and broker state can change with any action #}
 {% endwith %}

@@ -19,7 +19,7 @@ from agent import claude_agent
 from agent.tools import INDEXES, news_tickers
 from app.routes.auth import auth_disabled, csrf_token
 from app import state
-from core import backtest, builder, disclosure, explain, feed, figures, followups, fund, intake, market, nessie
+from core import backtest, builder, disclosure, explain, feed, figures, followups, fund, intake, market, nessie, targets
 from core.broker import get_broker, values
 from core.intake import QUESTIONS, AnswerError
 from core.market import ETFS
@@ -261,7 +261,7 @@ def answer(request: Request, cid: str, value: str = Form(""), values: list[str] 
     if s.done:
         fund.start(s.fund)
         new.append(s.say(claude_agent.fund_ready(s), link={"href": f"/p/{cid}/how", "label": "How your fund was built →"}))
-        oob |= {"fund", "account", "tier", "nav"}
+        oob |= {"fund", "account", "tier", "nav", "tape"}
     else:
         new.append(s.say(claude_agent.question_text(s)))
         oob.add("fund")   # the progress line
@@ -339,10 +339,12 @@ def market_drop(request: Request, cid: str):
 
 @router.post("/p/{cid}/raise", response_class=HTMLResponse)
 def got_raise(request: Request, cid: str):
-    _need_fund(cid)
+    s = _need_fund(cid)
     nessie.apply_raise(cid, RAISE_PCT)
+    targets.review(s.fund)   # a pay change can suggest a new paycheck percent: show the card now, not next payday
     return _panels(request, cid, f"Nice, a {RAISE_PCT:g}% raise! Your paychecks are now "
-                                 f"${get_profile(cid).paycheck_amount:,.0f}, so the same percent invests more.")
+                                 f"${get_profile(cid).paycheck_amount:,.0f}, so the same percent invests more.",
+                   oob=("fund", "account", "tier", "today", "targets"))
 
 
 @router.post("/p/{cid}/pct", response_class=HTMLResponse)
