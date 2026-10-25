@@ -19,7 +19,7 @@
       <a href="/p/{{ cid }}/markets?s={{ r.ticker }}" class="flex items-center justify-between gap-3 py-2.5 hover:bg-paper/60 -mx-2 px-2 rounded-lg">
         <span class="min-w-0">
           <span class="font-semibold">{{ r.ticker }}</span>
-          <span class="block truncate text-xs text-ink/55">{{ r.info.label }}{% if r.slice %} · {{ r.slice }}{% endif %}</span>
+          <span class="block truncate text-xs text-ink/55">{{ r.info.label }}{% if r.slice and r.slice.split()[0] not in r.info.label %} · {{ r.slice }}{% endif %}</span>
         </span>
         <span class="flex items-center gap-3 shrink-0">
           <span class="tabular-nums text-sm">{{ r.value | money2 }}</span>
