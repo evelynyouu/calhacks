@@ -171,18 +171,25 @@ def _offline_turn(session: Session, text: str) -> str:
 
 # ---------- Explanations ----------
 
+EXPLAIN_MAX_TOKENS = 1500   # the model may think before it writes; a long fact list used all of 400 and left no text
+
+
 def explain(facts: list[str], instruction: str, fallback: str | None = None) -> str:
     """Turn Python-computed facts into a short explanation. Falls back to `fallback` (or the facts)."""
+    offline = fallback if fallback is not None else " ".join(facts)
     client = _get_client()
     if client is None:
-        return fallback if fallback is not None else " ".join(facts)
+        return offline
     try:
         resp = client.messages.create(
-            model=MODEL, max_tokens=400,
+            model=MODEL, max_tokens=EXPLAIN_MAX_TOKENS,
             system=SYSTEM_PROMPT + "\nUse only these facts; add no new numbers.",
             messages=[{"role": "user", "content": instruction + "\n\nFacts:\n- " + "\n- ".join(facts)}],
         )
-        return "".join(b.text for b in resp.content if b.type == "text").strip()
+        text = "".join(b.text for b in resp.content if b.type == "text").strip()
+        if not text:   # ran out of tokens before writing, or no text block: show the offline version, never a blank
+            print(f"[claude] explain returned no text (stop_reason={resp.stop_reason}); using the offline version")
+        return text or offline
     except Exception as e:  # noqa: BLE001
         print(f"[claude] explain fallback: {e!r}")
-        return fallback if fallback is not None else " ".join(facts)
+        return offline

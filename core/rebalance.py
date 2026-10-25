@@ -4,6 +4,11 @@ from __future__ import annotations
 from core.models import Portfolio
 
 MIN_TRADE = 1.0   # dollars; smaller trades aren't worth placing
+# A fund is "off target" when it's this far from its target weight: 5 points, or 25% of the target if that's
+# smaller (so a 2% slice that doubles is caught), as long as the gap is worth at least DRIFT_MIN_DOLLARS.
+DRIFT_ABS = 0.05
+DRIFT_REL = 0.25
+DRIFT_MIN_DOLLARS = 25.0
 
 
 def allocate_new_money(p: Portfolio, current: dict[str, float], amount: float) -> dict[str, float]:
@@ -27,3 +32,16 @@ def rebalance_trades(p: Portfolio, current: dict[str, float]) -> dict[str, float
     targets = {h.ticker: h.weight for h in p.holdings}
     trades = {t: round(targets.get(t, 0.0) * total - current.get(t, 0.0), 2) for t in {**targets, **current}}
     return {t: v for t, v in trades.items() if abs(v) >= MIN_TRADE}
+
+
+def band(target: float) -> float:
+    """How far (in weight) a holding may sit from its target before it counts as off target."""
+    return min(DRIFT_ABS, DRIFT_REL * target)
+
+
+def off_target(p: Portfolio, current: dict[str, float]) -> dict[str, float]:
+    """{ticker: drift} for holdings outside their band, ignoring gaps too small in dollars to matter."""
+    total = sum(current.values())
+    targets = {h.ticker: h.weight for h in p.holdings}
+    return {t: d for t, d in drift(p, current).items()
+            if abs(d) >= band(targets.get(t, 0.0)) and abs(d) * total >= DRIFT_MIN_DOLLARS}
