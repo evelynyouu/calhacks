@@ -1,5 +1,5 @@
 /* Left sidebar (partials/nav.html) and the page shell around it (base.html). Owned with app.js's nav block.
-   Near-black like the ink, green for the current tab. Sits under the ticker strip (tape.css --tape-h).
+   Near-black like the ink; the current tab is a lighter row with a white bar (green is kept for gains). Sits under the ticker strip (tape.css --tape-h).
    md+ : sticky column in normal flow (it takes its own width, so it never covers the page): 15rem open,
          4.5rem icons-only when html.nav-collapsed (tooltips on hover/focus), gone when html.nav-hidden
          (the header's .nav-show button brings it back).
@@ -8,36 +8,36 @@
 .shell { display:block; }
 .shell-main { min-width:0; }
 .side { background:#0b0f0d; color:rgba(255,255,255,.78); display:flex; flex-direction:column; }
-.side-head { display:flex; align-items:center; justify-content:space-between; gap:.5rem; padding:1.1rem .9rem .9rem 1.1rem; }
-.side-brand { display:flex; align-items:center; gap:.6rem; color:#fff; font-size:1.45rem; font-weight:700; letter-spacing:-.01em; min-width:0; }
-.side-mark { display:none; width:2.1rem; height:2.1rem; border-radius:.6rem; background:#0b7a3e; color:#fff; place-items:center; font-size:1.15rem; flex-shrink:0; }
-.side-brand .text-moss-500 { color:#3fbf74; }
-.side-tools { display:flex; align-items:center; gap:.15rem; flex-shrink:0; }
-.side-collapse, .side-hide { display:none; width:2rem; height:2rem; border-radius:.55rem; place-items:center; color:rgba(255,255,255,.7); flex-shrink:0; }
+.side-head { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:16px 12px 16px 16px; }
+.side-brand { display:flex; align-items:center; gap:8px; color:#fff; font-size:20px; line-height:28px; font-weight:600; min-width:0; }
+.side-mark { display:none; width:32px; height:32px; border-radius:6px; background:#fff; color:#0b0f0d; place-items:center; font-size:16px; font-weight:600; flex-shrink:0; }
+.side-tools { display:flex; align-items:center; gap:4px; flex-shrink:0; }
+.side-collapse, .side-hide { display:none; width:32px; height:32px; border-radius:6px; place-items:center; color:rgba(255,255,255,.7); flex-shrink:0; }
 .side-collapse:hover, .side-hide:hover { background:rgba(255,255,255,.08); color:#fff; }
-.side-links { display:flex; flex-direction:column; gap:.2rem; padding:.25rem .65rem; flex:1; overflow-y:auto; }
-.side-link { position:relative; display:flex; align-items:center; gap:.75rem; padding:.6rem .7rem; border-radius:.7rem; font-size:.92rem; font-weight:500; color:rgba(255,255,255,.78); white-space:nowrap; }
+.side-links { display:flex; flex-direction:column; gap:4px; padding:4px 12px; flex:1; overflow-y:auto; }
+.side-link { position:relative; display:flex; align-items:center; gap:12px; padding:8px 12px; border-radius:6px; font-size:14px; line-height:20px; font-weight:500; color:rgba(255,255,255,.78); white-space:nowrap; }
 .side-link svg { flex-shrink:0; }
 .side-link:hover { background:rgba(255,255,255,.08); color:#fff; }
-.side-link-active, .side-link-active:hover { background:#0b7a3e; color:#fff; font-weight:600; }
-.side :focus-visible { outline:2px solid #3fbf74; outline-offset:2px; }
+.side-link-active, .side-link-active:hover { background:rgba(255,255,255,.12); color:#fff; font-weight:600; }
+.side-link-active::before { content:""; position:absolute; left:-12px; top:8px; bottom:8px; width:3px; border-radius:0 2px 2px 0; background:#fff; }
+.side :focus-visible { outline:2px solid #fff; outline-offset:2px; }
 .side-tip { display:none; }
-.side-foot { display:flex; align-items:center; gap:.65rem; padding:.9rem 1.1rem 1.1rem; border-top:1px solid rgba(255,255,255,.1); font-size:.85rem; }
-.side-avatar { width:2.1rem; height:2.1rem; border-radius:999px; background:#c9ecd7; color:#075c2e; display:grid; place-items:center; font-family:Fraunces, Georgia, serif; font-weight:700; flex-shrink:0; }
-.menu-btn, .nav-show { display:inline-flex; align-items:center; gap:.4rem; border:1px solid rgba(11,15,13,.18); border-radius:.7rem; padding:.4rem .65rem; background:#fff; color:#0b0f0d; }
-.menu-btn:hover, .nav-show:hover { border-color:#0b7a3e; }
-.menu-btn:focus-visible, .nav-show:focus-visible { outline:2px solid #0b7a3e; outline-offset:2px; }
+.side-foot { display:flex; align-items:center; gap:12px; padding:16px; border-top:1px solid rgba(255,255,255,.1); font-size:14px; }
+.side-avatar { width:32px; height:32px; border-radius:999px; background:rgba(255,255,255,.14); color:#fff; display:grid; place-items:center; font-weight:600; flex-shrink:0; }
+.menu-btn, .nav-show { display:inline-flex; align-items:center; gap:8px; border:1px solid #8b918e; border-radius:6px; padding:6px 12px; background:#fff; color:#0b0f0d; }
+.menu-btn:hover, .nav-show:hover { border-color:#0b0f0d; }
+.menu-btn:focus-visible, .nav-show:focus-visible { outline:2px solid #0b0f0d; outline-offset:2px; }
 .nav-show { display:none; }
 .side-backdrop { display:none; }
 
-/* Switch customer (base.html header, far right): its own pill behind a divider, away from the tab icons. */
-.switch-cust { position:relative; display:inline-flex; align-items:center; gap:.45rem; margin-left:.25rem; padding:.25rem .75rem .25rem .25rem;
-  border:1px solid rgba(11,15,13,.18); border-radius:999px; background:#fff; color:#0b0f0d; font-size:.85rem; font-weight:500; white-space:nowrap; flex-shrink:0; }
-.switch-cust::before { content:""; position:absolute; left:-.55rem; top:15%; bottom:15%; border-left:1px solid rgba(11,15,13,.15); }
-.switch-cust:hover { border-color:#0b7a3e; }
-.switch-cust:focus-visible { outline:2px solid #0b7a3e; outline-offset:2px; }
-.switch-cust-avatar { width:1.6rem; height:1.6rem; border-radius:999px; background:#c9ecd7; color:#075c2e; display:grid; place-items:center;
-  font-family:Fraunces, Georgia, serif; font-weight:700; font-size:.85rem; }
+/* Switch customer (base.html header, far right): its own control behind a divider, away from the tab icons. */
+.switch-cust { position:relative; display:inline-flex; align-items:center; gap:8px; margin-left:4px; padding:4px 12px 4px 4px;
+  border:1px solid #8b918e; border-radius:6px; background:#fff; color:#0b0f0d; font-size:14px; line-height:20px; font-weight:500; white-space:nowrap; flex-shrink:0; }
+.switch-cust::before { content:""; position:absolute; left:-9px; top:15%; bottom:15%; border-left:1px solid #e3e6e4; }
+.switch-cust:hover { border-color:#0b0f0d; }
+.switch-cust:focus-visible { outline:2px solid #0b0f0d; outline-offset:2px; }
+.switch-cust-avatar { width:24px; height:24px; border-radius:999px; background:#f4f5f4; color:#0b0f0d; display:grid; place-items:center;
+  font-weight:600; font-size:12px; }
 
 @media (min-width: 768px) {
   .shell { display:flex; align-items:flex-start; }
@@ -47,6 +47,7 @@
   .menu-btn { display:none; }
   /* Collapsed to icons: labels stay in the accessibility tree (screen readers still hear "Portfolio"). */
   html.nav-collapsed .side { width:4.5rem; }
+  html.nav-collapsed .side-link-active::before { left:-8px; }
   html.nav-collapsed .side-head { flex-direction:column; padding:1rem .5rem .75rem; }
   html.nav-collapsed .side-tools { flex-direction:column; }
   html.nav-collapsed .side-mark { display:grid; }
@@ -59,15 +60,15 @@
   /* Tooltips beside the icons, on hover and keyboard focus. They stick out past the 4.5rem column, so the list
      mustn't clip them (on very short windows it scrolls instead; each link's aria-label still names it). */
   html.nav-collapsed .side-tip { position:absolute; left:calc(100% + .7rem); top:50%; transform:translateY(-50%); z-index:60;
-    background:#0b0f0d; color:#fff; border:1px solid rgba(255,255,255,.18); border-radius:.5rem; padding:.3rem .6rem;
-    font-size:.8rem; font-weight:500; white-space:nowrap; pointer-events:none; box-shadow:0 4px 14px rgba(0,0,0,.2); }
+    background:#0b0f0d; color:#fff; border:1px solid rgba(255,255,255,.18); border-radius:6px; padding:4px 8px;
+    font-size:12px; line-height:16px; font-weight:500; white-space:nowrap; pointer-events:none; }
   html.nav-collapsed .side-link:hover .side-tip, html.nav-collapsed .side-link:focus-visible .side-tip { display:block; }
   /* Hidden: no column at all, so the page gets the full width; the header shows the brand and a Show button. */
   html.nav-hidden .side { display:none; }
   html.nav-hidden .nav-show { display:inline-flex; }
   html.nav-hidden .shell-header .hdr-brand { display:inline; }
   /* The header's left side is empty on desktop: keep the tier badge etc. on the right. */
-  .shell-header { padding-top:1.1rem; }
+  .shell-header { padding-top:16px; }
 }
 @media (min-width: 768px) and (min-height: 560px) {
   html.nav-collapsed .side-links { overflow:visible; }
@@ -75,11 +76,11 @@
 
 @media (max-width: 767.98px) {
   .side { position:fixed; top:var(--tape-h, 0); left:0; bottom:0; z-index:50; width:min(17rem, 85vw);
-          transform:translateX(-100%); visibility:hidden; transition:transform .2s ease, visibility 0s linear .2s; box-shadow:0 10px 30px rgba(0,0,0,.25); }
-  html.nav-open .side { transform:none; visibility:visible; transition:transform .2s ease; }
+          transform:translateX(-100%); visibility:hidden; transition:transform .15s ease, visibility 0s linear .15s; }
+  html.nav-open .side { transform:none; visibility:visible; transition:transform .15s ease; }
   html.nav-open .side-backdrop { display:block; position:fixed; inset:var(--tape-h, 0) 0 0 0; z-index:45; background:rgba(11,15,13,.45); }
   /* The menu button stays reachable while scrolling: the header sticks under the ticker. */
-  .shell-header { position:sticky; top:var(--tape-h, 0); z-index:30; background:#fff; padding-top:.65rem; padding-bottom:.65rem; margin-bottom:.75rem; border-bottom:1px solid rgba(11,15,13,.08); }
+  .shell-header { position:sticky; top:var(--tape-h, 0); z-index:30; background:#fff; padding-top:12px; padding-bottom:12px; margin-bottom:12px; border-bottom:1px solid #e3e6e4; }
 }
 @media (prefers-reduced-motion: reduce) {
   .side { transition:none !important; }

@@ -37,7 +37,7 @@
   {# Customer pages (they have a session `s` and a `cid`) get the left sidebar; the landing page and sign-in don't. #}
   {% set with_nav = s is defined and cid is defined %}
   {% if with_nav %}<div class="shell">{% include "partials/nav.html" %}<div class="side-backdrop" data-nav-close aria-hidden="true"></div><div class="shell-main">{% endif %}
-  <header class="{{ 'shell-header' if with_nav else '' }} max-w-6xl mx-auto px-4 sm:px-6 py-6 flex items-center justify-between gap-3">
+  <header class="{{ 'shell-header' if with_nav else '' }} max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
     <div class="flex items-center gap-2 min-w-0">
       {% if with_nav %}
       <button type="button" class="menu-btn" data-nav-toggle aria-controls="nav" aria-expanded="false" aria-label="Menu">
@@ -50,7 +50,7 @@
         <span class="text-sm font-medium" aria-hidden="true">Sidebar</span>
       </button>
       {% endif %}
-      <a href="/" class="{{ 'hdr-brand' if with_nav else '' }} text-xl font-semibold {{ 'md:hidden' if with_nav else '' }}">First<span class="text-moss-600">Fund</span></a>
+      <a href="/" class="{{ 'hdr-brand' if with_nav else '' }} text-lg font-semibold {{ 'md:hidden' if with_nav else '' }}">FirstFund</a>
     </div>
     <div class="flex items-center gap-3">
       {% block header_right %}{% endblock %}
@@ -74,7 +74,7 @@
   {% if disclosure is defined %}
   {% set dis = disclosure(a.today if a is defined and a else None) %}
   <footer id="disclosures" class="max-w-6xl mx-auto px-4 sm:px-6 pb-12 pt-6 border-t border-line text-xs text-muted space-y-2">
-    <p class="font-medium text-ink-2">About the numbers on this page</p>
+    <p class="text-sm font-semibold text-ink">About the numbers on this page</p>
     {% for line in dis.full %}<p>{{ line }}</p>{% endfor %}
   </footer>
   {% endif %}
