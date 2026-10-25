@@ -20,6 +20,18 @@ Evelyn is replacing the fund's three-fund core (VTI/VXUS/BND plus small slices) 
 
 No company reaches 8% of a fresh fund. A fund now has roughly 55–65 holdings instead of 5–8.
 
+**Status (2026-10-24): Evelyn's half is done** on `evelyn/custom-index`. To make the branch correct she also
+did parts of yours: the report's benchmark (plain index), the projection's US-index basket (item 5), whole-cent
+paycheck buys, the Markets "Add to my fund" button, an 8-holding tape and the chat tool's `slice`/`sector`. Those
+are marked DONE below. Read the final contract notes first:
+- **One `Holding` per ticker.** A company held for several reasons (in the US index *and* where you spend) is one
+  position. Its `slice` is its most personal slice (added > spend > interest > us_core), and its weight is the
+  whole position.
+- **`Portfolio.parts`** is `{slice: {ticker: weight}}`, each slice's exact share. **Use `p.slice_weights()`**,
+  which reads `parts`, for the pie and the slice subtotals. Don't add up `by_slice()` holdings: a Costco that's
+  both an index company and a spend pick would count fully in "spend".
+- **`explain.build(acct)["slices"]`** already carries each slice's exact weight and its holdings' reason texts.
+
 Your half is everything that **shows or uses** the fund. Evelyn's half decides **what's in it**. You work in parallel against the contract:
 - `Holding.sector`, `Holding.slice`, the `SLICES` labels
 - `Portfolio.slice_weights()` and `Portfolio.by_slice()`
@@ -44,18 +56,21 @@ Ground rules:
    - The pie shows **slices**, six wedges at most, not 60 holdings.
    - Below it, each slice is a row with its weight. Clicking the row expands its holdings. The US index groups by sector.
    - Keep the "Heads up" and override blocks.
-2. **Portfolio tab "today" list** (`partials/today.html`, `pages._today`). Show the 10 biggest positions plus a "Show all N" toggle. The day's dollar move still sums every holding.
+2. **Portfolio tab "today" list** (the ticker tape already shows only the 8 biggest holdings: DONE) (`partials/today.html`, `pages._today`). Show the 10 biggest positions plus a "Show all N" toggle. The day's dollar move still sums every holding.
 3. **"How your fund was built" page layout** (`partials/how_built.html`).
    - Render `how.slices`: one card per slice, holdings grouped, each holding's texts underneath.
    - The US index collapses to sectors with a show-all.
    - Keep the rule that templates hold no numbers (`test_templates_hard_code_no_numbers`).
-4. **Report** (`core/report.py`, `app/templates/report.html`).
+4. **Report** (`core/report.py`, `app/templates/report.html`). DONE by Evelyn: `benchmark_weights` returns the
+   plain index for a custom fund; `_picks` compares against the benchmark's stock part; attribution rows add up
+   exactly; the tech check reads the interest slice from `p.parts`. Still yours: the layout items below.
    - `benchmark_weights`: the US stock share is every holding that isn't BND or VXUS, and that share benchmarks to VTI. Today it reads the VTI weight, which no longer exists.
    - The holdings table is grouped by slice, with slice subtotals.
    - "Each pick vs the core it replaced" now covers the spend and interest slices.
    - Look-through: companies held directly count directly (VXUS still looks through `holdings.csv`). Sector exposure uses `Holding.sector`, and drops the `sectors.csv` lookup for directly held companies.
    - The recommendations still fire on the same thresholds. Add a test that a fresh custom fund gives no "diversify" recommendation, since no company is at 8% or more.
-5. **Projection** (`core/sim.py`, Saahil's file; tell him).
+5. **Projection** (`core/sim.py`, Saahil's file; tell him). DONE by Evelyn: the US-index part is one VTI
+   basket (`sim._positions`), and a company gets its sector's return with the simulated market's company volatility.
    - Treat the `us_core` slice as one diversified US basket using the `VTI` row in `data/assumptions.csv`.
    - Spend, interest and added companies keep the `company` row.
    - Without this, 50 single-company volatilities with your correlation table will misstate the fund's spread.
@@ -64,7 +79,8 @@ Ground rules:
    - With 60 holdings, one paycheck would place about 60 tiny orders.
    - Buy only the `NEW_MONEY_PICKS = 10` most underweight positions each paycheck, keeping the $1 broker minimum. The rest catch up on later paychecks.
    - Test: weights converge to target over 26 paychecks, and no order is under $1.
-7. **Chat tools** (`agent/tools.py`, `agent/prompts.py`).
+7. **Chat tools** (`agent/tools.py`, `agent/prompts.py`). Partly done: `get_fund_explanation(ticker)` returns
+   `slice`, `sector` and `weight`, and says when a ticker isn't in the fund.
    - `get_fund` returns slices with their holdings, not a flat list of 60.
    - `get_fund_explanation(ticker)` already works per holding; add `slice` and `sector` to its output.
    - Update the prompt's tool descriptions and the "don't tell customers which stocks to buy" line. The engine picked these by rule, so Claude explains the rule and doesn't endorse the stock.
