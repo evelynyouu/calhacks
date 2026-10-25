@@ -569,13 +569,21 @@ def account(request: Request, cid: str, saved: str = ""):
 def robinhood_connect(request: Request, cid: str):
     s = _session(cid)
     s.robinhood_connected = True
+    # Switch broker singleton to Robinhood if credentials are present
+    from core import broker as _broker_mod
+    if os.getenv("ROBINHOOD_CRYPTO_API_KEY") and os.getenv("ROBINHOOD_CRYPTO_PRIVATE_KEY"):
+        os.environ["BROKER"] = "robinhood"
+        _broker_mod._broker = None  # force re-init on next get_broker() call
     return RedirectResponse(f"/p/{cid}/account#linked", status_code=303)
 
 
 @router.post("/p/{cid}/robinhood/disconnect")
 def robinhood_disconnect(request: Request, cid: str):
+    from core import broker as _broker_mod
     s = _session(cid)
     s.robinhood_connected = False
+    os.environ["BROKER"] = "sim"
+    _broker_mod._broker = None
     return RedirectResponse(f"/p/{cid}/account#linked", status_code=303)
 
 

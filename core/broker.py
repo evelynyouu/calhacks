@@ -107,9 +107,14 @@ _broker = None
 def get_broker():
     global _broker
     if _broker is None:
-        wants_alpaca = os.getenv("BROKER", "sim").lower() == "alpaca"
-        has_keys = os.getenv("ALPACA_API_KEY") and os.getenv("ALPACA_SECRET_KEY")
-        _broker = AlpacaBroker() if wants_alpaca and has_keys else SimBroker()
+        mode = os.getenv("BROKER", "sim").lower()
+        if mode == "robinhood" and os.getenv("ROBINHOOD_CRYPTO_API_KEY") and os.getenv("ROBINHOOD_CRYPTO_PRIVATE_KEY"):
+            from core.broker_robinhood import RobinhoodCryptoBroker
+            _broker = RobinhoodCryptoBroker()
+        elif mode == "alpaca" and os.getenv("ALPACA_API_KEY") and os.getenv("ALPACA_SECRET_KEY"):
+            _broker = AlpacaBroker()
+        else:
+            _broker = SimBroker()
     return _broker
 
 
