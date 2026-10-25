@@ -18,6 +18,7 @@ from app.routes import auth as auth_routes  # noqa: E402
 from app.routes import onboarding as onboarding_routes  # noqa: E402
 from app.routes.money import router as money_router  # noqa: E402
 from app.routes.pages import router  # noqa: E402
+from app.routes.targets import router as targets_router  # noqa: E402
 from core import feed, market  # noqa: E402
 
 SESSION_SECRET = os.getenv("SESSION_SECRET")
@@ -39,6 +40,7 @@ app.include_router(auth_routes.router)
 app.include_router(router)
 app.include_router(onboarding_routes.router)
 app.include_router(money_router)
+app.include_router(targets_router)
 # Middleware added last runs first: security headers -> session cookie -> sign-in gate -> routes.
 app.add_middleware(BaseHTTPMiddleware, dispatch=auth_routes.gate)
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, session_cookie="ff_session",

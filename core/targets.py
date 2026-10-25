@@ -281,7 +281,7 @@ def _pct_proposal(acct, kind: str, base: dict, now: dict, because: str, signatur
                f"{_money(per_new)} of each {_money(now['paycheck'])} paycheck instead of {_money(per_now)}.")
     text = f"Your paycheck share moves from {acct.invest_pct:g}% to {pct:g}% because {because}. {how}"
     return {"kind": kind, "heading": KIND_TITLES[kind], "title": f"Your paycheck share moves from "
-            f"{acct.invest_pct:g}% to {pct:g}%", "because": because, "text": text, "rows": [],
+            f"{acct.invest_pct:g}% to {pct:g}%", "because": because, "detail": how, "text": text, "rows": [],
             "pct": {"before": acct.invest_pct, "after": pct, "per_check_before": float(per_now),
                     "per_check_after": float(per_new), "paycheck": now["paycheck"]},
             "apply": {"pct": pct, "baseline": {**now, "pct": pct}}, "on": acct.today, "signature": signature}
@@ -297,8 +297,8 @@ def _mix_proposal(acct, kind: str, after: Portfolio, because: str, apply: dict, 
     if not any(abs(r["before"] - r["after"]) > 1e-9 for r in rows):
         title = f"Your mix stays {p.risk_label}"
     text = f"{title} because {because}."
-    return {"kind": kind, "heading": KIND_TITLES[kind], "title": title, "because": because, "text": text,
-            "rows": rows, "pct": None, "bonds": {"before": bond_share(p), "after": bond_share(after)},
+    return {"kind": kind, "heading": KIND_TITLES[kind], "title": title, "because": because, "detail": "",
+            "text": text, "rows": rows, "pct": None, "bonds": {"before": bond_share(p), "after": bond_share(after)},
             "labels": {"before": p.risk_label, "after": after.risk_label},
             "apply": apply, "on": acct.today, "signature": signature}
 
@@ -371,6 +371,7 @@ def status(acct) -> dict:
     starts = (acct.target_date - timedelta(days=round(GLIDE_WINDOW_YEARS * DAYS_PER_YEAR))
               if acct.target_date else None)
     return {"target_date": acct.target_date, "years_left": years, "glide_floor": floor, "glide_starts": starts,
+            "window": GLIDE_WINDOW_YEARS,
             "bonds": bond_share(acct.portfolio), "assumed": acct.answers.get("horizon") in HORIZON_YEARS,
             "horizon_label": intake.answer_label("horizon", acct.answers) if acct.answers.get("horizon") else ""}
 

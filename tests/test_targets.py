@@ -284,3 +284,61 @@ def test_override_click_is_recorded():
     fund.set_override(s.fund, False)
     h = targets.history(s.fund)[0]
     assert h["kind"] == "override" and "because you chose our suggestion" in h["text"] and h["rows"]
+
+
+# ---------- pages and routes ----------
+
+def _client():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    return TestClient(app)
+
+
+def test_portfolio_card_accept_shows_on_how_page_and_report():
+    c = _client()
+    s = make_fund("sam", **PERSONA_ANSWERS["sam"])
+    page = c.get("/p/sam").text
+    assert 'id="target-proposal"' in page and "Goal date: about October 2037" in page
+    nessie.apply_raise("sam", 10)
+    c.post("/p/sam/paycheck")
+    page = c.get("/p/sam").text
+    assert "Your paycheck share moves from 10% to 12%" in page and "Not now" in page
+    assert "A suggested change is waiting" in c.get("/p/sam/report").text
+    r = c.post("/p/sam/targets/accept")
+    assert r.status_code == 200 and 'id="target-proposal"' in r.text and 'id="fund-card"' in r.text
+    assert "Done: your paycheck share moves from 10% to 12%" in r.text
+    assert s.fund.invest_pct == 12
+    how = c.get("/p/sam/how").text
+    assert 'data-target-change="income"' in how and "Paycheck share 10% → 12%" in how
+    assert "When your targets change" in how and "7 years out 30%" in how
+    assert 'data-target-change="income"' in c.get("/p/sam/report").text
+
+
+def test_not_now_route_changes_nothing():
+    c = _client()
+    s = make_fund("sam", **PERSONA_ANSWERS["sam"])
+    nessie.apply_raise("sam", 10)
+    c.post("/p/sam/paycheck")
+    before = snapshot(s.fund)
+    r = c.post("/p/sam/targets/dismiss")
+    assert r.status_code == 200 and "Your fund stays exactly as it is" in r.text
+    assert snapshot(s.fund) == before and s.fund.proposal is None
+    assert "Check my targets" in c.post("/p/sam/targets/check").text
+
+
+def test_account_answers_form_makes_a_proposal_with_before_and_after():
+    c = _client()
+    s = make_fund("sam", **PERSONA_ANSWERS["sam"])
+    assert 'action="/p/sam/targets/answers"' in c.get("/p/sam/account").text
+    before = snapshot(s.fund)
+    form = {"risk_priority": "protect", "risk_range": "narrow", "max_drop": "10", "horizon": "7to15"}
+    r = c.post("/p/sam/targets/answers", data=form, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/p/sam#target-proposal"
+    assert snapshot(s.fund) == before
+    page = c.get("/p/sam").text
+    assert "Your mix moves from Growth to" in page and 'data-target-row="BND"' in page
+    c.post("/p/sam/targets/accept")
+    assert s.fund.answers["risk_priority"] == "protect" and s.fund.portfolio.risk_label != "Growth"
+    assert c.post("/p/sam/targets/answers", data={**form, "horizon": "soon"}).status_code == 400
+    same = c.post("/p/sam/targets/answers", data=form, follow_redirects=False)
+    assert same.headers["location"].endswith("saved=risk#risk")

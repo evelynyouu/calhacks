@@ -6,7 +6,7 @@ tied to the goal (agent/claude_agent.fund_intro), from facts this module compute
 """
 from __future__ import annotations
 
-from core import intake, market
+from core import intake, market, targets
 from core.fund import FundAccount, value
 from core.models import Portfolio
 from core.policy import tier_for
@@ -21,7 +21,7 @@ from core.sim import simulate
 EXAMPLE_BALANCE = 1_000.0   # dollars shown when the fund is still empty
 # Reasons listed under "What we adjusted, and why" (the rest explain a holding or the score)
 ADJUST_KINDS = ("contradiction", "horizon", "drop", "override", "swing", "cap", "dropped", "overlap",
-                "concentration", "sector")
+                "concentration", "sector", "glide")
 ANSWER_KEYS = ("goal", "risk_priority", "risk_range", "max_drop", "horizon")
 
 
@@ -48,6 +48,7 @@ def build(acct: FundAccount) -> dict:
                      and (r.kind not in ("horizon", "drop") or r.facts.get("lowered") or r.facts.get("warn"))],
         "limits_lowered": bool(lowered),
         "change": _changes(acct),
+        "target_history": targets.history(acct),   # accepted target changes (core/targets.py), newest first
         "full": _full(acct, p, balance, bonds),
     }
 
@@ -94,11 +95,36 @@ def _changes(acct: FundAccount) -> list[str]:
     out = ["Add or drop industries (Account tab or chat), or single companies (Markets tab or chat). Targets "
            "change now; nothing is sold until you confirm a rebalance.",
            f"Change how much of each paycheck goes in, now {acct.invest_pct:g}% (Account tab or chat).",
+           "Change your risk answers or when you'll need the money (Account tab): you'll see the new mix, before and "
+           "after, and nothing changes until you accept it. A raise, a pay cut, a lasting change in spending, or your "
+           "goal date getting closer brings the same kind of suggestion on your Portfolio tab.",
            "Retaking the questions (Account tab) clears your simulated fund and chat and starts over; the new fund "
            "is built from your new answers."]
     if acct.portfolio.pointed_level or acct.answers.get("override"):
         out.append("Use the mix your answers pointed to instead of the one within your limits (fund card).")
     return out
+
+
+def _targets_paras(acct: FundAccount) -> list[str]:
+    """The published glide schedule and the other triggers, from core/targets.py's constants."""
+    st = targets.status(acct)
+    schedule = ", ".join(f"{y} year{'s' if y != 1 else ''} out {b:.0%}" for y, b in sorted(targets.GLIDE_PATH.items(),
+                                                                                           reverse=True))
+    goal = (f"We count your goal date as {st['target_date']:%B %Y}: the middle of “{st['horizon_label'].lower()}”, "
+            f"from the day you set it (for “15 years or more” we assume {targets.HORIZON_YEARS['15plus']:.0f})."
+            if st["target_date"] else "You're not sure when you'll need the money, so there's no goal date and no "
+                                      "glide path.")
+    return [
+        "Your mix changes only when your situation does, never because prices moved. Market moves make the fund "
+        "drift; new paychecks and confirmed rebalances bring it back to the same targets.",
+        goal,
+        f"In the last {targets.GLIDE_WINDOW_YEARS} years before the goal date, the bond share steps up to at least: "
+        f"{schedule}. It moves at most {targets.GLIDE_MAX_STEP * 100:.0f} points a year, and each step is a "
+        "suggestion you accept or put off.",
+        f"A paycheck that changes by {targets.INCOME_SHIFT:.0%} or more, or spending {targets.SPENDING_SHIFT:.0%} "
+        f"above or below its usual level for {targets.SPENDING_MONTHS} months in a row, brings a suggested paycheck "
+        "percent that keeps the same share of what's left after bills and spending going in.",
+    ]
 
 
 def _full(acct: FundAccount, p: Portfolio, balance: float, bonds: float) -> list[dict]:
@@ -154,6 +180,7 @@ def _full(acct: FundAccount, p: Portfolio, balance: float, bonds: float) -> list
             f"{acct.invest_pct:g}% of each paycheck (about ${per_check:,.0f} of ${paycheck:,.0f}) is invested the "
             "moment it lands. It buys whatever is furthest below its target share, so new money nudges the fund back "
             "on target without selling anything."]},
+        {"title": "When your targets change", "paras": _targets_paras(acct)},
         {"title": "When the fund is rebalanced", "paras": [
             f"Your report checks the fund every {tier.review_every_days} days at your balance. If a holding drifts "
             f"{DRIFT_ABS * 100:.0f} points from its target"
