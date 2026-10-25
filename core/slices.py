@@ -32,7 +32,7 @@ def view(p: Portfolio) -> list[dict]:
     for key, label in SLICES:
         if not by[key]:
             continue
-        rows = [row(h) for h in by[key]]
+        rows = [row(h) for h in sorted(by[key], key=lambda h: -h.weight)]
         out.append({"key": key, "label": label, "weight": weights[key], "count": len(rows), "blurb": BLURBS[key],
                     "rows": rows, "sectors": sector_groups(rows) if key == "us_core" else None,
                     "personalized": key == "spend"})

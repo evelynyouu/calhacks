@@ -16,6 +16,7 @@ from core.broker import get_broker, values
 from core.finances import build_finances
 from core.fund import FundAccount
 from core.market import ETFS, HOLDINGS
+from core.models import SLICES
 from core.policy import tier_for
 from core.portfolio import THEME_LABELS, THEMES, plain_index
 from core.profile import PAY_PERIOD_DAYS, get_profile
@@ -23,13 +24,18 @@ from core.rebalance import targets as rebalance_targets, band, drift as drift_of
 from core.sim import portfolio_assumptions, simulate
 
 QUARTER_DAYS = 91
+US_SHARE_OF_STOCKS = 0.70       # VTI's share of VTI+VXUS when an older fund has neither to read it from
 PAYCHECKS_PER_YEAR = round(365 / PAY_PERIOD_DAYS)    # paid every 14 days: 26 a year, not 24
 # Approximate yearly income (distributions) per fund, from data/yields.csv. The price feed has no adjusted
 # closes, so income is estimated, accrued daily, and kept apart from the balance. Single companies count as 0.
 with (market.DATA / "yields.csv").open() as _f:
     YIELDS = {r["ticker"]: float(r["yield_pct"]) / 100 for r in csv.DictReader(_f)}
+# Rough yearly dividend yield of a company by sector, for companies held directly (data/yields.csv covers the funds).
+# Rounded typical figures, not live and not per company: income from companies is an estimate and says so.
+SECTOR_YIELD = {"Technology": 0.006, "Communication": 0.010, "Consumer": 0.010, "Everyday essentials": 0.025,
+                "Healthcare": 0.016, "Financials": 0.018, "Industrials": 0.014, "Energy": 0.034, "Utilities": 0.030,
+                "Real estate": 0.038, "Materials": 0.018}
 BENCHMARK = "SPY"               # "the market" line
-US_SHARE_OF_STOCKS = 0.70       # VTI's share of VTI+VXUS when the fund has neither to read it from
 NOT_STOCKS = {"BND", "GLD"}
 
 DIP_TRIGGER = -7.0              # your stocks down 7% in a month ...
@@ -49,7 +55,7 @@ THEME_SECTOR = {
     "tech": "Technology", "ai_chips": "Technology", "software": "Technology", "cyber": "Technology",
     "robotics": "Technology", "communications": "Communication", "gaming": "Communication",
     "healthcare": "Healthcare", "biotech": "Healthcare", "financials": "Financials", "real_estate": "Real estate",
-    "consumer": "Consumer discretionary", "staples": "Consumer staples", "industrials": "Industrials",
+    "consumer": "Consumer", "staples": "Everyday essentials", "industrials": "Industrials",
     "space_defense": "Industrials", "utilities": "Utilities", "oil_gas": "Energy", "clean_energy": "Energy",
 }
 with (market.DATA / "sectors.csv").open() as _f:     # approximate sector mix of the broad funds, rounded
@@ -101,7 +107,7 @@ def build_report(acct: FundAccount) -> dict:
     next_review = (acct.last_review or today) + timedelta(days=tier.review_every_days)
     rep = {
         "as_of": today, "period_days": period["days"] if period else tier.review_every_days, "summary": summary,
-        "returns": rets, "holdings": holdings,
+        "returns": rets, "holdings": holdings, "by_slice": _slice_tables(holdings),
         "companies": companies, "interests": interests, "market": mkt, "relation": relation,
         "recommendations": recs, "projection": sim, "history": value_history(acct),
         "projection_inputs": {"per_paycheck": per_paycheck, "paychecks_per_year": PAYCHECKS_PER_YEAR, "monthly": monthly,
@@ -117,7 +123,7 @@ def build_report(acct: FundAccount) -> dict:
             i = by_ticker.get(x["ticker"])
             x["m3"], x["vs_market_m3"] = (i["m3"], i["vs_market_m3"]) if i else (None, None)
     rep["sectors"] = [{"sector": k, "share": round(v, 4)} for k, v in
-                      sorted(_sector_exposure(vals, total).items(), key=lambda kv: -kv[1])[:6]]
+                      sorted(_sector_exposure(vals, total, _own_sectors(p)).items(), key=lambda kv: -kv[1])[:6]]
     rep["data_notes"] = _data_notes(acct, holdings)
     targets = {h.ticker: h.weight for h in p.holdings}
     rep["finances"] = build_finances(
@@ -163,9 +169,15 @@ def _returns(acct: FundAccount, tier) -> dict:
         start = acct.last_review
     young = start <= first   # the fund is younger than the period: show its whole life
     bench = benchmark_weights(acct.portfolio)
+    yields = _yields(acct.portfolio)
     return {"available": True, "first_order": first, "benchmark": bench,
-            "period": _window(orders, first, today, None if young else start, bench, acct.portfolio),
-            "since_start": _window(orders, first, today, None, bench, acct.portfolio)}
+            "period": _window(orders, first, today, None if young else start, bench, acct.portfolio, yields),
+            "since_start": _window(orders, first, today, None, bench, acct.portfolio, yields)}
+
+
+def _yields(p) -> dict[str, float]:
+    """Yearly income rate per ticker: the fund table where it has one, else the sector's rough rate for a company."""
+    return {**{h.ticker: SECTOR_YIELD[h.sector] for h in p.holdings if h.sector in SECTOR_YIELD}, **YIELDS}
 
 
 def benchmark_weights(p) -> dict[str, float]:
@@ -192,16 +204,18 @@ def _three_fund_benchmark(p) -> dict[str, float]:
     return {"VTI": round((1 - bonds) * us_frac, 6), "VXUS": round((1 - bonds) * (1 - us_frac), 6), "BND": round(bonds, 6)}
 
 
-def _window(orders: list[dict], first: date, end: date, start: date | None, bench: dict[str, float], p) -> dict:
+def _window(orders: list[dict], first: date, end: date, start: date | None, bench: dict[str, float], p,
+            yields: dict[str, float] | None = None) -> dict:
     """Dollars, returns, benchmark and per-holding gains for [start, end]. start=None means from the first
     deposit, which then counts as new money. The benchmark and the S&P 500 line get the same deposits on the
     same days, so "vs benchmark" is only the customer's choices (interests, companies, drift)."""
     px, from_start = market.raw_price, start is None
     begin = returns.day_before(first) if from_start else start
-    r = returns.replay(orders, px, begin, end, YIELDS)
+    yields = YIELDS if yields is None else yields
+    r = returns.replay(orders, px, begin, end, yields)
     flows = returns.net_flows(orders, px)
-    blend = returns.replay(returns.shadow_orders(flows, bench, px), px, begin, end, YIELDS)
-    spy = returns.replay(returns.shadow_orders(flows, {BENCHMARK: 1.0}, px), px, begin, end, YIELDS)
+    blend = returns.replay(returns.shadow_orders(flows, bench, px), px, begin, end, yields)
+    spy = returns.replay(returns.shadow_orders(flows, {BENCHMARK: 1.0}, px), px, begin, end, yields)
     inc = True   # headline returns include estimated income; the *_price_pct twins leave it out
     twr, mwr, b_twr, s_twr = (returns.twr(r, inc), returns.money_weighted(r, inc), returns.twr(blend, inc),
                               returns.twr(spy, inc))
@@ -247,8 +261,8 @@ def _picks(r: returns.Replay, p, bench: dict[str, float], px, since: date) -> li
         if h.role == "core":
             continue
         move = market.change_pct(h.ticker, since, r.end)
-        rows.append({"ticker": h.ticker, "label": market.info(h.ticker)["label"], "role": h.role,
-                     "weight": h.weight, "move_pct": move, "dollars": round(gains.get(h.ticker, 0.0), 2),
+        rows.append({"ticker": h.ticker, "label": h.name if h.sector else market.info(h.ticker)["label"], "role": h.role,
+                     "slice": dict(SLICES)[p.slice_of(h)], "weight": h.weight, "move_pct": move, "dollars": round(gains.get(h.ticker, 0.0), 2),
                      "core_pct": core_pct, "vs_core_pts": round(move - core_pct, 2),
                      "vs_core_dollars": round(returns.excess_over(r, h.ticker, core, px), 2)})
     return rows
@@ -260,6 +274,7 @@ def _holdings(acct, vals, total, month_ago) -> list[dict]:
     shares, cost = get_broker().positions(acct.customer_id), get_broker().cost_basis(acct.customer_id)
     drifts = drift_of(p, vals) if total else {t: -w for t, w in targets.items()}
     flagged = off_target(p, vals) if total else {}
+    where, sector_of = {h.ticker: p.slice_of(h) for h in p.holdings}, _own_sectors(p)
     tickers = list(targets) + [t for t in vals if t not in targets]
     day = market.quotes(tickers, today)
     rows = []
@@ -268,6 +283,7 @@ def _holdings(acct, vals, total, month_ago) -> list[dict]:
         row = market.info(t)
         rows.append({
             "ticker": t, "name": row["name"], "label": row["label"], "about": row["about"],
+            "slice": where.get(t, "former"), "sector": sector_of.get(t, ""),
             "role": row["role"] if row["role"] in ("core", "stock") else "tilt", "shares": round(shares.get(t, 0.0), 4),
             "day_pct": day[t]["change_pct"] if t in day else None,
             "price": market.price(t, today), "value": round(v, 2),
@@ -278,6 +294,31 @@ def _holdings(acct, vals, total, month_ago) -> list[dict]:
             "gain_pct": round((v / cost[t] - 1) * 100, 2) if cost.get(t) else None,
         })
     return rows
+
+
+def _slice_tables(rows: list[dict]) -> list[dict]:
+    """The holdings table grouped by slice, each with subtotals (the US index also by sector). The period move of a
+    group is its holdings' price changes weighted by what's held. A position no longer in the fund is its own group."""
+    def subtotal(rs: list[dict]) -> dict:
+        value, target = sum(r["value"] for r in rs), sum(r["target"] for r in rs)
+        basis = [(r["value"] if value else r["target"], r["period_pct"]) for r in rs]
+        denominator = sum(w for w, _ in basis)
+        return {"count": len(rs), "value": round(value, 2), "weight": round(sum(r["weight"] for r in rs), 4),
+                "target": round(target, 4), "period_pct": round(sum(w * x for w, x in basis) / denominator, 2) if denominator else 0.0}
+
+    out = []
+    for key, label in (*SLICES, ("former", "No longer in your fund")):
+        rs = sorted((r for r in rows if r["slice"] == key), key=lambda r: -r["value"])
+        if not rs:
+            continue
+        sectors = None
+        if key == "us_core" and any(r["sector"] for r in rs):
+            by: dict[str, list[dict]] = {}
+            for r in rs:
+                by.setdefault(r["sector"] or "Other", []).append(r)
+            sectors = sorted(({"sector": sec, **subtotal(group), "rows": group} for sec, group in by.items()), key=lambda g: -g["weight"])
+        out.append({"key": key, "label": label, **subtotal(rs), "rows": rs, "sectors": sectors})
+    return out
 
 
 def _companies(vals, total, month_ago, today, top: int | None = 10) -> list[dict]:
@@ -406,7 +447,7 @@ def _recommendations(acct, vals, total, holdings, companies, interests, mkt, tie
     interest = _interest_parts(acct.portfolio, holdings)
     tilt_total = sum(interest.values())
     tech_picks = sum(w for t, w in interest.items() if _theme_of(t) in TECH_THEMES)
-    sectors = _sector_exposure(vals, total)
+    sectors = _sector_exposure(vals, total, _own_sectors(acct.portfolio))
     tech_fund = sum(v for k, v in sectors.items() if k in TECH_SECTORS)
     held = set(intake.interests(acct.answers))
     picks_heavy = bool(tilt_total) and tech_picks / tilt_total >= TECH_HEAVY_SHARE
@@ -494,13 +535,17 @@ def _theme_of(ticker: str) -> str:
     return ETFS[home]["theme"] if home in ETFS else ""
 
 
-def _sector_exposure(vals: dict[str, float], total: float) -> dict[str, float]:
-    """Share of the whole fund per sector, looking through the broad funds (approximate)."""
+def _sector_exposure(vals: dict[str, float], total: float, own_sector: dict[str, str] | None = None) -> dict[str, float]:
+    """Share of the whole fund per sector. The broad funds are looked through with data/sectors.csv (approximate);
+    a company held directly counts in its own sector, taken from the fund's holdings (`own_sector`)."""
+    own_sector = own_sector or {}
     out: dict[str, float] = {}
     if not total:
         return out
     for t, v in vals.items():
-        if t in CORE_SECTORS:
+        if t in own_sector:
+            mix = {own_sector[t]: 1.0}
+        elif t in CORE_SECTORS:
             mix = CORE_SECTORS[t]
         elif t in ETFS:
             sector = THEME_SECTOR.get(ETFS[t]["theme"])
@@ -513,6 +558,11 @@ def _sector_exposure(vals: dict[str, float], total: float) -> dict[str, float]:
         for sector, w in mix.items():
             out[sector] = out.get(sector, 0.0) + v / total * w
     return out
+
+
+def _own_sectors(p) -> dict[str, str]:
+    """{ticker: sector} for the companies the fund holds directly (a fund has no sector of its own)."""
+    return {h.ticker: h.sector for h in p.holdings if h.sector}
 
 
 def _pct(x: float, digits: int = 1) -> str:
