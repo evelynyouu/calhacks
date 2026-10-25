@@ -273,7 +273,7 @@ def test_account_page_sections_and_settings():
     assert [h.ticker for h in state.get("sam").fund.portfolio.holdings if h.role == "tilt"] == ["XLU"]
 
 
-def test_ticker_tape_has_indexes_and_holdings():
+def test_ticker_tape_has_holdings():
     make_fund("sam")
     r = client.get("/p/sam/tape")
-    assert "S&amp;P 500" in r.text and "VTI" in r.text and "Simulated prices" in r.text
+    assert "S&amp;P 500" not in r.text and "VTI" in r.text and "Simulated prices" in r.text
