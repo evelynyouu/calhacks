@@ -193,7 +193,9 @@ def _size_interests(tilts: list[str], cap: float, kind: str, reasons: list[Reaso
         return {}
     total = sum(wanted[t] for t in kept)
     scale = _fit_scale([wanted[t] for t in kept], cap) if total > cap else 1.0
-    sizes = {t: round(max(MIN_TILT, wanted[t] * scale), 4) for t in kept}
+    # rounded down when trimmed, so rounding can't push the total past the cap
+    sizes = {t: round(max(MIN_TILT, (math.floor(wanted[t] * scale * 1e4) / 1e4) if scale < 1 else wanted[t]), 4)
+             for t in kept}
     if scale < 1:
         for t in kept:
             reasons.append(Reason("cap", f"Your interests add up to {total:.0%}, more than the {cap:.0%} a {kind} fund "
